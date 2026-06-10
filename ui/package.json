@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "verify:m1": "tsx scripts/verify_m1.ts"
+    "verify:m1": "tsx scripts/verify_m1.ts",
+    "verify:m2": "tsx scripts/verify_m2.ts"
   },
   "dependencies": {
     "react": "^18.3.1",

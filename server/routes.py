@@ -9,6 +9,8 @@ import os
 from aiohttp import web
 from server import PromptServer
 
+from .library import api as _library_api  # noqa: F401  (registers /peropix/api/library/*)
+
 PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB_DIR = os.path.join(PLUGIN_DIR, "web")
 

@@ -44,14 +44,35 @@ export function viewUrl(img: OutputImage): string {
   return `/view?${q}`
 }
 
+export interface NodeObjectInfo {
+  input: {
+    required?: Record<string, unknown[]>
+    optional?: Record<string, unknown[]>
+  }
+}
+
+export async function fetchNodeInfo(cls: string): Promise<NodeObjectInfo | null> {
+  const res = await fetch(`/object_info/${encodeURIComponent(cls)}`)
+  if (!res.ok) return null
+  const data = await res.json()
+  return data[cls] ?? null
+}
+
+/** Extracts the choices of an enum-typed input (e.g. sampler_name, unet_name). */
+export function enumValues(info: NodeObjectInfo | null, field: string): string[] {
+  const spec = info?.input.required?.[field] ?? info?.input.optional?.[field]
+  return Array.isArray(spec) && Array.isArray(spec[0]) ? (spec[0] as string[]) : []
+}
+
 interface WsMessage {
   type: string
   data: Record<string, unknown>
 }
 
 export interface SocketHandlers {
-  onProgress?: (value: number, max: number) => void
+  onProgress?: (promptId: string, value: number, max: number) => void
   onDone?: (promptId: string) => void
+  onError?: (promptId: string) => void
 }
 
 export function openSocket(handlers: SocketHandlers): WebSocket {
@@ -61,13 +82,16 @@ export function openSocket(handlers: SocketHandlers): WebSocket {
     if (typeof ev.data !== 'string') return // binary latent previews: handled later
     const msg = JSON.parse(ev.data) as WsMessage
     if (msg.type === 'progress_state') {
+      const promptId = msg.data.prompt_id as string
       const nodes = Object.values((msg.data.nodes ?? {}) as Record<string, { value: number; max: number; state: string }>)
       const running = nodes.find((n) => n.state === 'running')
-      if (running) handlers.onProgress?.(running.value, running.max)
+      if (running) handlers.onProgress?.(promptId, running.value, running.max)
     } else if (msg.type === 'execution_success') {
       handlers.onDone?.(msg.data.prompt_id as string)
     } else if (msg.type === 'executing' && msg.data.node === null) {
       handlers.onDone?.(msg.data.prompt_id as string)
+    } else if (msg.type === 'execution_error') {
+      handlers.onError?.(msg.data.prompt_id as string)
     }
   }
   return ws

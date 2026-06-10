@@ -5,18 +5,11 @@
 //
 // 실행: ComfyUI 린 프로파일이 8188에 떠 있는 상태에서 `npm run verify:m1`
 
-import { execFileSync } from 'node:child_process'
-import path from 'node:path'
 import { buildGraph } from '../src/workflow/builder'
 import { ANIMA_DEFAULTS } from '../src/workflow/defaults'
 import type { ApiGraph } from '../src/workflow/types'
 import { NEGATIVE, POSITIVE } from './fixtures'
-
-const COMFY = 'http://127.0.0.1:8188'
-const PORTABLE = 'W:\\ComfyUI_windows_portable_nvidia_cu121_or_cpu\\ComfyUI_windows_portable'
-const OUTPUT_DIR = path.join(PORTABLE, 'ComfyUI', 'output')
-const PYTHON = path.join(PORTABLE, 'python_embeded', 'python.exe')
-const COMPARE = path.resolve(import.meta.dirname, '..', '..', 'scripts', 'compare.py')
+import { comparePixels, submit, waitOutputs } from './verify_lib'
 
 const SEED = 123456789
 
@@ -41,35 +34,6 @@ function referenceGraph(prefix: string): ApiGraph {
   }
 }
 
-interface OutputImage { filename: string; subfolder: string; type: string }
-
-async function submit(graph: ApiGraph): Promise<string> {
-  const res = await fetch(`${COMFY}/prompt`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: graph, client_id: 'verify-m1' }),
-  })
-  if (!res.ok) throw new Error(`/prompt ${res.status}: ${await res.text()}`)
-  return (await res.json()).prompt_id
-}
-
-async function waitOutputs(promptId: string): Promise<OutputImage[]> {
-  for (let i = 0; i < 600; i++) {
-    await new Promise((r) => setTimeout(r, 2000))
-    const data = await (await fetch(`${COMFY}/history/${promptId}`)).json()
-    const entry = data[promptId]
-    if (!entry) continue
-    if (entry.status?.status_str === 'error') {
-      throw new Error('execution error: ' + JSON.stringify(entry.status, null, 2))
-    }
-    const images = Object.values(entry.outputs ?? {}).flatMap(
-      (o) => ((o as { images?: OutputImage[] }).images ?? []),
-    )
-    if (images.length) return images
-  }
-  throw new Error('timeout waiting for ' + promptId)
-}
-
 const reference = referenceGraph('PeroPix/verify/m1_ref')
 const app = buildGraph({
   ...ANIMA_DEFAULTS,
@@ -80,21 +44,14 @@ const app = buildGraph({
 })
 
 console.log('[1/3] reference 제출 (모델 첫 로딩이라 수 분 걸릴 수 있음)...')
-const refImgs = await waitOutputs(await submit(reference))
+const refImgs = await waitOutputs(await submit(reference, 'verify-m1'))
 console.log('      done:', refImgs[0].subfolder + '/' + refImgs[0].filename)
 
 console.log('[2/3] builder 그래프 제출...')
-const appImgs = await waitOutputs(await submit(app))
+const appImgs = await waitOutputs(await submit(app, 'verify-m1'))
 console.log('      done:', appImgs[0].subfolder + '/' + appImgs[0].filename)
 
 console.log('[3/3] 픽셀 비교...')
-const refPath = path.join(OUTPUT_DIR, refImgs[0].subfolder, refImgs[0].filename)
-const appPath = path.join(OUTPUT_DIR, appImgs[0].subfolder, appImgs[0].filename)
-try {
-  const out = execFileSync(PYTHON, [COMPARE, refPath, appPath], { encoding: 'utf8' })
-  console.log('RESULT:', out.trim())
-} catch (e) {
-  const err = e as { stdout?: string }
-  console.log('RESULT:', err.stdout?.trim() ?? String(e))
-  process.exit(1)
-}
+const result = comparePixels(refImgs[0], appImgs[0])
+console.log('RESULT:', result)
+process.exit(result === 'IDENTICAL' ? 0 : 1)
