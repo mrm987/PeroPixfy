@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "verify:m1": "tsx scripts/verify_m1.ts",
     "verify:m2": "tsx scripts/verify_m2.ts",
-    "verify:m6": "tsx scripts/verify_m6.ts"
+    "verify:m6": "tsx scripts/verify_m6.ts",
+    "verify:m7": "tsx scripts/verify_m7.ts"
   },
   "dependencies": {
     "react": "^18.3.1",

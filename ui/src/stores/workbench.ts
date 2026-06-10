@@ -4,6 +4,7 @@ import {
   completeGeneration, deleteGeneration, failGeneration, listGenerations,
   recordGeneration, starGeneration,
 } from '../api/gallery'
+import { fetchSettings } from '../api/settings'
 import { buildGraph } from '../workflow/builder'
 import { ANIMA_DEFAULTS } from '../workflow/defaults'
 import type { GenerationParams, LoraEntry } from '../workflow/types'
@@ -50,8 +51,11 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   progress: null,
   error: null,
 
-  // 앱 시작 시: 저장된 기록 복원 + pending 상태 복구 (/history → /queue 순서로 확인)
+  // 앱 시작 시: 저장된 기본값 적용 + 기록 복원 + pending 상태 복구 (/history → /queue 순서로 확인)
   init: async () => {
+    const saved = await fetchSettings().catch(() => ({}))
+    set((s) => ({ params: { ...s.params, ...saved } }))
+
     const records = await listGenerations(100)
     const history: HistoryItem[] = records.map((r) => {
       const files = JSON.parse(r.files_json || '[]') as Parameters<typeof viewUrl>[0][]

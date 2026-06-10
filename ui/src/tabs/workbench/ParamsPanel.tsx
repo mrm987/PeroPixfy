@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { enumValues, fetchNodeInfo, uploadImage } from '../../api/comfy'
+import { saveSettings } from '../../api/settings'
 import { NumberField, SelectField } from '../../components/controls'
 import { useWorkbench } from '../../stores/workbench'
 import { HIRES_DEFAULTS } from '../../workflow/defaults'
@@ -32,6 +33,7 @@ interface Meta {
   samplers: string[]
   schedulers: string[]
   upscaleModels: string[]
+  spectrumAvailable: boolean
 }
 
 export function ParamsPanel() {
@@ -47,8 +49,8 @@ export function ParamsPanel() {
 
   useEffect(() => {
     Promise.all(
-      ['UNETLoader', 'CLIPLoader', 'VAELoader', 'LoraLoaderModelOnly', 'KSampler', 'UpscaleModelLoader'].map(fetchNodeInfo),
-    ).then(([unet, clip, vae, lora, sampler, upscale]) =>
+      ['UNETLoader', 'CLIPLoader', 'VAELoader', 'LoraLoaderModelOnly', 'KSampler', 'UpscaleModelLoader', 'DiTSpectrumPatch'].map(fetchNodeInfo),
+    ).then(([unet, clip, vae, lora, sampler, upscale, spectrum]) =>
       setMeta({
         unets: enumValues(unet, 'unet_name'),
         clips: enumValues(clip, 'clip_name'),
@@ -57,6 +59,7 @@ export function ParamsPanel() {
         samplers: enumValues(sampler, 'sampler_name'),
         schedulers: enumValues(sampler, 'scheduler'),
         upscaleModels: enumValues(upscale, 'model_name'),
+        spectrumAvailable: spectrum !== null,
       }),
     )
   }, [])
@@ -155,6 +158,14 @@ export function ParamsPanel() {
           <NumberField label="batch" value={params.batchSize} min={1} max={16}
             onChange={(v) => set({ batchSize: v })} />
 
+          <label className="checkbox" title={meta?.spectrumAvailable === false ? 'comfyui-spectrum-ksampler 노드가 로드되지 않았습니다' : 'DiT Spectrum Patch — 약 2-3배 가속'}>
+            <input type="checkbox"
+              checked={params.spectrum?.enabled ?? false}
+              disabled={meta?.spectrumAvailable === false}
+              onChange={(e) => set({ spectrum: { enabled: e.target.checked } })} />
+            {' '}Spectrum 가속{meta?.spectrumAvailable === false ? ' (노드 없음)' : ''}
+          </label>
+
           <label className="checkbox">
             <input type="checkbox" checked={hires.enabled}
               onChange={(e) => setHires({ enabled: e.target.checked })} /> Hires fix
@@ -179,6 +190,13 @@ export function ParamsPanel() {
               </div>
             </>
           )}
+
+          <button onClick={async () => {
+            const { unet, clip, vae, sampler, scheduler, steps, cfg, width, height } = params
+            await saveSettings({ unet, clip, vae, sampler, scheduler, steps, cfg, width, height })
+          }}>
+            현재 모델·샘플러 설정을 기본값으로 저장
+          </button>
         </>
       )}
 

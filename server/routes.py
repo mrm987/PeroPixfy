@@ -75,3 +75,23 @@ async def gallery_list(request):
     limit = int(request.query.get("limit", "100"))
     offset = int(request.query.get("offset", "0"))
     return web.json_response({"generations": gallery.list_recent(limit, offset)})
+
+
+SETTINGS_PATH = os.path.join(PLUGIN_DIR, "data", "settings.json")
+
+
+@routes.get("/peropix/api/settings")
+async def settings_get(request):
+    if os.path.isfile(SETTINGS_PATH):
+        with open(SETTINGS_PATH, encoding="utf-8") as f:
+            return web.json_response(json.load(f))
+    return web.json_response({})
+
+
+@routes.post("/peropix/api/settings")
+async def settings_set(request):
+    data = await request.json()
+    os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
+    with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    return web.json_response({"ok": True})

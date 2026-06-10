@@ -33,6 +33,7 @@ export interface GenerationParams {
   denoise: number // i2i/inpaint에서만 사용 (t2i는 1 고정)
   sourceImage?: string // i2i/inpaint: /upload/image 결과 파일명 (input 폴더)
   hires?: HiresParams
+  spectrum?: { enabled: boolean }
   filenamePrefix: string
 }
 

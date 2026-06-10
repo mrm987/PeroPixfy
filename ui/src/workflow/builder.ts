@@ -23,6 +23,30 @@ export function buildGraph(p: GenerationParams): ApiGraph {
     model = [id, 0]
   }
 
+  // Spectrum 가속: 로라 체인 뒤에 MODEL 패처 삽입 (README 권장 배선).
+  // steps는 다운스트림 샘플러와 반드시 일치해야 함 — hires 2-pass도 같은 steps 사용.
+  if (p.spectrum?.enabled) {
+    g['spectrum'] = {
+      class_type: 'DiTSpectrumPatch',
+      inputs: {
+        model,
+        steps: p.steps,
+        window_size: 2.0,
+        flex_window: 0.25,
+        warmup_steps: 6,
+        tail_actual_steps: 3,
+        blend_w: 0.3,
+        cheby_degree: 3,
+        ridge_lambda: 0.1,
+        history_size: 100,
+        enabled: true,
+        one_sampler_only: false,
+        verbose: false,
+      },
+    }
+    model = ['spectrum', 0]
+  }
+
   g['pos'] = { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.positive } }
   g['neg'] = { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.negative } }
 
