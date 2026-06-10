@@ -6,6 +6,8 @@ export function WorkbenchTab() {
   const selectedId = useWorkbench((s) => s.selectedId)
   const select = useWorkbench((s) => s.select)
   const restore = useWorkbench((s) => s.restore)
+  const star = useWorkbench((s) => s.star)
+  const remove = useWorkbench((s) => s.remove)
 
   const selected = history.find((h) => h.promptId === selectedId) ?? history[0]
 
@@ -28,6 +30,10 @@ export function WorkbenchTab() {
           <div className="result-meta">
             <span>seed {selected.params.seed}</span>
             <button onClick={() => restore(selected.params)}>이 설정으로</button>
+            <button className={selected.starred ? 'starred' : ''} onClick={() => star(selected.promptId)}>
+              {selected.starred ? '★' : '☆'}
+            </button>
+            <button onClick={() => remove(selected.promptId)} title="기록에서 제거 (파일은 유지)">삭제</button>
           </div>
         )}
         {history.length > 0 && (

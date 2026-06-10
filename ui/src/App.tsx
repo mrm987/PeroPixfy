@@ -16,6 +16,8 @@ export default function App() {
   const setTab = useUi((s) => s.setTab)
 
   useEffect(() => {
+    useWorkbench.getState().init()
+
     let ws: WebSocket
     let closed = false
     let retryDelay = 1000

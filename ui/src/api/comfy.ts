@@ -39,6 +39,17 @@ export async function fetchOutputs(promptId: string): Promise<OutputImage[] | nu
   return images
 }
 
+/** prompt_id들의 집합 — 큐(실행 중 + 대기)에 들어있는 작업들. */
+export async function fetchQueueIds(): Promise<Set<string>> {
+  const res = await fetch('/queue')
+  const data = await res.json()
+  const ids = new Set<string>()
+  for (const list of [data.queue_running ?? [], data.queue_pending ?? []]) {
+    for (const item of list as unknown[][]) ids.add(item[1] as string)
+  }
+  return ids
+}
+
 export function viewUrl(img: OutputImage): string {
   const q = new URLSearchParams({ filename: img.filename, subfolder: img.subfolder, type: img.type })
   return `/view?${q}`
