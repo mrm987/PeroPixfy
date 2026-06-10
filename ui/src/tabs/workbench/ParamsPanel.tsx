@@ -1,8 +1,21 @@
 import { useEffect, useState } from 'react'
-import { enumValues, fetchNodeInfo } from '../../api/comfy'
+import { enumValues, fetchNodeInfo, uploadImage } from '../../api/comfy'
 import { NumberField, SelectField } from '../../components/controls'
 import { useWorkbench } from '../../stores/workbench'
+import { HIRES_DEFAULTS } from '../../workflow/defaults'
+import type { GenMode } from '../../workflow/types'
 import { LoraStack } from './LoraStack'
+
+const MODES: { id: GenMode; label: string }[] = [
+  { id: 't2i', label: 'T2I' },
+  { id: 'i2i', label: 'I2I' },
+  { id: 'inpaint', label: '인페인트' },
+]
+
+const sourcePreviewUrl = (name: string) => {
+  const [sub, file] = name.includes('/') ? name.split(/\/(.+)/) : ['', name]
+  return `/view?filename=${encodeURIComponent(file)}&subfolder=${encodeURIComponent(sub)}&type=input`
+}
 
 const RESOLUTION_PRESETS: [number, number][] = [
   [1216, 832],
@@ -18,6 +31,7 @@ interface Meta {
   loras: string[]
   samplers: string[]
   schedulers: string[]
+  upscaleModels: string[]
 }
 
 export function ParamsPanel() {
@@ -33,8 +47,8 @@ export function ParamsPanel() {
 
   useEffect(() => {
     Promise.all(
-      ['UNETLoader', 'CLIPLoader', 'VAELoader', 'LoraLoaderModelOnly', 'KSampler'].map(fetchNodeInfo),
-    ).then(([unet, clip, vae, lora, sampler]) =>
+      ['UNETLoader', 'CLIPLoader', 'VAELoader', 'LoraLoaderModelOnly', 'KSampler', 'UpscaleModelLoader'].map(fetchNodeInfo),
+    ).then(([unet, clip, vae, lora, sampler, upscale]) =>
       setMeta({
         unets: enumValues(unet, 'unet_name'),
         clips: enumValues(clip, 'clip_name'),
@@ -42,12 +56,47 @@ export function ParamsPanel() {
         loras: enumValues(lora, 'lora_name'),
         samplers: enumValues(sampler, 'sampler_name'),
         schedulers: enumValues(sampler, 'scheduler'),
+        upscaleModels: enumValues(upscale, 'model_name'),
       }),
     )
   }, [])
 
+  const uploadSource = async (file: File) => {
+    const name = await uploadImage(file, `peropix_src_${Date.now()}.png`)
+    set({ sourceImage: name })
+  }
+  const hires = params.hires ?? HIRES_DEFAULTS
+  const setHires = (patch: Partial<typeof hires>) => set({ hires: { ...hires, ...patch } })
+
   return (
     <div className="params-panel">
+      <div className="preset-row">
+        {MODES.map((m) => (
+          <button key={m.id} className={params.mode === m.id ? 'active' : ''}
+            onClick={() => set({ mode: m.id, ...(m.id === 't2i' ? { sourceImage: undefined } : {}) })}>
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      {params.mode !== 't2i' && (
+        <div className="source-box">
+          {params.sourceImage ? (
+            <img src={sourcePreviewUrl(params.sourceImage)} alt="source" />
+          ) : (
+            <div className="placeholder">
+              {params.mode === 'inpaint'
+                ? '결과 이미지의 "인페인트" 버튼으로 마스크를 그리거나, 이미지를 불러오세요'
+                : '결과 이미지의 "i2i로" 버튼을 쓰거나, 이미지를 불러오세요'}
+            </div>
+          )}
+          <input type="file" accept="image/*"
+            onChange={(e) => e.target.files?.[0] && uploadSource(e.target.files[0])} />
+          <NumberField label="denoise" value={params.denoise} min={0} max={1} step={0.05}
+            onChange={(v) => set({ denoise: v })} />
+        </div>
+      )}
+
       <SelectField label="모델 (UNet)" value={params.unet} options={meta?.unets ?? []}
         onChange={(v) => set({ unet: v })} />
 
@@ -105,6 +154,31 @@ export function ParamsPanel() {
           </div>
           <NumberField label="batch" value={params.batchSize} min={1} max={16}
             onChange={(v) => set({ batchSize: v })} />
+
+          <label className="checkbox">
+            <input type="checkbox" checked={hires.enabled}
+              onChange={(e) => setHires({ enabled: e.target.checked })} /> Hires fix
+          </label>
+          {hires.enabled && (
+            <>
+              <div className="grid-2">
+                <SelectField label="방식" value={hires.method}
+                  options={['latent2pass', 'usdu']}
+                  onChange={(v) => setHires({ method: v as 'latent2pass' | 'usdu' })} />
+                <NumberField label="배율" value={hires.scale} min={1} max={4} step={0.25}
+                  onChange={(v) => setHires({ scale: v })} />
+              </div>
+              <div className="grid-2">
+                <NumberField label="hires denoise" value={hires.denoise} min={0} max={1} step={0.05}
+                  onChange={(v) => setHires({ denoise: v })} />
+                {hires.method === 'usdu' && (
+                  <SelectField label="업스케일 모델" value={hires.upscaleModel ?? ''}
+                    options={meta?.upscaleModels ?? []}
+                    onChange={(v) => setHires({ upscaleModel: v })} />
+                )}
+              </div>
+            </>
+          )}
         </>
       )}
 

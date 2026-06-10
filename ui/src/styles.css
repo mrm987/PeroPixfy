@@ -217,6 +217,46 @@ button:disabled { opacity: 0.4; cursor: default; }
 .batch-slot.confirmed { outline: 3px solid #5dbb63; }
 .result-meta .starred { color: #ffd34d; }
 
+.source-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+}
+.source-box img { max-height: 180px; object-fit: contain; border-radius: 4px; }
+.source-box .placeholder { font-size: 12px; padding: 12px 4px; }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: grid;
+  place-items: center;
+  z-index: 100;
+}
+.mask-editor {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  max-width: 90vw;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mask-editor canvas {
+  max-width: 86vw;
+  max-height: 78vh;
+  object-fit: contain;
+  cursor: crosshair;
+  touch-action: none;
+}
+.mask-toolbar { display: flex; gap: 8px; align-items: center; }
+.mask-toolbar .generate { margin: 0; padding: 6px 16px; }
+
 .history-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
 .history-thumb {
   width: 64px;

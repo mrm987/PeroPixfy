@@ -4,7 +4,18 @@ export interface LoraEntry {
   enabled: boolean
 }
 
+export type GenMode = 't2i' | 'i2i' | 'inpaint'
+
+export interface HiresParams {
+  enabled: boolean
+  method: 'latent2pass' | 'usdu'
+  scale: number
+  denoise: number
+  upscaleModel?: string // usdu 전용
+}
+
 export interface GenerationParams {
+  mode: GenMode
   unet: string
   clip: string
   vae: string
@@ -19,7 +30,9 @@ export interface GenerationParams {
   width: number
   height: number
   batchSize: number
-  denoise: number
+  denoise: number // i2i/inpaint에서만 사용 (t2i는 1 고정)
+  sourceImage?: string // i2i/inpaint: /upload/image 결과 파일명 (input 폴더)
+  hires?: HiresParams
   filenamePrefix: string
 }
 

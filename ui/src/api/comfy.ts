@@ -50,6 +50,17 @@ export async function fetchQueueIds(): Promise<Set<string>> {
   return ids
 }
 
+/** 이미지를 ComfyUI input 폴더에 업로드. LoadImage에서 쓸 파일명을 반환. */
+export async function uploadImage(blob: Blob, name: string): Promise<string> {
+  const form = new FormData()
+  form.append('image', blob, name)
+  form.append('overwrite', 'true')
+  const res = await fetch('/upload/image', { method: 'POST', body: form })
+  if (!res.ok) throw new Error(`/upload/image ${res.status}: ${await res.text()}`)
+  const data = await res.json()
+  return data.subfolder ? `${data.subfolder}/${data.name}` : data.name
+}
+
 /** 대기 큐에서 특정 prompt들을 제거. */
 export async function deleteQueued(promptIds: string[]): Promise<void> {
   await fetch('/queue', {

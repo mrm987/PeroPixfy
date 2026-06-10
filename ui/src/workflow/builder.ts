@@ -25,26 +25,102 @@ export function buildGraph(p: GenerationParams): ApiGraph {
 
   g['pos'] = { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.positive } }
   g['neg'] = { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.negative } }
-  g['latent'] = {
-    class_type: 'EmptyLatentImage',
-    inputs: { width: p.width, height: p.height, batch_size: p.batchSize },
+
+  // latent 소스: t2i는 빈 latent, i2i/inpaint는 업로드 이미지 인코딩.
+  // inpaint 마스크는 업로드 PNG의 알파 채널 (LoadImage MASK 출력 = 1 - alpha).
+  let latent: [string, number]
+  if (p.mode === 't2i') {
+    g['latent'] = {
+      class_type: 'EmptyLatentImage',
+      inputs: { width: p.width, height: p.height, batch_size: p.batchSize },
+    }
+    latent = ['latent', 0]
+  } else {
+    if (!p.sourceImage) throw new Error(`${p.mode}: sourceImage가 없습니다`)
+    g['src_img'] = { class_type: 'LoadImage', inputs: { image: p.sourceImage } }
+    g['src_latent'] = { class_type: 'VAEEncode', inputs: { pixels: ['src_img', 0], vae: ['vae', 0] } }
+    latent = ['src_latent', 0]
+    if (p.mode === 'inpaint') {
+      g['masked'] = { class_type: 'SetLatentNoiseMask', inputs: { samples: latent, mask: ['src_img', 1] } }
+      latent = ['masked', 0]
+    }
   }
-  g['sampler'] = {
-    class_type: 'KSampler',
-    inputs: {
-      model,
-      positive: ['pos', 0],
-      negative: ['neg', 0],
-      latent_image: ['latent', 0],
-      seed: p.seed,
-      steps: p.steps,
-      cfg: p.cfg,
-      sampler_name: p.sampler,
-      scheduler: p.scheduler,
-      denoise: p.denoise,
-    },
+
+  const sample = (id: string, latentIn: [string, number], denoise: number) => {
+    g[id] = {
+      class_type: 'KSampler',
+      inputs: {
+        model,
+        positive: ['pos', 0],
+        negative: ['neg', 0],
+        latent_image: latentIn,
+        seed: p.seed,
+        steps: p.steps,
+        cfg: p.cfg,
+        sampler_name: p.sampler,
+        scheduler: p.scheduler,
+        denoise,
+      },
+    }
   }
-  g['decode'] = { class_type: 'VAEDecode', inputs: { samples: ['sampler', 0], vae: ['vae', 0] } }
-  g['save'] = { class_type: 'SaveImage', inputs: { images: ['decode', 0], filename_prefix: p.filenamePrefix } }
+  sample('sampler', latent, p.mode === 't2i' ? 1 : p.denoise)
+
+  let image: [string, number]
+  const round8 = (n: number) => Math.round(n / 8) * 8
+  if (p.hires?.enabled && p.hires.method === 'latent2pass') {
+    g['hires_up'] = {
+      class_type: 'LatentUpscale',
+      inputs: {
+        samples: ['sampler', 0],
+        upscale_method: 'nearest-exact',
+        width: round8(p.width * p.hires.scale),
+        height: round8(p.height * p.hires.scale),
+        crop: 'disabled',
+      },
+    }
+    sample('sampler_hires', ['hires_up', 0], p.hires.denoise)
+    g['decode'] = { class_type: 'VAEDecode', inputs: { samples: ['sampler_hires', 0], vae: ['vae', 0] } }
+    image = ['decode', 0]
+  } else if (p.hires?.enabled && p.hires.method === 'usdu') {
+    if (!p.hires.upscaleModel) throw new Error('USDU: 업스케일 모델이 선택되지 않았습니다')
+    g['decode'] = { class_type: 'VAEDecode', inputs: { samples: ['sampler', 0], vae: ['vae', 0] } }
+    g['upmodel'] = { class_type: 'UpscaleModelLoader', inputs: { model_name: p.hires.upscaleModel } }
+    g['usdu'] = {
+      class_type: 'UltimateSDUpscale',
+      inputs: {
+        image: ['decode', 0],
+        model,
+        positive: ['pos', 0],
+        negative: ['neg', 0],
+        vae: ['vae', 0],
+        upscale_model: ['upmodel', 0],
+        upscale_by: p.hires.scale,
+        seed: p.seed,
+        steps: p.steps,
+        cfg: p.cfg,
+        sampler_name: p.sampler,
+        scheduler: p.scheduler,
+        denoise: p.hires.denoise,
+        mode_type: 'Linear',
+        tile_width: 512,
+        tile_height: 512,
+        mask_blur: 8,
+        tile_padding: 32,
+        seam_fix_mode: 'None',
+        seam_fix_denoise: 1,
+        seam_fix_width: 64,
+        seam_fix_mask_blur: 8,
+        seam_fix_padding: 16,
+        force_uniform_tiles: true,
+        tiled_decode: false,
+      },
+    }
+    image = ['usdu', 0]
+  } else {
+    g['decode'] = { class_type: 'VAEDecode', inputs: { samples: ['sampler', 0], vae: ['vae', 0] } }
+    image = ['decode', 0]
+  }
+
+  g['save'] = { class_type: 'SaveImage', inputs: { images: image, filename_prefix: p.filenamePrefix } }
   return g
 }
