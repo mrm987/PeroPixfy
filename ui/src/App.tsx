@@ -1,7 +1,9 @@
 import { useEffect } from 'react'
 import { openSocket } from './api/comfy'
+import { useBatch } from './stores/batch'
 import { useUi, type Tab } from './stores/ui'
 import { useWorkbench } from './stores/workbench'
+import { BatchTab } from './tabs/batch/BatchTab'
 import { LibraryTab } from './tabs/library/LibraryTab'
 import { WorkbenchTab } from './tabs/workbench/WorkbenchTab'
 
@@ -23,8 +25,13 @@ export default function App() {
     let retryDelay = 1000
 
     const connect = () => {
-      const s = useWorkbench.getState()
-      ws = openSocket({ onProgress: s.onProgress, onDone: s.onDone, onError: s.onError })
+      const wb = useWorkbench.getState()
+      const batch = useBatch.getState()
+      ws = openSocket({
+        onProgress: wb.onProgress,
+        onDone: (id) => { wb.onDone(id); batch.onDone(id) },
+        onError: (id) => { wb.onError(id); batch.onError(id) },
+      })
       ws.onopen = () => { retryDelay = 1000 }
       ws.onclose = () => {
         if (closed) return
@@ -48,7 +55,7 @@ export default function App() {
       <main className="tab-content">
         {tab === 'library' && <LibraryTab />}
         {tab === 'workbench' && <WorkbenchTab />}
-        {tab === 'batch' && <div className="placeholder" style={{ padding: 40 }}>배치 탭 — M5에서 구현</div>}
+        {tab === 'batch' && <BatchTab />}
       </main>
     </div>
   )

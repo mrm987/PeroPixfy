@@ -178,6 +178,45 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .fav.on { color: #ffd34d; }
 
+.batch {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 16px;
+  height: 100%;
+  padding: 16px;
+}
+.batch-panel { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.variation-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 4px;
+}
+.variation-row .var-label { grid-column: 1; }
+.variation-row textarea { grid-column: 1 / -1; margin: 0; }
+.variation-row > button { grid-column: 2; grid-row: 1; }
+.generate.stop { background: var(--error); }
+.batch-progress { color: var(--muted); }
+
+.batch-grid { overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+.batch-row-header { font-weight: 600; margin-bottom: 6px; }
+.confirmed-mark { color: #5dbb63; font-weight: 400; }
+.batch-slots { display: flex; gap: 8px; flex-wrap: wrap; }
+.batch-slot {
+  width: 140px;
+  aspect-ratio: 832 / 1216;
+  padding: 0;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--panel);
+}
+.batch-slot img { width: 100%; height: 100%; object-fit: cover; }
+.batch-slot .slot-state { color: var(--muted); font-size: 12px; }
+.batch-slot.error .slot-state { color: var(--error); }
+.batch-slot.confirmed { outline: 3px solid #5dbb63; }
+.result-meta .starred { color: #ffd34d; }
+
 .history-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
 .history-thumb {
   width: 64px;

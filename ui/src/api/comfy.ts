@@ -50,6 +50,20 @@ export async function fetchQueueIds(): Promise<Set<string>> {
   return ids
 }
 
+/** 대기 큐에서 특정 prompt들을 제거. */
+export async function deleteQueued(promptIds: string[]): Promise<void> {
+  await fetch('/queue', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ delete: promptIds }),
+  })
+}
+
+/** 현재 실행 중인 작업 중단. */
+export async function interrupt(): Promise<void> {
+  await fetch('/interrupt', { method: 'POST' })
+}
+
 export function viewUrl(img: OutputImage): string {
   const q = new URLSearchParams({ filename: img.filename, subfolder: img.subfolder, type: img.type })
   return `/view?${q}`
