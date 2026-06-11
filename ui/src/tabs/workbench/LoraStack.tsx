@@ -20,14 +20,14 @@ export function LoraStack({ available }: { available: string[] }) {
 
   return (
     <div className="lora-stack">
-      <div className="field-label">로라 ({loras.filter((l) => l.enabled).length}/{loras.length})</div>
+      <div className="field-label">LoRAs ({loras.filter((l) => l.enabled).length}/{loras.length})</div>
       {loras.map((l, i) => (
         <div key={i} className={`lora-row${l.enabled ? '' : ' disabled'}`}>
           <input
             type="checkbox"
             checked={l.enabled}
             onChange={(e) => update(i, { enabled: e.target.checked })}
-            title="활성화"
+            title="Enable"
           />
           <select value={l.relPath} onChange={(e) => update(i, { relPath: e.target.value })}>
             {!available.includes(l.relPath) && l.relPath && <option value={l.relPath}>{l.relPath}</option>}
@@ -42,14 +42,14 @@ export function LoraStack({ available }: { available: string[] }) {
             min={-2}
             max={2}
             onChange={(e) => update(i, { strength: Number(e.target.value) })}
-            title="강도"
+            title="Strength"
           />
-          <button onClick={() => move(i, -1)} disabled={i === 0} title="위로">↑</button>
-          <button onClick={() => move(i, 1)} disabled={i === loras.length - 1} title="아래로">↓</button>
-          <button onClick={() => remove(i)} title="제거">✕</button>
+          <button onClick={() => move(i, -1)} disabled={i === 0} title="Move up">↑</button>
+          <button onClick={() => move(i, 1)} disabled={i === loras.length - 1} title="Move down">↓</button>
+          <button onClick={() => remove(i)} title="Remove">✕</button>
         </div>
       ))}
-      <button className="add-lora" onClick={add}>+ 로라 추가</button>
+      <button className="add-lora" onClick={add}>+ Add LoRA</button>
     </div>
   )
 }

@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { NumberField } from '../../components/controls'
+import { StyleDrawer } from '../../components/StyleDrawer'
 import { useBatch } from '../../stores/batch'
 
 export function BatchTab() {
@@ -7,6 +9,7 @@ export function BatchTab() {
     setCount, addVariation, updateVariation, removeVariation,
     start, stop, confirmSlot,
   } = useBatch()
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
   const total = slots.length
   const done = slots.filter((s) => s.status === 'done').length
@@ -15,31 +18,35 @@ export function BatchTab() {
   return (
     <div className="batch">
       <div className="batch-panel">
-        <div className="field-label">변형 목록 (현재 작업대 설정 + 변형 프롬프트)</div>
+        <div className="preset-row">
+          <button className="styles-open" onClick={() => setDrawerOpen(true)}
+            title="Browse styles and apply to the base settings">▤ Styles</button>
+        </div>
+        <div className="field-label">Variations (workbench settings + extra prompt)</div>
         {variations.map((v) => (
           <div key={v.id} className="variation-row">
             <input className="var-label" value={v.label}
               onChange={(e) => updateVariation(v.id, { label: e.target.value })} />
-            <textarea rows={2} value={v.prompt} placeholder="추가 프롬프트 (예: standing, smile)"
+            <textarea rows={2} value={v.prompt} placeholder="Extra prompt (e.g. standing, smile)"
               onChange={(e) => updateVariation(v.id, { prompt: e.target.value })} />
             <button onClick={() => removeVariation(v.id)} disabled={running}>✕</button>
           </div>
         ))}
-        <button onClick={addVariation} disabled={running}>+ 변형 추가</button>
+        <button onClick={addVariation} disabled={running}>+ Add variation</button>
 
-        <NumberField label="변형당 수량" value={count} min={1} max={64}
+        <NumberField label="Images per variation" value={count} min={1} max={64}
           onChange={setCount} />
 
         {running ? (
-          <button className="generate stop" onClick={stop}>중단</button>
+          <button className="generate stop" onClick={stop}>Stop</button>
         ) : (
           <button className="generate" onClick={start}>
-            전체 생성 ({variations.length} × {count} = {variations.length * count}장)
+            Generate all ({variations.length} × {count} = {variations.length * count})
           </button>
         )}
         {total > 0 && (
           <div className="batch-progress">
-            생성 {done}/{total} · 확정 {confirmedCount}/{variations.length}
+            Generated {done}/{total} · Confirmed {confirmedCount}/{variations.length}
           </div>
         )}
       </div>
@@ -52,19 +59,19 @@ export function BatchTab() {
             <div key={v.id} className="batch-row">
               <div className="batch-row-header">
                 {v.label}
-                {confirmed[v.id] && <span className="confirmed-mark"> ✓ 확정됨</span>}
+                {confirmed[v.id] && <span className="confirmed-mark"> ✓ confirmed</span>}
               </div>
               <div className="batch-slots">
                 {rowSlots.map((s) => (
                   <button key={s.id}
                     className={`batch-slot ${s.status}${confirmed[v.id] === s.id ? ' confirmed' : ''}`}
                     onClick={() => confirmSlot(s)}
-                    title={s.seed != null ? `seed ${s.seed} — 클릭해서 확정` : ''}>
+                    title={s.seed != null ? `seed ${s.seed} — click to confirm` : ''}>
                     {s.status === 'done' && s.imageUrls[0] ? (
                       <img src={s.imageUrls[0]} alt="" loading="lazy" />
                     ) : (
                       <span className="slot-state">
-                        {s.status === 'idle' ? '대기' : s.status === 'queued' ? '생성 중…' : '✕'}
+                        {s.status === 'idle' ? 'waiting' : s.status === 'queued' ? 'generating…' : '✕'}
                       </span>
                     )}
                   </button>
@@ -75,10 +82,13 @@ export function BatchTab() {
         })}
         {slots.length === 0 && (
           <div className="placeholder" style={{ padding: 40 }}>
-            작업대에서 스타일·파라미터를 설정한 뒤, 변형 목록을 만들고 전체 생성을 누르세요.
+            Set up your style and parameters in the Workbench, define variations here,
+            then hit Generate all.
           </div>
         )}
       </div>
+
+      <StyleDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </div>
   )
 }

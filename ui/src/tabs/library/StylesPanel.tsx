@@ -3,6 +3,7 @@ import { styleImageUrl, uploadStyle, type StyleRecord } from '../../api/library'
 import { Lightbox } from '../../components/Lightbox'
 import { StyleEditModal } from '../../components/StyleEditModal'
 import { useLibrary } from '../../stores/library'
+import { useUi } from '../../stores/ui'
 import { previewPosition, type PreviewState } from './LorasPanel'
 
 const parseTags = (tags: string) => tags.split(',').map((t) => t.trim()).filter(Boolean)
@@ -11,7 +12,7 @@ export function StylesPanel() {
   const {
     styles, loras, styleView, nsfwBlur, tagFilter, styleLoraFilter,
     setStyleView, setNsfwBlur, toggleTag, clearJumps, jumpToLora,
-    load, applyStyle,
+    load, applyStyle, renameStyle,
   } = useLibrary()
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<StyleRecord | null>(null)
@@ -20,6 +21,8 @@ export function StylesPanel() {
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [preview, setPreview] = useState<PreviewState | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [renaming, setRenaming] = useState<number | null>(null)
+  const [renameVal, setRenameVal] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
   const filtered = useMemo(() => {
@@ -41,7 +44,7 @@ export function StylesPanel() {
     setUploading(true)
     for (const f of files) {
       const r = await uploadStyle(f)
-      if (!r.ok) alert(`업로드 실패 (${f.name}): ${r.error ?? '워크플로우 메타데이터 없음?'}`)
+      if (!r.ok) alert(`Upload failed (${f.name}): ${r.error ?? 'no embedded workflow metadata?'}`)
     }
     setUploading(false)
     load()
@@ -68,6 +71,12 @@ export function StylesPanel() {
     setPreview({ url: styleImageUrl(s.image_file), video: false, ...pos })
   }
 
+  const commitRename = async (id: number) => {
+    const name = renameVal.trim()
+    setRenaming(null)
+    if (name) await renameStyle(id, name)
+  }
+
   const filterLoraName = styleLoraFilter
     ? loras.find((l) => l.rel_path === styleLoraFilter)?.name || styleLoraFilter
     : null
@@ -87,37 +96,50 @@ export function StylesPanel() {
             <img src={styleImageUrl(s.image_file)} alt={s.name} loading="lazy"
               onClick={() => onThumbClick(s)} />
           ) : (
-            <div className="thumb-missing">이미지 없음</div>
+            <div className="thumb-missing">no image</div>
           )}
-          {blurred && <div className="reveal-overlay" onClick={() => reveal(s)}>클릭해서 표시</div>}
+          {blurred && <div className="reveal-overlay" onClick={() => reveal(s)}>Click to reveal</div>}
           {!!s.nsfw && <span className="nsfw-tag">NSFW</span>}
         </div>
         <div className="card-body">
-          <div className="card-name" title={s.name}>{s.name || '(이름 없음)'}</div>
+          {renaming === s.id ? (
+            <input className="rename-input" autoFocus value={renameVal}
+              onChange={(e) => setRenameVal(e.target.value)}
+              onBlur={() => commitRename(s.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename(s.id)
+                if (e.key === 'Escape') setRenaming(null)
+              }} />
+          ) : (
+            <div className="card-name" title={`${s.name || '(untitled)'} — double-click to rename`}
+              onDoubleClick={() => { setRenaming(s.id); setRenameVal(s.name) }}>
+              {s.name || '(untitled)'}
+            </div>
+          )}
           {tags.length > 0 && (
             <div className="chips">
               {tags.map((t) => (
                 <span key={t} className={`chip tag${tagFilter.includes(t) ? ' active' : ''}`}
-                  title="태그로 필터" onClick={() => toggleTag(t)}>{t}</span>
+                  title="Filter by tag" onClick={() => toggleTag(t)}>{t}</span>
               ))}
             </div>
           )}
           <div className="chips">
             {s.checkpoint
               ? <span className="chip ckpt" title={s.checkpoint}>{s.checkpoint}</span>
-              : <span className="chip empty">베이스 모델 없음</span>}
+              : <span className="chip empty">base model not detected</span>}
           </div>
           <div className="chips">
             {styleLoraList.length === 0 ? (
-              <span className="chip empty">로라 없음</span>
+              <span className="chip empty">no LoRAs detected</span>
             ) : (
               <>
                 {shownLoras.map((l, i) => (
                   <span key={i}
                     className={`chip${l.enabled ? '' : ' off'}`}
                     title={l.lora_rel_path
-                      ? `${l.lora_rel_path} — 클릭해서 로라로 이동`
-                      : `${l.display_name} (DB에 없음)`}
+                      ? `${l.lora_rel_path} — click to jump to LoRA`
+                      : `${l.display_name} (not in library)`}
                     onClick={() => l.lora_rel_path && jumpToLora(l.lora_rel_path)}>
                     <span className="strength">{l.strength}</span>
                     {(l.display_name || l.lora_rel_path).replace(/\.safetensors$/, '')}
@@ -125,15 +147,18 @@ export function StylesPanel() {
                 ))}
                 {styleLoraList.length > 1 && (
                   <span className="chip toggle" onClick={() => toggleExpand(s.id)}>
-                    {isExp ? '접기 ▲' : `+${styleLoraList.length - 1} ▼`}
+                    {isExp ? 'collapse ▲' : `+${styleLoraList.length - 1} ▼`}
                   </span>
                 )}
               </>
             )}
           </div>
           <div className="card-actions">
-            <button title="이 스타일의 설정을 작업대에 적용" onClick={() => applyStyle(s)}>작업대에 적용</button>
-            <button title="편집" onClick={() => setEditing(s)}>✎</button>
+            <button title="Apply this style's settings and open the Workbench"
+              onClick={() => { applyStyle(s); useUi.getState().setTab('workbench') }}>
+              Apply
+            </button>
+            <button title="Edit" onClick={() => setEditing(s)}>✎</button>
           </div>
         </div>
       </div>
@@ -143,39 +168,39 @@ export function StylesPanel() {
   return (
     <section className="lib-panel">
       <div className="lib-header">
-        <h3>스타일 ({filtered.length}/{styles.length})</h3>
+        <h3>Styles ({filtered.length}/{styles.length})</h3>
         <span className="search-wrap">
-          <input placeholder="검색 (이름/태그/프롬프트)" value={query}
+          <input placeholder="Search (name/tags/prompt)" value={query}
             onChange={(e) => setQuery(e.target.value)} />
           {query && <button className="search-clear" onClick={() => setQuery('')}>×</button>}
         </span>
         <button onClick={() => fileRef.current?.click()} disabled={uploading}
-          title="ComfyUI 출력 PNG에서 워크플로우를 추출해 스타일로 등록 (드래그앤드롭도 가능)">
-          {uploading ? '업로드 중…' : '+ 등록'}
+          title="Register a ComfyUI output PNG as a style (drag & drop also works)">
+          {uploading ? 'Uploading…' : '+ Add'}
         </button>
         <input ref={fileRef} type="file" accept="image/png" multiple hidden
           onChange={(e) => e.target.files && doUpload(e.target.files)} />
         <button onClick={() => setStyleView(styleView === 'grid' ? 'list' : 'grid')}
-          title="그리드/리스트 전환">{styleView === 'grid' ? '☰' : '▦'}</button>
-        <label className="checkbox" title="NSFW 썸네일 블러">
-          <input type="checkbox" checked={nsfwBlur} onChange={(e) => setNsfwBlur(e.target.checked)} /> 블러
+          title="Toggle grid/list">{styleView === 'grid' ? '☰' : '▦'}</button>
+        <label className="checkbox" title="Blur NSFW thumbnails">
+          <input type="checkbox" checked={nsfwBlur} onChange={(e) => setNsfwBlur(e.target.checked)} /> Blur
         </label>
       </div>
 
       {tagFilter.length > 0 && (
         <div className="filter-bar">
-          <span className="filter-label">태그 필터:</span>
+          <span className="filter-label">Tag filter:</span>
           {tagFilter.map((t) => (
             <span key={t} className="chip tag active" onClick={() => toggleTag(t)}>{t}</span>
           ))}
-          <button className="filter-clear" onClick={() => tagFilter.forEach(toggleTag)}>모두 해제</button>
+          <button className="filter-clear" onClick={() => tagFilter.forEach(toggleTag)}>clear all</button>
         </div>
       )}
 
       {filterLoraName && (
         <div className="jump-banner">
-          로라 <b>{filterLoraName}</b> 사용 스타일만 표시
-          <button onClick={clearJumps}>해제</button>
+          Showing styles using <b>{filterLoraName}</b>
+          <button onClick={clearJumps}>clear</button>
         </div>
       )}
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { enumValues, fetchNodeInfo, uploadImage } from '../../api/comfy'
 import { saveSettings } from '../../api/settings'
 import { NumberField, SelectField } from '../../components/controls'
+import { StyleDrawer } from '../../components/StyleDrawer'
 import { useWorkbench } from '../../stores/workbench'
 import { HIRES_DEFAULTS } from '../../workflow/defaults'
 import type { GenMode } from '../../workflow/types'
@@ -10,13 +11,8 @@ import { LoraStack } from './LoraStack'
 const MODES: { id: GenMode; label: string }[] = [
   { id: 't2i', label: 'T2I' },
   { id: 'i2i', label: 'I2I' },
-  { id: 'inpaint', label: '인페인트' },
+  { id: 'inpaint', label: 'Inpaint' },
 ]
-
-const sourcePreviewUrl = (name: string) => {
-  const [sub, file] = name.includes('/') ? name.split(/\/(.+)/) : ['', name]
-  return `/view?filename=${encodeURIComponent(file)}&subfolder=${encodeURIComponent(sub)}&type=input`
-}
 
 const RESOLUTION_PRESETS: [number, number][] = [
   [1216, 832],
@@ -24,6 +20,11 @@ const RESOLUTION_PRESETS: [number, number][] = [
   [1024, 1024],
   [1152, 896],
 ]
+
+const sourcePreviewUrl = (name: string) => {
+  const [sub, file] = name.includes('/') ? name.split(/\/(.+)/) : ['', name]
+  return `/view?filename=${encodeURIComponent(file)}&subfolder=${encodeURIComponent(sub)}&type=input`
+}
 
 interface Meta {
   unets: string[]
@@ -46,6 +47,8 @@ export function ParamsPanel() {
   const error = useWorkbench((s) => s.error)
   const [meta, setMeta] = useState<Meta | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [savedNote, setSavedNote] = useState(false)
 
   useEffect(() => {
     Promise.all(
@@ -73,13 +76,16 @@ export function ParamsPanel() {
 
   return (
     <div className="params-panel">
-      <div className="preset-row">
+      <div className="preset-row mode-row">
         {MODES.map((m) => (
           <button key={m.id} className={params.mode === m.id ? 'active' : ''}
             onClick={() => set({ mode: m.id, ...(m.id === 't2i' ? { sourceImage: undefined, maskImage: undefined } : {}) })}>
             {m.label}
           </button>
         ))}
+        <span style={{ flex: 1 }} />
+        <button className="styles-open" onClick={() => setDrawerOpen(true)}
+          title="Browse styles and apply to current settings">▤ Styles</button>
       </div>
 
       {params.mode !== 't2i' && (
@@ -89,15 +95,15 @@ export function ParamsPanel() {
           ) : (
             <div className="placeholder">
               {params.mode === 'inpaint'
-                ? '결과 이미지의 "인페인트" 버튼으로 마스크를 그리거나, 이미지를 불러오세요'
-                : '결과 이미지의 "i2i로" 버튼을 쓰거나, 이미지를 불러오세요'}
+                ? 'Draw a mask via "Inpaint" on a result image, or load an image'
+                : 'Use "To I2I" on a result image, or load an image'}
             </div>
           )}
           <input type="file" accept="image/*"
             onChange={(e) => e.target.files?.[0] && uploadSource(e.target.files[0])} />
           {params.mode === 'inpaint' && (
             <div className={`mask-status${params.maskImage ? ' ok' : ''}`}>
-              {params.maskImage ? '✓ 마스크 적용됨' : '마스크 없음 — 결과 이미지에서 "인페인트"로 그려주세요'}
+              {params.maskImage ? '✓ Mask applied' : 'No mask — draw one via "Inpaint" on a result image'}
             </div>
           )}
           <NumberField label="denoise" value={params.denoise} min={0} max={1} step={0.05}
@@ -105,18 +111,18 @@ export function ParamsPanel() {
         </div>
       )}
 
-      <SelectField label="모델 (UNet)" value={params.unet} options={meta?.unets ?? []}
+      <SelectField label="Model (UNet)" value={params.unet} options={meta?.unets ?? []}
         onChange={(v) => set({ unet: v })} />
 
       <LoraStack available={meta?.loras ?? []} />
 
-      <div className="field-label">프롬프트</div>
+      <div className="field-label">Prompt</div>
       <textarea rows={8} value={params.positive} placeholder="positive"
         onChange={(e) => set({ positive: e.target.value })} />
       <textarea rows={4} value={params.negative} placeholder="negative"
         onChange={(e) => set({ negative: e.target.value })} />
 
-      <div className="field-label">해상도</div>
+      <div className="field-label">Resolution</div>
       <div className="preset-row">
         {RESOLUTION_PRESETS.map(([w, h]) => (
           <button key={`${w}x${h}`}
@@ -139,12 +145,12 @@ export function ParamsPanel() {
           onChange={(v) => set({ seed: v })} />
         <label className="checkbox">
           <input type="checkbox" checked={randomizeSeed}
-            onChange={(e) => setRandomize(e.target.checked)} /> 랜덤
+            onChange={(e) => setRandomize(e.target.checked)} /> Random
         </label>
       </div>
 
       <button className="toggle-advanced" onClick={() => setShowAdvanced(!showAdvanced)}>
-        {showAdvanced ? '▾ 고급 설정 접기' : '▸ 고급 설정'}
+        {showAdvanced ? '▾ Hide advanced' : '▸ Advanced'}
       </button>
       {showAdvanced && (
         <>
@@ -160,15 +166,17 @@ export function ParamsPanel() {
             <SelectField label="VAE" value={params.vae} options={meta?.vaes ?? []}
               onChange={(v) => set({ vae: v })} />
           </div>
-          <NumberField label="batch" value={params.batchSize} min={1} max={16}
+          <NumberField label="batch size" value={params.batchSize} min={1} max={16}
             onChange={(v) => set({ batchSize: v })} />
 
-          <label className="checkbox" title={meta?.spectrumAvailable === false ? 'comfyui-spectrum-ksampler 노드가 로드되지 않았습니다' : 'DiT Spectrum Patch — 약 2-3배 가속'}>
+          <label className="checkbox" title={meta?.spectrumAvailable === false
+            ? 'comfyui-spectrum-ksampler nodes are not loaded'
+            : 'DiT Spectrum Patch — roughly 1.5-3x faster sampling'}>
             <input type="checkbox"
               checked={params.spectrum?.enabled ?? false}
               disabled={meta?.spectrumAvailable === false}
               onChange={(e) => set({ spectrum: { enabled: e.target.checked } })} />
-            {' '}Spectrum 가속{meta?.spectrumAvailable === false ? ' (노드 없음)' : ''}
+            {' '}Spectrum acceleration{meta?.spectrumAvailable === false ? ' (node missing)' : ''}
           </label>
 
           <label className="checkbox">
@@ -178,17 +186,17 @@ export function ParamsPanel() {
           {hires.enabled && (
             <>
               <div className="grid-2">
-                <SelectField label="방식" value={hires.method}
+                <SelectField label="method" value={hires.method}
                   options={['latent2pass', 'usdu']}
                   onChange={(v) => setHires({ method: v as 'latent2pass' | 'usdu' })} />
-                <NumberField label="배율" value={hires.scale} min={1} max={4} step={0.25}
+                <NumberField label="scale" value={hires.scale} min={1} max={4} step={0.25}
                   onChange={(v) => setHires({ scale: v })} />
               </div>
               <div className="grid-2">
                 <NumberField label="hires denoise" value={hires.denoise} min={0} max={1} step={0.05}
                   onChange={(v) => setHires({ denoise: v })} />
                 {hires.method === 'usdu' && (
-                  <SelectField label="업스케일 모델" value={hires.upscaleModel ?? ''}
+                  <SelectField label="upscale model" value={hires.upscaleModel ?? ''}
                     options={meta?.upscaleModels ?? []}
                     onChange={(v) => setHires({ upscaleModel: v })} />
                 )}
@@ -199,16 +207,20 @@ export function ParamsPanel() {
           <button onClick={async () => {
             const { unet, clip, vae, sampler, scheduler, steps, cfg, width, height } = params
             await saveSettings({ unet, clip, vae, sampler, scheduler, steps, cfg, width, height })
+            setSavedNote(true)
+            setTimeout(() => setSavedNote(false), 1500)
           }}>
-            현재 모델·샘플러 설정을 기본값으로 저장
+            {savedNote ? '✓ Saved' : 'Save model & sampler settings as defaults'}
           </button>
         </>
       )}
 
       <button className="generate" onClick={generate}>
-        {progress ? `생성 중 ${progress.value}/${progress.max}` : '생성'}
+        {progress ? `Generating ${progress.value}/${progress.max}` : 'Generate'}
       </button>
       {error && <pre className="error">{error}</pre>}
+
+      <StyleDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </div>
   )
 }

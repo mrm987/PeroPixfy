@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { uploadImage } from '../../api/comfy'
 import { MaskEditor } from '../../components/MaskEditor'
-import { useWorkbench } from '../../stores/workbench'
+import { SaveStyleModal } from '../../components/SaveStyleModal'
+import { useWorkbench, type HistoryItem } from '../../stores/workbench'
 import { ParamsPanel } from './ParamsPanel'
 
 async function fetchAsBlob(url: string): Promise<Blob> {
@@ -10,6 +11,7 @@ async function fetchAsBlob(url: string): Promise<Blob> {
 
 export function WorkbenchTab() {
   const [maskTarget, setMaskTarget] = useState<string | null>(null)
+  const [saveTarget, setSaveTarget] = useState<HistoryItem | null>(null)
   const history = useWorkbench((s) => s.history)
   const selectedId = useWorkbench((s) => s.selectedId)
   const select = useWorkbench((s) => s.select)
@@ -44,31 +46,34 @@ export function WorkbenchTab() {
           {selected?.status === 'done' && selected.imageUrls.length > 0 ? (
             <img src={selected.imageUrls[0]} alt="result" />
           ) : selected?.status === 'pending' ? (
-            <div className="placeholder">생성 중…</div>
+            <div className="placeholder">Generating…</div>
           ) : selected?.status === 'error' ? (
-            <div className="placeholder error">생성 실패</div>
+            <div className="placeholder error">Generation failed</div>
           ) : (
-            <div className="placeholder">결과가 여기에 표시됩니다</div>
+            <div className="placeholder">Results will appear here</div>
           )}
         </div>
         {selected && (
           <div className="result-meta">
             <span>seed {selected.params.seed}</span>
-            <button onClick={() => restore(selected.params)}>이 설정으로</button>
+            <button onClick={() => restore(selected.params)} title="Load this result's settings back into the panel">
+              Reuse settings
+            </button>
             <button className={selected.starred ? 'starred' : ''} onClick={() => star(selected.promptId)}>
               {selected.starred ? '★' : '☆'}
             </button>
             {selected.imageUrls[0] && (
               <>
-                <button onClick={() => sendToI2i(selected.imageUrls[0])}>i2i로</button>
-                <button onClick={() => setMaskTarget(selected.imageUrls[0])}>인페인트</button>
+                <button onClick={() => setSaveTarget(selected)}
+                  title="Save this result's model, prompts and LoRA stack as a style">Save as style</button>
+                <button onClick={() => sendToI2i(selected.imageUrls[0])}>To I2I</button>
+                <button onClick={() => setMaskTarget(selected.imageUrls[0])}>Inpaint</button>
               </>
             )}
-            <button onClick={() => remove(selected.promptId)} title="기록에서 제거 (파일은 유지)">삭제</button>
+            <button onClick={() => remove(selected.promptId)} title="Remove from history (files are kept)">
+              Delete
+            </button>
           </div>
-        )}
-        {maskTarget && (
-          <MaskEditor imageUrl={maskTarget} onApply={applyMask} onClose={() => setMaskTarget(null)} />
         )}
         {history.length > 0 && (
           <div className="history-strip">
@@ -85,6 +90,12 @@ export function WorkbenchTab() {
               </button>
             ))}
           </div>
+        )}
+        {maskTarget && (
+          <MaskEditor imageUrl={maskTarget} onApply={applyMask} onClose={() => setMaskTarget(null)} />
+        )}
+        {saveTarget && (
+          <SaveStyleModal item={saveTarget} onClose={() => setSaveTarget(null)} />
         )}
       </div>
     </div>

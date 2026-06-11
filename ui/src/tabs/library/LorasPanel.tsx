@@ -5,9 +5,9 @@ import { LoraEditModal } from '../../components/LoraEditModal'
 import { useLibrary, type LoraSort } from '../../stores/library'
 
 const SORTS: { id: LoraSort; label: string }[] = [
-  { id: 'recent', label: '추가순' },
-  { id: 'name', label: '이름순' },
-  { id: 'favorite', label: '즐겨찾기 우선' },
+  { id: 'recent', label: 'Recently added' },
+  { id: 'name', label: 'Name' },
+  { id: 'favorite', label: 'Favorites first' },
 ]
 
 const displayName = (l: LoraRecord) => l.name || l.file_name
@@ -80,7 +80,7 @@ export function LorasPanel() {
 
   const copyText = async (text: string) => {
     await navigator.clipboard.writeText(text)
-    showToast(`복사됨: ${text.length > 40 ? text.slice(0, 40) + '…' : text}`)
+    showToast(`Copied: ${text.length > 40 ? text.slice(0, 40) + '…' : text}`)
   }
 
   const isBlurred = (l: LoraRecord) => nsfwBlur && !!l.nsfw && !revealed.has(l.rel_path)
@@ -124,12 +124,12 @@ export function LorasPanel() {
           ) : (
             <div className="thumb-missing">{l.file_name}</div>
           )}
-          {blurred && <div className="reveal-overlay" onClick={() => reveal(l)}>클릭해서 표시</div>}
-          <button className={`fav${l.favorite ? ' on' : ''}`} title="즐겨찾기"
+          {blurred && <div className="reveal-overlay" onClick={() => reveal(l)}>Click to reveal</div>}
+          <button className={`fav${l.favorite ? ' on' : ''}`} title="Favorite"
             onClick={() => toggleFavorite(l.rel_path)}>★</button>
           {!!l.nsfw && <span className="nsfw-tag">NSFW</span>}
           {hasUpdate(l) && (
-            <span className="update-tag" title={`새 버전: ${l.latest_version_name}`}>⬆ UPDATE</span>
+            <span className="update-tag" title={`New version: ${l.latest_version_name}`}>⬆ UPDATE</span>
           )}
         </div>
         <div className="card-body">
@@ -138,30 +138,30 @@ export function LorasPanel() {
           {triggers.length > 0 && (
             <div className="chips">
               {shown.map((t) => (
-                <span key={t} className="chip" title="클릭해서 복사" onClick={() => copyText(t)}>{t}</span>
+                <span key={t} className="chip" title="Click to copy" onClick={() => copyText(t)}>{t}</span>
               ))}
               {triggers.length > 1 && (
                 <span className="chip toggle" onClick={() => toggleExpand(l.rel_path)}>
-                  {isExp ? '접기 ▲' : `+${triggers.length - 1} ▼`}
+                  {isExp ? 'collapse ▲' : `+${triggers.length - 1} ▼`}
                 </span>
               )}
             </div>
           )}
           {l.style_count > 0 && (
             <div className="chips">
-              <span className="chip styles-badge" title="이 로라를 쓰는 스타일 보기"
+              <span className="chip styles-badge" title="Show styles using this LoRA"
                 onClick={() => jumpToStylesUsing(l.rel_path)}>
-                스타일 {l.style_count}개에서 사용
+                Used in {l.style_count} style{l.style_count > 1 ? 's' : ''}
               </span>
             </div>
           )}
           <div className="card-actions">
-            <button title="작업대 스택에 추가" onClick={() => addLoraToWorkbench(l.rel_path)}>＋ 스택</button>
-            <button title="트리거 전체 복사" disabled={!l.trigger_words}
+            <button title="Add to workbench LoRA stack" onClick={() => addLoraToWorkbench(l.rel_path)}>＋ Stack</button>
+            <button title="Copy all trigger words" disabled={!l.trigger_words}
               onClick={() => copyText(l.trigger_words)}>⧉</button>
-            <button title="CivitAI에서 열기" disabled={!l.civitai_url}
+            <button title="Open on CivitAI" disabled={!l.civitai_url}
               onClick={() => window.open(l.civitai_url, '_blank')}>↗</button>
-            <button title="편집" onClick={() => setEditing(l)}>✎</button>
+            <button title="Edit" onClick={() => setEditing(l)}>✎</button>
           </div>
         </div>
       </div>
@@ -181,34 +181,34 @@ export function LorasPanel() {
   return (
     <section className="lib-panel">
       <div className="lib-header">
-        <h3>로라 ({filtered.length}/{loras.length})</h3>
+        <h3>LoRAs ({filtered.length}/{loras.length})</h3>
         <span className="search-wrap">
-          <input placeholder="검색 (이름/트리거/베이스)" value={query}
+          <input placeholder="Search (name/trigger/base)" value={query}
             onChange={(e) => setQuery(e.target.value)} />
           {query && <button className="search-clear" onClick={() => setQuery('')}>×</button>}
         </span>
         <select value={category} onChange={(e) => setCategory(e.target.value)}>
-          <option value="">모든 베이스</option>
+          <option value="">All bases</option>
           {categories.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         <select value={sort} onChange={(e) => setSort(e.target.value as LoraSort)}>
           {SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
         <label className="checkbox"><input type="checkbox" checked={favOnly}
-          onChange={(e) => setFavOnly(e.target.checked)} /> ★만</label>
-        <label className="checkbox" title="새 버전이 있는 로라만">
+          onChange={(e) => setFavOnly(e.target.checked)} /> ★ only</label>
+        <label className="checkbox" title="Only LoRAs with a newer version on CivitAI">
           <input type="checkbox" checked={updatesOnly}
-            onChange={(e) => setUpdatesOnly(e.target.checked)} /> 업데이트만</label>
-        <button onClick={() => rescan()} disabled={scan?.scanning} title="로라 폴더 재스캔">
-          {scan?.scanning ? `스캔 ${scan.done}/${scan.total}` : '스캔'}
+            onChange={(e) => setUpdatesOnly(e.target.checked)} /> Updates</label>
+        <button onClick={() => rescan()} disabled={scan?.scanning} title="Rescan LoRA folders">
+          {scan?.scanning ? `Scanning ${scan.done}/${scan.total}` : 'Scan'}
         </button>
-        <button onClick={checkUpdates} disabled={update?.checking} title="CivitAI에서 새 버전 확인">
-          {update?.checking ? `확인 ${update.done}/${update.total}` : '업데이트 체크'}
+        <button onClick={checkUpdates} disabled={update?.checking} title="Check CivitAI for new versions">
+          {update?.checking ? `Checking ${update.done}/${update.total}` : 'Check updates'}
         </button>
         <button onClick={() => setLoraView(loraView === 'grid' ? 'list' : 'grid')}
-          title="그리드/리스트 전환">{loraView === 'grid' ? '☰' : '▦'}</button>
-        <label className="checkbox" title="NSFW 썸네일 블러">
-          <input type="checkbox" checked={nsfwBlur} onChange={(e) => setNsfwBlur(e.target.checked)} /> 블러
+          title="Toggle grid/list">{loraView === 'grid' ? '☰' : '▦'}</button>
+        <label className="checkbox" title="Blur NSFW thumbnails">
+          <input type="checkbox" checked={nsfwBlur} onChange={(e) => setNsfwBlur(e.target.checked)} /> Blur
         </label>
       </div>
 
@@ -216,14 +216,15 @@ export function LorasPanel() {
 
       {update && !update.checking && update.total > 0 && (
         <div className="lib-meta">
-          업데이트 체크 완료: 새 버전 {update.updates}개{update.errors > 0 && `, 오류 ${update.errors}`}
+          Update check done: {update.updates} new version{update.updates !== 1 ? 's' : ''}
+          {update.errors > 0 && `, ${update.errors} errors`}
         </div>
       )}
 
       {loraExactFilter && (
         <div className="jump-banner">
-          선택한 로라만 표시 중
-          <button onClick={clearJumps}>해제</button>
+          Showing selected LoRA only
+          <button onClick={clearJumps}>clear</button>
         </div>
       )}
 
@@ -234,11 +235,11 @@ export function LorasPanel() {
           <>
             {favs.length > 0 && (
               <>
-                <div className="grid-section fav">★ 즐겨찾기 {favs.length}</div>
+                <div className="grid-section fav">★ Favorites {favs.length}</div>
                 {grid(favs)}
               </>
             )}
-            <div className={`grid-section${favs.length > 0 ? ' rest' : ''}`}>전체 {rest.length}</div>
+            <div className={`grid-section${favs.length > 0 ? ' rest' : ''}`}>All {rest.length}</div>
             {grid(rest)}
           </>
         )}

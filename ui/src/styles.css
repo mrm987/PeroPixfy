@@ -3,8 +3,8 @@
   --bg: #16161a;
   --panel: #1e1e24;
   --border: #2e2e36;
-  --fg: #e8e8ee;
-  --muted: #9a9aa6;
+  --fg: #ececf1;
+  --muted: #a8a8b6;
   --accent: #7c6cf0;
   --error: #e05555;
 }
@@ -15,8 +15,10 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Segoe UI', 'Malgun Gothic', system-ui, sans-serif;
   font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 input, select, textarea, button {
@@ -247,7 +249,8 @@ button:disabled { opacity: 0.4; cursor: default; }
   0% { box-shadow: 0 0 0 3px #fbbf24, 0 0 18px rgba(251, 191, 36, 0.55); }
   100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
 }
-.highlighted { animation: card-flash 1.6s ease-out; }
+/* z-index를 올려야 글로우가 이웃 카드 밑에 깔리지 않고 테두리를 정확히 따라감 */
+.highlighted { animation: card-flash 1.6s ease-out; position: relative; z-index: 2; }
 
 /* 썸네일 (3:4, padding-top 133.33%) */
 .thumb-wrap { position: relative; width: 100%; padding-top: 133.33%; background: #111; overflow: hidden; flex-shrink: 0; }
@@ -329,7 +332,8 @@ button:disabled { opacity: 0.4; cursor: default; }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.card-base { color: var(--muted); font-size: 10px; }
+.card-base { color: var(--muted); font-size: 11px; }
+.rename-input { font-size: 12px; padding: 2px 5px; width: 100%; }
 .card-actions { display: flex; gap: 4px; margin-top: auto; }
 .card-actions button {
   flex: 1;
@@ -350,8 +354,9 @@ button:disabled { opacity: 0.4; cursor: default; }
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 1px 5px;
-  font-size: 10px;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.5;
   cursor: pointer;
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -454,6 +459,51 @@ button:disabled { opacity: 0.4; cursor: default; }
   z-index: 12000;
   font-size: 12px;
 }
+
+/* 스타일 드로어 (작업대/배치에서 스타일 비교·적용) */
+.styles-open { white-space: nowrap; }
+.drawer-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); z-index: 90; }
+.style-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  z-index: 95;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+}
+.drawer-header { display: flex; gap: 8px; align-items: center; }
+.drawer-header h3 { margin: 0; font-size: 14px; }
+.drawer-header input { flex: 1; height: 28px; padding: 4px 8px; font-size: 12px; }
+.drawer-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.drawer-card {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px;
+}
+.drawer-card .thumb-wrap { width: 84px; height: 112px; padding-top: 0; border-radius: 6px; }
+.drawer-card-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.drawer-card .apply {
+  margin-top: auto;
+  font-size: 11px;
+  padding: 4px;
+  background: var(--accent);
+  border: none;
+  border-radius: 5px;
+  color: #fff;
+}
+
+.save-style-preview { max-height: 200px; object-fit: contain; border-radius: 6px; align-self: center; }
 
 button.danger { color: #ef4444; border-color: #7f1d1d; }
 button.danger:hover { background: #7f1d1d; color: #fff; border-color: #7f1d1d; }

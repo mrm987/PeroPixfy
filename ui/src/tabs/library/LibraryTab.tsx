@@ -5,9 +5,9 @@ import { LorasPanel } from './LorasPanel'
 import { StylesPanel } from './StylesPanel'
 
 const MODES: { id: LibMode; label: string }[] = [
-  { id: 'split', label: '분할' },
-  { id: 'styles', label: '스타일' },
-  { id: 'loras', label: '로라' },
+  { id: 'split', label: 'Split' },
+  { id: 'styles', label: 'Styles' },
+  { id: 'loras', label: 'LoRAs' },
 ]
 
 export function LibraryTab() {
@@ -28,7 +28,7 @@ export function LibraryTab() {
     if (files.length === 0) return
     for (const f of files) {
       const r = await uploadStyle(f)
-      if (!r.ok) alert(`업로드 실패 (${f.name}): ${r.error ?? '워크플로우 메타데이터 없음?'}`)
+      if (!r.ok) alert(`Upload failed (${f.name}): ${r.error ?? 'no embedded workflow metadata?'}`)
     }
     load()
   }
@@ -52,7 +52,7 @@ export function LibraryTab() {
       </div>
       {dragging && (
         <div className="drop-overlay">
-          <div className="drop-overlay-msg">PNG를 놓으면 스타일로 등록됩니다 (워크플로우 메타데이터 필요)</div>
+          <div className="drop-overlay-msg">Drop PNG to register as a style (needs embedded workflow)</div>
         </div>
       )}
     </div>

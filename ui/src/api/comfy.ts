@@ -80,6 +80,14 @@ export function viewUrl(img: OutputImage): string {
   return `/view?${q}`
 }
 
+/** viewUrl()의 역변환 — 갤러리 기록에서 파일 참조를 복원할 때 사용. */
+export function parseViewUrl(url: string): OutputImage | undefined {
+  const q = new URLSearchParams(url.split('?')[1] ?? '')
+  const filename = q.get('filename')
+  if (!filename) return undefined
+  return { filename, subfolder: q.get('subfolder') ?? '', type: q.get('type') ?? 'output' }
+}
+
 export interface NodeObjectInfo {
   input: {
     required?: Record<string, unknown[]>

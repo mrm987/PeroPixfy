@@ -80,7 +80,7 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
   }
 
   return {
-    variations: [{ id: uid(), label: '변형 1', prompt: '' }],
+    variations: [{ id: uid(), label: 'Variation 1', prompt: '' }],
     count: 4,
     slots: [],
     running: false,
@@ -89,7 +89,7 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
     setCount: (n) => set({ count: Math.max(1, Math.min(64, n)) }),
     addVariation: () =>
       set((s) => ({
-        variations: [...s.variations, { id: uid(), label: `변형 ${s.variations.length + 1}`, prompt: '' }],
+        variations: [...s.variations, { id: uid(), label: `Variation ${s.variations.length + 1}`, prompt: '' }],
       })),
     updateVariation: (id, patch) =>
       set((s) => ({ variations: s.variations.map((v) => (v.id === id ? { ...v, ...patch } : v)) })),

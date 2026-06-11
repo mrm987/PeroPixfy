@@ -61,12 +61,12 @@ export function buildGraph(p: GenerationParams): ApiGraph {
     }
     latent = ['latent', 0]
   } else {
-    if (!p.sourceImage) throw new Error(`${p.mode}: 소스 이미지가 없습니다`)
+    if (!p.sourceImage) throw new Error(`${p.mode}: no source image — load one or send a result to ${p.mode === 'i2i' ? 'I2I' : 'Inpaint'}`)
     g['src_img'] = { class_type: 'LoadImage', inputs: { image: p.sourceImage } }
     g['src_latent'] = { class_type: 'VAEEncode', inputs: { pixels: ['src_img', 0], vae: ['vae', 0] } }
     latent = ['src_latent', 0]
     if (p.mode === 'inpaint') {
-      if (!p.maskImage) throw new Error('inpaint: 마스크가 없습니다 — 결과 이미지의 "인페인트" 버튼으로 마스크를 그려주세요')
+      if (!p.maskImage) throw new Error('inpaint: no mask — draw one via "Inpaint" on a result image')
       g['mask_img'] = { class_type: 'LoadImage', inputs: { image: p.maskImage } }
       g['mask'] = { class_type: 'ImageToMask', inputs: { image: ['mask_img', 0], channel: 'red' } }
       g['masked'] = { class_type: 'SetLatentNoiseMask', inputs: { samples: latent, mask: ['mask', 0] } }

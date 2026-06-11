@@ -2,11 +2,10 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import {
   fetchLoras, fetchScanStatus, fetchStyles, fetchUpdateStatus,
-  setFavorite, startCheckUpdates, startScan, updateLora,
+  setFavorite, startCheckUpdates, startScan, updateLora, updateStyle,
   type LoraEditableFields, type LoraRecord, type ScanState, type StyleRecord, type UpdateState,
 } from '../api/library'
 import type { LoraEntry } from '../workflow/types'
-import { useUi } from './ui'
 import { useWorkbench } from './workbench'
 
 export type LoraSort = 'name' | 'recent' | 'favorite'
@@ -51,6 +50,7 @@ interface LibraryState {
   load: () => Promise<void>
   toggleFavorite: (relPath: string) => Promise<void>
   saveLora: (relPath: string, fields: LoraEditableFields) => Promise<void>
+  renameStyle: (id: number, name: string) => Promise<void>
   rescan: (force?: boolean) => Promise<void>
   checkUpdates: () => Promise<void>
   applyStyle: (style: StyleRecord) => void
@@ -131,6 +131,11 @@ export const useLibrary = create<LibraryState>()(persist((set, get) => {
       set({ loras: get().loras.map((l) => (l.rel_path === relPath ? { ...l, ...fields } : l)) })
     },
 
+    renameStyle: async (id, name) => {
+      await updateStyle(id, { name })
+      set({ styles: get().styles.map((s) => (s.id === id ? { ...s, name } : s)) })
+    },
+
     rescan: async (force = false) => {
       await startScan(force)
       startPolling()
@@ -141,6 +146,8 @@ export const useLibrary = create<LibraryState>()(persist((set, get) => {
       startPolling()
     },
 
+    // 현재 작업대 파라미터에 스타일을 적용 (탭 전환은 호출부 책임 —
+    // 라이브러리에서는 작업대로 이동, 드로어에서는 그 자리 유지)
     applyStyle: (style) => {
       const loras: LoraEntry[] = (style.loras ?? [])
         .filter((l) => l.lora_rel_path)
@@ -153,7 +160,6 @@ export const useLibrary = create<LibraryState>()(persist((set, get) => {
         ...(style.checkpoint ? { unet: style.checkpoint } : {}),
         ...(style.width > 0 && style.height > 0 ? { width: style.width, height: style.height } : {}),
       })
-      useUi.getState().setTab('workbench')
     },
 
     addLoraToWorkbench: (relPath) => {

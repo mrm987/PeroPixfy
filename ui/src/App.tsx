@@ -8,9 +8,9 @@ import { LibraryTab } from './tabs/library/LibraryTab'
 import { WorkbenchTab } from './tabs/workbench/WorkbenchTab'
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'library', label: '라이브러리' },
-  { id: 'workbench', label: '작업대' },
-  { id: 'batch', label: '배치' },
+  { id: 'library', label: 'Library' },
+  { id: 'workbench', label: 'Workbench' },
+  { id: 'batch', label: 'Batch' },
 ]
 
 export default function App() {
@@ -18,6 +18,10 @@ export default function App() {
   const setTab = useUi((s) => s.setTab)
 
   useEffect(() => {
+    // #library / #workbench / #batch 로 직접 진입 가능 (스크린샷 검증·북마크용)
+    const hash = location.hash.replace('#', '') as Tab
+    if (TABS.some((t) => t.id === hash)) setTab(hash)
+
     useWorkbench.getState().init()
 
     let ws: WebSocket
@@ -41,6 +45,7 @@ export default function App() {
     }
     connect()
     return () => { closed = true; ws.close() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (

@@ -108,13 +108,13 @@ export function MaskEditor({
       <div className="mask-editor" onClick={(e) => e.stopPropagation()}>
         <div className="mask-toolbar">
           <label>
-            브러시 {brush}px{' '}
+            Brush {brush}px{' '}
             <input type="range" min={8} max={256} value={brush}
               onChange={(e) => setBrush(Number(e.target.value))} />
           </label>
-          <button onClick={clear}>지우기</button>
-          <button onClick={onClose}>취소</button>
-          <button className="generate" onClick={apply} disabled={!ready}>마스크 적용</button>
+          <button onClick={clear}>Clear</button>
+          <button onClick={onClose}>Cancel</button>
+          <button className="generate" onClick={apply} disabled={!ready}>Apply mask</button>
         </div>
         <canvas
           ref={viewRef}

@@ -136,6 +136,20 @@ export async function uploadStyle(file: File): Promise<{ ok: boolean; error?: st
 export const updateStyle = (id: number, fields: StyleEditableFields) =>
   post('styles/update', { id, ...fields })
 
+export interface CreateStylePayload {
+  name: string
+  tags?: string
+  checkpoint: string
+  positive_prompt: string
+  negative_prompt: string
+  width: number
+  height: number
+  loras: { lora_rel_path: string; display_name?: string; strength: number; enabled: boolean }[]
+  image?: { filename: string; subfolder: string; type: string }
+}
+
+export const createStyle = (payload: CreateStylePayload) => post('styles/create', payload)
+
 export const deleteStyle = (id: number) => post('styles/delete', { id })
 
 export const styleImageUrl = (imageFile: string) =>

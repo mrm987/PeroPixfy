@@ -626,3 +626,53 @@ async def api_style_workflow(request):
         return web.Response(status=404)
     return web.Response(text=style.get("workflow_json") or "{}",
                         content_type="application/json")
+
+
+@routes.post("/peropix/api/library/styles/create")
+async def api_style_create(request):
+    """Create a style directly from generation params (PeroPix workbench
+    "save as style"). Unlike /styles/upload there is no workflow PNG to parse —
+    the client sends the fields explicitly, plus an optional reference to a
+    generated image in ComfyUI's output directory to use as the thumbnail."""
+    data = await request.json()
+    name = (data.get("name") or "").strip()
+    if not name:
+        return web.json_response({"ok": False, "error": "name required"}, status=400)
+
+    image_file = ""
+    width = int(data.get("width") or 0)
+    height = int(data.get("height") or 0)
+    ref = data.get("image") or {}
+    if ref.get("filename"):
+        out_dir = os.path.abspath(folder_paths.get_output_directory())
+        path = os.path.abspath(os.path.join(
+            out_dir, ref.get("subfolder") or "", os.path.basename(ref["filename"])))
+        if path.startswith(out_dir + os.sep) and os.path.isfile(path):
+            with open(path, "rb") as f:
+                image_file = styles.save_image(f.read(), ref["filename"])
+
+    loras = []
+    for l in data.get("loras") or []:
+        if not l.get("lora_rel_path"):
+            continue
+        loras.append({
+            "lora_rel_path": l["lora_rel_path"],
+            "display_name": l.get("display_name") or l["lora_rel_path"],
+            "strength": float(l.get("strength", 1.0)),
+            "enabled": bool(l.get("enabled", True)),
+        })
+
+    sid = db.add_style(
+        name=name,
+        image_file=image_file,
+        width=width,
+        height=height,
+        workflow_json="",
+        checkpoint=data.get("checkpoint") or "",
+        positive_prompt=data.get("positive_prompt") or "",
+        negative_prompt=data.get("negative_prompt") or "",
+        loras=loras,
+    )
+    if data.get("tags"):
+        db.update_style(sid, {"tags": data["tags"]})
+    return web.json_response({"ok": True, "style": db.get_style(sid)})
