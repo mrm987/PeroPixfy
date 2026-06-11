@@ -8,13 +8,15 @@ ComfyUI 엔진을 그대로 사용하는 Anima 전용 경량 프론트엔드 플
 
 ## 실행
 
-```
-scripts\run_peropix.bat
-```
+**기본**: 평소 쓰던 bat(예: run_nvidia_gpu_SageAttention.bat)으로 ComfyUI를 띄우고,
+사이드바의 **PeroPix 탭**을 누르면 전체화면으로 전환된다 (`← ComfyUI` 버튼 또는 ESC로 복귀).
+ComfyUI ↔ PeroPix를 오가도 양쪽 상태(노드 그래프·생성 진행)는 유지된다.
+`http://127.0.0.1:8188/peropix` 직접 접속도 가능 (런처는 web_extension/, 본체와 독립).
 
-ComfyUI를 린 프로파일(`--disable-all-custom-nodes --whitelist-custom-nodes ...`)로 띄운다.
-화이트리스트: PeroPixComfy, comfyui-spectrum-ksampler, comfyui-spectrum-sdxl, ComfyUI_UltimateSDUpscale.
-평소 풀세팅 ComfyUI는 기존 bat으로 그대로 사용 가능 (동시 실행은 포트 충돌).
+**옵션**: `scripts\run_peropix.bat` — 린 프로파일(`--disable-all-custom-nodes
+--whitelist-custom-nodes PeroPixComfy comfyui-spectrum-ksampler comfyui-spectrum-sdxl
+ComfyUI_UltimateSDUpscale` + SageAttention 플래그). 커스텀노드 임포트만 줄이는 것이라
+시작 시간 이득은 제한적 (대부분 로라 로딩 시간).
 
 ## 탭 구성
 
