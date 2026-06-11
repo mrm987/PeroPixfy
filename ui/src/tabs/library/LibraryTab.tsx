@@ -51,7 +51,9 @@ export function LibraryTab() {
         {mode !== 'styles' && <LorasPanel />}
       </div>
       {dragging && (
-        <div className="drop-overlay">PNG를 놓으면 스타일로 등록됩니다 (워크플로우 메타데이터 필요)</div>
+        <div className="drop-overlay">
+          <div className="drop-overlay-msg">PNG를 놓으면 스타일로 등록됩니다 (워크플로우 메타데이터 필요)</div>
+        </div>
       )}
     </div>
   )

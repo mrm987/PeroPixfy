@@ -1,7 +1,9 @@
 import { useMemo, useRef, useState } from 'react'
 import { styleImageUrl, uploadStyle, type StyleRecord } from '../../api/library'
+import { Lightbox } from '../../components/Lightbox'
 import { StyleEditModal } from '../../components/StyleEditModal'
 import { useLibrary } from '../../stores/library'
+import { previewPosition, type PreviewState } from './LorasPanel'
 
 const parseTags = (tags: string) => tags.split(',').map((t) => t.trim()).filter(Boolean)
 
@@ -13,14 +15,12 @@ export function StylesPanel() {
   } = useLibrary()
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<StyleRecord | null>(null)
+  const [zoom, setZoom] = useState<string | null>(null)
   const [revealed, setRevealed] = useState<Set<number>>(new Set())
+  const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  const [preview, setPreview] = useState<PreviewState | null>(null)
   const [uploading, setUploading] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
-
-  const allTags = useMemo(
-    () => [...new Set(styles.flatMap((s) => parseTags(s.tags)))].sort(),
-    [styles],
-  )
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase()
@@ -47,20 +47,108 @@ export function StylesPanel() {
     load()
   }
 
-  const blurredClass = (s: StyleRecord) =>
-    nsfwBlur && s.nsfw && !revealed.has(s.id) ? ' blurred' : ''
+  const isBlurred = (s: StyleRecord) => nsfwBlur && !!s.nsfw && !revealed.has(s.id)
   const reveal = (s: StyleRecord) => setRevealed((r) => new Set(r).add(s.id))
+  const toggleExpand = (id: number) =>
+    setExpanded((set) => {
+      const next = new Set(set)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  const onThumbClick = (s: StyleRecord) => {
+    if (isBlurred(s)) reveal(s)
+    else if (s.image_file && !s.image_missing) setZoom(styleImageUrl(s.image_file))
+  }
+
+  const onThumbEnter = (e: React.MouseEvent, s: StyleRecord) => {
+    if (styleView !== 'list' || !s.image_file || s.image_missing || isBlurred(s)) return
+    const pos = previewPosition(e.currentTarget.getBoundingClientRect())
+    setPreview({ url: styleImageUrl(s.image_file), video: false, ...pos })
+  }
 
   const filterLoraName = styleLoraFilter
     ? loras.find((l) => l.rel_path === styleLoraFilter)?.name || styleLoraFilter
     : null
 
+  const card = (s: StyleRecord) => {
+    const tags = parseTags(s.tags)
+    const styleLoraList = s.loras ?? []
+    const isExp = expanded.has(s.id)
+    const shownLoras = isExp ? styleLoraList : styleLoraList.slice(0, 1)
+    const blurred = isBlurred(s)
+    return (
+      <div key={s.id} className="style-card">
+        <div className={`thumb-wrap${blurred ? ' blurred' : ''}`}
+          onMouseEnter={(e) => onThumbEnter(e, s)}
+          onMouseLeave={() => setPreview(null)}>
+          {s.image_file && !s.image_missing ? (
+            <img src={styleImageUrl(s.image_file)} alt={s.name} loading="lazy"
+              onClick={() => onThumbClick(s)} />
+          ) : (
+            <div className="thumb-missing">이미지 없음</div>
+          )}
+          {blurred && <div className="reveal-overlay" onClick={() => reveal(s)}>클릭해서 표시</div>}
+          {!!s.nsfw && <span className="nsfw-tag">NSFW</span>}
+        </div>
+        <div className="card-body">
+          <div className="card-name" title={s.name}>{s.name || '(이름 없음)'}</div>
+          {tags.length > 0 && (
+            <div className="chips">
+              {tags.map((t) => (
+                <span key={t} className={`chip tag${tagFilter.includes(t) ? ' active' : ''}`}
+                  title="태그로 필터" onClick={() => toggleTag(t)}>{t}</span>
+              ))}
+            </div>
+          )}
+          <div className="chips">
+            {s.checkpoint
+              ? <span className="chip ckpt" title={s.checkpoint}>{s.checkpoint}</span>
+              : <span className="chip empty">베이스 모델 없음</span>}
+          </div>
+          <div className="chips">
+            {styleLoraList.length === 0 ? (
+              <span className="chip empty">로라 없음</span>
+            ) : (
+              <>
+                {shownLoras.map((l, i) => (
+                  <span key={i}
+                    className={`chip${l.enabled ? '' : ' off'}`}
+                    title={l.lora_rel_path
+                      ? `${l.lora_rel_path} — 클릭해서 로라로 이동`
+                      : `${l.display_name} (DB에 없음)`}
+                    onClick={() => l.lora_rel_path && jumpToLora(l.lora_rel_path)}>
+                    <span className="strength">{l.strength}</span>
+                    {(l.display_name || l.lora_rel_path).replace(/\.safetensors$/, '')}
+                  </span>
+                ))}
+                {styleLoraList.length > 1 && (
+                  <span className="chip toggle" onClick={() => toggleExpand(s.id)}>
+                    {isExp ? '접기 ▲' : `+${styleLoraList.length - 1} ▼`}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+          <div className="card-actions">
+            <button title="이 스타일의 설정을 작업대에 적용" onClick={() => applyStyle(s)}>작업대에 적용</button>
+            <button title="편집" onClick={() => setEditing(s)}>✎</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <section className="lib-panel">
       <div className="lib-header">
         <h3>스타일 ({filtered.length}/{styles.length})</h3>
-        <input placeholder="검색 (이름/태그/프롬프트)" value={query}
-          onChange={(e) => setQuery(e.target.value)} />
+        <span className="search-wrap">
+          <input placeholder="검색 (이름/태그/프롬프트)" value={query}
+            onChange={(e) => setQuery(e.target.value)} />
+          {query && <button className="search-clear" onClick={() => setQuery('')}>×</button>}
+        </span>
         <button onClick={() => fileRef.current?.click()} disabled={uploading}
           title="ComfyUI 출력 PNG에서 워크플로우를 추출해 스타일로 등록 (드래그앤드롭도 가능)">
           {uploading ? '업로드 중…' : '+ 등록'}
@@ -74,12 +162,13 @@ export function StylesPanel() {
         </label>
       </div>
 
-      {allTags.length > 0 && (
-        <div className="tag-bar">
-          {allTags.map((t) => (
-            <button key={t} className={`chip clickable${tagFilter.includes(t) ? ' active' : ''}`}
-              onClick={() => toggleTag(t)}>{t}</button>
+      {tagFilter.length > 0 && (
+        <div className="filter-bar">
+          <span className="filter-label">태그 필터:</span>
+          {tagFilter.map((t) => (
+            <span key={t} className="chip tag active" onClick={() => toggleTag(t)}>{t}</span>
           ))}
+          <button className="filter-clear" onClick={() => tagFilter.forEach(toggleTag)}>모두 해제</button>
         </div>
       )}
 
@@ -90,67 +179,20 @@ export function StylesPanel() {
         </div>
       )}
 
-      {styleView === 'grid' ? (
-        <div className="style-grid">
-          {filtered.map((s) => (
-            <div key={s.id} className="style-card">
-              <div className={`card-media${blurredClass(s)}`}
-                onClick={() => blurredClass(s) && reveal(s)}>
-                {s.image_file && !s.image_missing ? (
-                  <img src={styleImageUrl(s.image_file)} alt={s.name} loading="lazy" />
-                ) : (
-                  <div className="thumb-missing">이미지 없음</div>
-                )}
-                <div className="card-hover">
-                  {(s.loras ?? []).length > 0 && (
-                    <div className="lora-chips">
-                      {(s.loras ?? []).map((l, i) => (
-                        <span key={i}
-                          className={`chip${l.enabled ? '' : ' off'}${l.lora_rel_path ? ' clickable' : ''}`}
-                          title={l.lora_rel_path ? `${l.lora_rel_path} — 클릭해서 로라로 이동` : `${l.display_name} (DB에 없음)`}
-                          onClick={(e) => {
-                            if (!l.lora_rel_path) return
-                            e.stopPropagation()
-                            jumpToLora(l.lora_rel_path)
-                          }}>
-                          {(l.display_name || l.lora_rel_path).replace(/\.safetensors$/, '')} · {l.strength}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div className="card-actions">
-                    <button onClick={(e) => { e.stopPropagation(); applyStyle(s) }}>작업대에 적용</button>
-                    <button onClick={(e) => { e.stopPropagation(); setEditing(s) }}>편집</button>
-                  </div>
-                </div>
-              </div>
-              <div className="card-info">
-                <div className="card-name" title={s.name}>{s.name || '(이름 없음)'}</div>
-                <div className="card-sub" title={s.checkpoint}>{s.checkpoint || s.tags || ' '}</div>
-              </div>
-            </div>
-          ))}
+      <div className="lib-scroll">
+        <div className={`style-grid${styleView === 'list' ? ' list-mode' : ''}`}>
+          {filtered.map(card)}
         </div>
-      ) : (
-        <div className="list-view">
-          {filtered.map((s) => (
-            <div key={s.id} className="list-row">
-              <div className={`list-thumb${blurredClass(s)}`} onClick={() => reveal(s)}>
-                {s.image_file && !s.image_missing && <img src={styleImageUrl(s.image_file)} alt="" loading="lazy" />}
-              </div>
-              <div className="list-main">
-                <div className="card-name">{s.name || '(이름 없음)'}</div>
-                <div className="card-sub">{s.checkpoint} {s.tags && `· ${s.tags}`}</div>
-              </div>
-              <button onClick={() => applyStyle(s)}>적용</button>
-              <button onClick={() => setEditing(s)}>편집</button>
-            </div>
-          ))}
-        </div>
-      )}
+      </div>
 
       {editing && (
         <StyleEditModal style={editing} onSaved={load} onClose={() => setEditing(null)} />
+      )}
+      {zoom && <Lightbox src={zoom} onClose={() => setZoom(null)} />}
+      {preview && (
+        <div className="hover-preview" style={{ left: preview.x, top: preview.y }}>
+          <img src={preview.url} alt="" />
+        </div>
       )}
     </section>
   )
