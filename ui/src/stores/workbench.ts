@@ -6,7 +6,7 @@ import {
 } from '../api/gallery'
 import { fetchSettings } from '../api/settings'
 import { buildGraph } from '../workflow/builder'
-import { ANIMA_DEFAULTS } from '../workflow/defaults'
+import { ANIMA_DEFAULTS, defaultFilenamePrefix } from '../workflow/defaults'
 import type { GenerationParams, LoraEntry } from '../workflow/types'
 
 export interface HistoryItem {
@@ -113,7 +113,11 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
 
   generate: async () => {
     const { params, randomizeSeed } = get()
-    const finalParams = { ...params, seed: randomizeSeed ? randomSeed() : params.seed }
+    const finalParams = {
+      ...params,
+      seed: randomizeSeed ? randomSeed() : params.seed,
+      filenamePrefix: defaultFilenamePrefix(params.mode),
+    }
     set({ params: finalParams, error: null })
     try {
       const promptId = await submitPrompt(buildGraph(finalParams))

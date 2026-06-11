@@ -19,7 +19,19 @@ export const ANIMA_DEFAULTS: GenerationParams = {
   height: 1216,
   batchSize: 1,
   denoise: 0.5,
-  filenamePrefix: 'PeroPix/%date:yyyy-MM-dd%/t2i',
+  filenamePrefix: 'PeroPix', // 제출 시 defaultFilenamePrefix()로 덮어씀
+}
+
+// %date:...% 토큰은 ComfyUI 프론트엔드가 치환하는 기능이라 API 제출에서는
+// 동작하지 않음 (Windows에서 ':' 폴더명 오류) — 날짜는 클라이언트에서 계산한다.
+export function defaultFilenamePrefix(mode: string): string {
+  const d = new Date()
+  const ymd = [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+  ].join('-')
+  return `PeroPix/${ymd}/${mode}`
 }
 
 export const HIRES_DEFAULTS = {

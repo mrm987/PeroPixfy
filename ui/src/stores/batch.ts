@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { deleteQueued, fetchOutputs, interrupt, submitPrompt, viewUrl } from '../api/comfy'
 import { completeGeneration, failGeneration, recordGeneration, starGeneration } from '../api/gallery'
 import { buildGraph } from '../workflow/builder'
+import { defaultFilenamePrefix } from '../workflow/defaults'
 import { useWorkbench } from './workbench'
 
 const CONCURRENCY = 2
@@ -63,7 +64,7 @@ export const useBatch = create<BatchState>((set, get) => {
       ...base,
       seed,
       positive: variation?.prompt ? `${base.positive}, ${variation.prompt}` : base.positive,
-      filenamePrefix: 'PeroPix/%date:yyyy-MM-dd%/batch',
+      filenamePrefix: defaultFilenamePrefix('batch'),
     }
     // 제출 전에 슬롯을 먼저 queued로 — pump 중복 진입 방지
     set((st) => ({ slots: st.slots.map((x) => (x.id === next.id ? { ...x, status: 'queued' as const, seed } : x)) }))
