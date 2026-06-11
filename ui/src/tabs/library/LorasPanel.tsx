@@ -156,7 +156,10 @@ export function LorasPanel() {
             </div>
           )}
           <div className="card-actions">
-            <button title="Add to workbench LoRA stack" onClick={() => addLoraToWorkbench(l.rel_path)}>＋ Stack</button>
+            <button title="Add to workbench LoRA stack"
+              onClick={() => { addLoraToWorkbench(l.rel_path); showToast(`Added to stack: ${displayName(l)}`) }}>
+              ＋ Stack
+            </button>
             <button title="Copy all trigger words" disabled={!l.trigger_words}
               onClick={() => copyText(l.trigger_words)}>⧉</button>
             <button title="Open on CivitAI" disabled={!l.civitai_url}

@@ -460,7 +460,7 @@ button:disabled { opacity: 0.4; cursor: default; }
   font-size: 12px;
 }
 
-/* 스타일 드로어 (작업대/배치에서 스타일 비교·적용) */
+/* 라이브러리 드로어 — Library 탭의 패널을 그대로 탑재 (Style-Manager 사이드바 상당) */
 .styles-open { white-space: nowrap; }
 .drawer-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); z-index: 90; }
 .style-drawer {
@@ -468,39 +468,31 @@ button:disabled { opacity: 0.4; cursor: default; }
   top: 0;
   right: 0;
   bottom: 0;
-  width: 380px;
+  width: min(900px, 84vw);
   background: var(--panel);
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   padding: 12px;
   z-index: 95;
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
 }
-.drawer-header { display: flex; gap: 8px; align-items: center; }
-.drawer-header h3 { margin: 0; font-size: 14px; }
-.drawer-header input { flex: 1; height: 28px; padding: 4px 8px; font-size: 12px; }
-.drawer-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
-.drawer-card {
-  display: grid;
-  grid-template-columns: 84px minmax(0, 1fr);
-  gap: 8px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px;
+.drawer-header { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+.drawer-header .lib-mode-bar { width: 280px; }
+.drawer-body { flex: 1; min-height: 0; }
+/* 드로어의 split은 Style-Manager 사이드바처럼 상하 배치 (스타일이 위, 최대 45%) */
+.style-drawer .lib-body.split {
+  display: flex;
+  flex-direction: column;
+  grid-template-columns: none;
+  gap: 10px;
 }
-.drawer-card .thumb-wrap { width: 84px; height: 112px; padding-top: 0; border-radius: 6px; }
-.drawer-card-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.drawer-card .apply {
-  margin-top: auto;
-  font-size: 11px;
-  padding: 4px;
-  background: var(--accent);
-  border: none;
-  border-radius: 5px;
-  color: #fff;
+.style-drawer .lib-body.split > .lib-panel:first-child {
+  flex: 0 1 auto;
+  max-height: 45%;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 10px;
 }
 
 .save-style-preview { max-height: 200px; object-fit: contain; border-radius: 6px; align-self: center; }

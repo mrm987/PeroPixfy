@@ -21,6 +21,9 @@ const RESOLUTION_PRESETS: [number, number][] = [
   [1152, 896],
 ]
 
+// ?drawer=1 로 진입하면 드로어가 열린 채 시작 (스크린샷 검증·딥링크용)
+const initialDrawer = new URLSearchParams(location.search).has('drawer')
+
 const sourcePreviewUrl = (name: string) => {
   const [sub, file] = name.includes('/') ? name.split(/\/(.+)/) : ['', name]
   return `/view?filename=${encodeURIComponent(file)}&subfolder=${encodeURIComponent(sub)}&type=input`
@@ -47,7 +50,7 @@ export function ParamsPanel() {
   const error = useWorkbench((s) => s.error)
   const [meta, setMeta] = useState<Meta | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(initialDrawer)
   const [savedNote, setSavedNote] = useState(false)
 
   useEffect(() => {

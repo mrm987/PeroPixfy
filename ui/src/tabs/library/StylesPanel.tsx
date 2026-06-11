@@ -8,7 +8,8 @@ import { previewPosition, type PreviewState } from './LorasPanel'
 
 const parseTags = (tags: string) => tags.split(',').map((t) => t.trim()).filter(Boolean)
 
-export function StylesPanel() {
+/** embedded: 드로어 안에서 사용 — Apply가 탭 전환 없이 적용만 하고 피드백을 표시 */
+export function StylesPanel({ embedded = false }: { embedded?: boolean }) {
   const {
     styles, loras, styleView, nsfwBlur, tagFilter, styleLoraFilter,
     setStyleView, setNsfwBlur, toggleTag, clearJumps, jumpToLora,
@@ -23,6 +24,7 @@ export function StylesPanel() {
   const [uploading, setUploading] = useState(false)
   const [renaming, setRenaming] = useState<number | null>(null)
   const [renameVal, setRenameVal] = useState('')
+  const [appliedId, setAppliedId] = useState<number | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const filtered = useMemo(() => {
@@ -154,9 +156,19 @@ export function StylesPanel() {
             )}
           </div>
           <div className="card-actions">
-            <button title="Apply this style's settings and open the Workbench"
-              onClick={() => { applyStyle(s); useUi.getState().setTab('workbench') }}>
-              Apply
+            <button title={embedded
+              ? "Apply this style's settings to the current setup"
+              : "Apply this style's settings and open the Workbench"}
+              onClick={() => {
+                applyStyle(s)
+                if (embedded) {
+                  setAppliedId(s.id)
+                  setTimeout(() => setAppliedId(null), 1400)
+                } else {
+                  useUi.getState().setTab('workbench')
+                }
+              }}>
+              {appliedId === s.id ? '✓ Applied' : 'Apply'}
             </button>
             <button title="Edit" onClick={() => setEditing(s)}>✎</button>
           </div>
