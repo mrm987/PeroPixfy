@@ -93,36 +93,40 @@ export function StylesPanel() {
       {styleView === 'grid' ? (
         <div className="style-grid">
           {filtered.map((s) => (
-            <div key={s.id} className={`style-card${blurredClass(s)}`}
-              onClick={() => blurredClass(s) && reveal(s)}>
-              {s.image_file && !s.image_missing ? (
-                <img src={styleImageUrl(s.image_file)} alt={s.name} loading="lazy" />
-              ) : (
-                <div className="thumb-missing">이미지 없음</div>
-              )}
-              <div className="card-overlay">
-                <div className="card-name" title={s.name}>{s.name || '(이름 없음)'}</div>
-                {s.checkpoint && <div className="card-sub" title={s.checkpoint}>{s.checkpoint}</div>}
-                {(s.loras ?? []).length > 0 && (
-                  <div className="lora-chips">
-                    {(s.loras ?? []).map((l, i) => (
-                      <span key={i}
-                        className={`chip${l.enabled ? '' : ' off'}${l.lora_rel_path ? ' clickable' : ''}`}
-                        title={l.lora_rel_path ? `${l.lora_rel_path} — 클릭해서 로라로 이동` : `${l.display_name} (DB에 없음)`}
-                        onClick={(e) => {
-                          if (!l.lora_rel_path) return
-                          e.stopPropagation()
-                          jumpToLora(l.lora_rel_path)
-                        }}>
-                        {(l.display_name || l.lora_rel_path).replace(/\.safetensors$/, '')} · {l.strength}
-                      </span>
-                    ))}
-                  </div>
+            <div key={s.id} className="style-card">
+              <div className={`card-media${blurredClass(s)}`}
+                onClick={() => blurredClass(s) && reveal(s)}>
+                {s.image_file && !s.image_missing ? (
+                  <img src={styleImageUrl(s.image_file)} alt={s.name} loading="lazy" />
+                ) : (
+                  <div className="thumb-missing">이미지 없음</div>
                 )}
-                <div className="card-actions">
-                  <button onClick={(e) => { e.stopPropagation(); applyStyle(s) }}>작업대에 적용</button>
-                  <button onClick={(e) => { e.stopPropagation(); setEditing(s) }}>편집</button>
+                <div className="card-hover">
+                  {(s.loras ?? []).length > 0 && (
+                    <div className="lora-chips">
+                      {(s.loras ?? []).map((l, i) => (
+                        <span key={i}
+                          className={`chip${l.enabled ? '' : ' off'}${l.lora_rel_path ? ' clickable' : ''}`}
+                          title={l.lora_rel_path ? `${l.lora_rel_path} — 클릭해서 로라로 이동` : `${l.display_name} (DB에 없음)`}
+                          onClick={(e) => {
+                            if (!l.lora_rel_path) return
+                            e.stopPropagation()
+                            jumpToLora(l.lora_rel_path)
+                          }}>
+                          {(l.display_name || l.lora_rel_path).replace(/\.safetensors$/, '')} · {l.strength}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="card-actions">
+                    <button onClick={(e) => { e.stopPropagation(); applyStyle(s) }}>작업대에 적용</button>
+                    <button onClick={(e) => { e.stopPropagation(); setEditing(s) }}>편집</button>
+                  </div>
                 </div>
+              </div>
+              <div className="card-info">
+                <div className="card-name" title={s.name}>{s.name || '(이름 없음)'}</div>
+                <div className="card-sub" title={s.checkpoint}>{s.checkpoint || s.tags || ' '}</div>
               </div>
             </div>
           ))}

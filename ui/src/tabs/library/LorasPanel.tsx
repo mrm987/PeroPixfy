@@ -139,24 +139,28 @@ export function LorasPanel() {
         <div className="lora-grid">
           {filtered.map((l) => (
             <div key={l.rel_path} ref={l.rel_path === loraExactFilter ? exactRef : undefined}
-              className={`lora-card${blurredClass(l)}${l.rel_path === loraExactFilter ? ' highlighted' : ''}`}>
-              <Thumb lora={l} onZoom={() => onZoom(l)} />
-              <button className={`fav${l.favorite ? ' on' : ''}`}
-                onClick={() => toggleFavorite(l.rel_path)}>★</button>
-              <div className="badge-row">{badges(l)}</div>
-              <div className="card-overlay">
-                <div className="card-name" title={l.rel_path}>{displayName(l)}</div>
-                {l.base_model && <div className="card-sub" title={l.base_model}>{l.base_model}</div>}
-                {l.trigger_words && (
-                  <div className="card-sub trigger" title={`${l.trigger_words} (클릭해서 복사)`}
-                    onClick={() => copyTriggers(l)}>
-                    {copied === l.rel_path ? '✓ 복사됨' : l.trigger_words}
+              className={`lora-card${l.rel_path === loraExactFilter ? ' highlighted' : ''}`}>
+              <div className={`card-media${blurredClass(l)}`}>
+                <Thumb lora={l} onZoom={() => onZoom(l)} />
+                <button className={`fav${l.favorite ? ' on' : ''}`}
+                  onClick={() => toggleFavorite(l.rel_path)}>★</button>
+                <div className="badge-row">{badges(l)}</div>
+                <div className="card-hover">
+                  {l.trigger_words && (
+                    <div className="card-sub trigger" title={`${l.trigger_words} (클릭해서 복사)`}
+                      onClick={() => copyTriggers(l)}>
+                      {copied === l.rel_path ? '✓ 복사됨' : l.trigger_words}
+                    </div>
+                  )}
+                  <div className="card-actions">
+                    <button onClick={() => addLoraToWorkbench(l.rel_path)}>+ 스택에 추가</button>
+                    <button onClick={() => setEditing(l)}>편집</button>
                   </div>
-                )}
-                <div className="card-actions">
-                  <button onClick={() => addLoraToWorkbench(l.rel_path)}>+ 스택에 추가</button>
-                  <button onClick={() => setEditing(l)}>편집</button>
                 </div>
+              </div>
+              <div className="card-info">
+                <div className="card-name" title={l.rel_path}>{displayName(l)}</div>
+                <div className="card-sub" title={l.base_model}>{l.base_model || ' '}</div>
               </div>
             </div>
           ))}
