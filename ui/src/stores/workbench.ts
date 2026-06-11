@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import { fetchOutputs, fetchQueueIds, submitPrompt, viewUrl } from '../api/comfy'
 import {
   completeGeneration, deleteGeneration, failGeneration, listGenerations,
@@ -43,7 +44,9 @@ interface WorkbenchState {
 
 const markDone = (h: HistoryItem, urls: string[]): HistoryItem => ({ ...h, status: 'done', imageUrls: urls })
 
-export const useWorkbench = create<WorkbenchState>((set, get) => ({
+const PERSIST_KEY = 'peropix.workbench'
+
+export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
   params: ANIMA_DEFAULTS,
   randomizeSeed: true,
   history: [],
@@ -51,10 +54,13 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   progress: null,
   error: null,
 
-  // 앱 시작 시: 저장된 기본값 적용 + 기록 복원 + pending 상태 복구 (/history → /queue 순서로 확인)
+  // 앱 시작 시: 기록 복원 + pending 상태 복구 (/history → /queue 순서로 확인).
+  // 서버 저장 기본값은 마지막 작업 상태(localStorage)가 없을 때만 적용.
   init: async () => {
-    const saved = await fetchSettings().catch(() => ({}))
-    set((s) => ({ params: { ...s.params, ...saved } }))
+    if (localStorage.getItem(PERSIST_KEY) == null) {
+      const saved = await fetchSettings().catch(() => ({}))
+      set((s) => ({ params: { ...s.params, ...saved } }))
+    }
 
     const records = await listGenerations(100)
     const history: HistoryItem[] = records.map((r) => {
@@ -155,5 +161,13 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       progress: s.progress?.promptId === promptId ? null : s.progress,
       history: s.history.map((h) => (h.promptId === promptId ? { ...h, status: 'error' as const } : h)),
     }))
+  },
+}), {
+  name: PERSIST_KEY,
+  partialize: (s) => ({ params: s.params, randomizeSeed: s.randomizeSeed }),
+  // 앱 업데이트로 params에 새 필드가 생겨도 기본값으로 채워지도록 병합
+  merge: (persisted, current) => {
+    const p = (persisted ?? {}) as Partial<WorkbenchState>
+    return { ...current, ...p, params: { ...ANIMA_DEFAULTS, ...(p.params ?? {}) } }
   },
 }))

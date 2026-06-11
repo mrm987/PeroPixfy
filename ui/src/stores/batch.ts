@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import { deleteQueued, fetchOutputs, interrupt, submitPrompt, viewUrl } from '../api/comfy'
 import { completeGeneration, failGeneration, recordGeneration, starGeneration } from '../api/gallery'
 import { buildGraph } from '../workflow/builder'
@@ -44,7 +45,7 @@ interface BatchState {
   onError: (promptId: string) => void
 }
 
-export const useBatch = create<BatchState>((set, get) => {
+export const useBatch = create<BatchState>()(persist((set, get) => {
   // 슬라이딩 윈도우 러너: 동시 CONCURRENCY개까지만 큐에 유지
   const pump = async () => {
     const s = get()
@@ -155,4 +156,7 @@ export const useBatch = create<BatchState>((set, get) => {
       pump()
     },
   }
-})
+}, {
+  name: 'peropix.batch',
+  partialize: (s) => ({ variations: s.variations, count: s.count }),
+}))

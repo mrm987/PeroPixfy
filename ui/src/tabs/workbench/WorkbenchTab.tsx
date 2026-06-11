@@ -26,8 +26,13 @@ export function WorkbenchTab() {
   }
 
   const applyMask = async (blob: Blob) => {
-    const name = await uploadImage(blob, `peropix_inpaint_${Date.now()}.png`)
-    set({ mode: 'inpaint', sourceImage: name })
+    if (!maskTarget) return
+    const stamp = Date.now()
+    const [sourceImage, maskImage] = await Promise.all([
+      uploadImage(await fetchAsBlob(maskTarget), `peropix_inpaint_src_${stamp}.png`),
+      uploadImage(blob, `peropix_inpaint_mask_${stamp}.png`),
+    ])
+    set({ mode: 'inpaint', sourceImage, maskImage })
     setMaskTarget(null)
   }
 

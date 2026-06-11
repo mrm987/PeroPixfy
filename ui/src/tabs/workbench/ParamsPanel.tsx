@@ -76,7 +76,7 @@ export function ParamsPanel() {
       <div className="preset-row">
         {MODES.map((m) => (
           <button key={m.id} className={params.mode === m.id ? 'active' : ''}
-            onClick={() => set({ mode: m.id, ...(m.id === 't2i' ? { sourceImage: undefined } : {}) })}>
+            onClick={() => set({ mode: m.id, ...(m.id === 't2i' ? { sourceImage: undefined, maskImage: undefined } : {}) })}>
             {m.label}
           </button>
         ))}
@@ -95,6 +95,11 @@ export function ParamsPanel() {
           )}
           <input type="file" accept="image/*"
             onChange={(e) => e.target.files?.[0] && uploadSource(e.target.files[0])} />
+          {params.mode === 'inpaint' && (
+            <div className={`mask-status${params.maskImage ? ' ok' : ''}`}>
+              {params.maskImage ? '✓ 마스크 적용됨' : '마스크 없음 — 결과 이미지에서 "인페인트"로 그려주세요'}
+            </div>
+          )}
           <NumberField label="denoise" value={params.denoise} min={0} max={1} step={0.05}
             onChange={(v) => set({ denoise: v })} />
         </div>

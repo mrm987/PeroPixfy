@@ -51,7 +51,8 @@ export function buildGraph(p: GenerationParams): ApiGraph {
   g['neg'] = { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.negative } }
 
   // latent 소스: t2i는 빈 latent, i2i/inpaint는 업로드 이미지 인코딩.
-  // inpaint 마스크는 업로드 PNG의 알파 채널 (LoadImage MASK 출력 = 1 - alpha).
+  // inpaint 마스크는 별도의 흑백 이미지(흰색 = 다시 그릴 영역)로 업로드 —
+  // 알파 채널 방식은 브라우저 캔버스의 premultiply 때문에 원본 RGB가 손상됨.
   let latent: [string, number]
   if (p.mode === 't2i') {
     g['latent'] = {
@@ -60,12 +61,15 @@ export function buildGraph(p: GenerationParams): ApiGraph {
     }
     latent = ['latent', 0]
   } else {
-    if (!p.sourceImage) throw new Error(`${p.mode}: sourceImage가 없습니다`)
+    if (!p.sourceImage) throw new Error(`${p.mode}: 소스 이미지가 없습니다`)
     g['src_img'] = { class_type: 'LoadImage', inputs: { image: p.sourceImage } }
     g['src_latent'] = { class_type: 'VAEEncode', inputs: { pixels: ['src_img', 0], vae: ['vae', 0] } }
     latent = ['src_latent', 0]
     if (p.mode === 'inpaint') {
-      g['masked'] = { class_type: 'SetLatentNoiseMask', inputs: { samples: latent, mask: ['src_img', 1] } }
+      if (!p.maskImage) throw new Error('inpaint: 마스크가 없습니다 — 결과 이미지의 "인페인트" 버튼으로 마스크를 그려주세요')
+      g['mask_img'] = { class_type: 'LoadImage', inputs: { image: p.maskImage } }
+      g['mask'] = { class_type: 'ImageToMask', inputs: { image: ['mask_img', 0], channel: 'red' } }
+      g['masked'] = { class_type: 'SetLatentNoiseMask', inputs: { samples: latent, mask: ['mask', 0] } }
       latent = ['masked', 0]
     }
   }

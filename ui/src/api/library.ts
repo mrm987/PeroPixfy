@@ -13,6 +13,21 @@ export interface LoraRecord {
   nsfw: number
   favorite: number
   scanned: number
+  ctime: number
+  updated_at: number
+}
+
+/** 사용자 편집 가능 필드 (서버 UPDATABLE 화이트리스트와 동일). */
+export type LoraEditableFields = Partial<
+  Pick<LoraRecord, 'name' | 'trigger_words' | 'civitai_url' | 'base_model' | 'base_category' | 'nsfw'>
+>
+
+export async function updateLora(relPath: string, fields: LoraEditableFields): Promise<void> {
+  await fetch(`${BASE}/update`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rel_path: relPath, ...fields }),
+  })
 }
 
 export interface StyleLoraRef {

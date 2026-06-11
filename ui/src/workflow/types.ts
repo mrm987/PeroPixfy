@@ -32,6 +32,7 @@ export interface GenerationParams {
   batchSize: number
   denoise: number // i2i/inpaint에서만 사용 (t2i는 1 고정)
   sourceImage?: string // i2i/inpaint: /upload/image 결과 파일명 (input 폴더)
+  maskImage?: string // inpaint: 흑백 마스크 (흰색 = 다시 그릴 영역)
   hires?: HiresParams
   spectrum?: { enabled: boolean }
   filenamePrefix: string

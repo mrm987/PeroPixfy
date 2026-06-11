@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 
 /**
- * 인페인트 마스크 에디터. 브러시로 칠한 영역의 알파를 0으로 만든 PNG를 돌려준다
- * (LoadImage의 MASK 출력 = 1 - alpha → 칠한 곳이 인페인트 대상).
+ * 인페인트 마스크 에디터. 칠한 영역을 흰색, 나머지를 검정으로 한 마스크 PNG를
+ * 돌려준다 (ImageToMask로 변환 — 원본 이미지는 손대지 않음).
  */
 export function MaskEditor({
   imageUrl, onApply, onClose,
@@ -78,13 +78,22 @@ export function MaskEditor({
 
   const apply = () => {
     const img = imgRef.current!
+    const w = img.naturalWidth
+    const h = img.naturalHeight
     const out = document.createElement('canvas')
-    out.width = img.naturalWidth
-    out.height = img.naturalHeight
+    out.width = w
+    out.height = h
     const ctx = out.getContext('2d')!
-    ctx.drawImage(img, 0, 0)
-    ctx.globalCompositeOperation = 'destination-out'
-    ctx.drawImage(maskRef.current, 0, 0)
+    ctx.fillStyle = '#000'
+    ctx.fillRect(0, 0, w, h)
+    const strokes = maskRef.current.getContext('2d')!.getImageData(0, 0, w, h)
+    const o = ctx.getImageData(0, 0, w, h)
+    for (let i = 3; i < strokes.data.length; i += 4) {
+      if (strokes.data[i] > 0) {
+        o.data[i - 3] = o.data[i - 2] = o.data[i - 1] = 255
+      }
+    }
+    ctx.putImageData(o, 0, 0)
     out.toBlob((blob) => blob && onApply(blob), 'image/png')
   }
 

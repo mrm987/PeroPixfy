@@ -1,27 +1,45 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import {
-  fetchLoras, fetchStyles, setFavorite, startScan,
-  type LoraRecord, type StyleRecord,
+  fetchLoras, fetchStyles, setFavorite, startScan, updateLora,
+  type LoraEditableFields, type LoraRecord, type StyleRecord,
 } from '../api/library'
 import type { LoraEntry } from '../workflow/types'
-import { useWorkbench } from './workbench'
 import { useUi } from './ui'
+import { useWorkbench } from './workbench'
+
+export type LoraSort = 'name' | 'recent' | 'favorite'
 
 interface LibraryState {
   loras: LoraRecord[]
   styles: StyleRecord[]
   loaded: boolean
+  category: string
+  favOnly: boolean
+  sort: LoraSort
+
+  setCategory: (v: string) => void
+  setFavOnly: (v: boolean) => void
+  setSort: (v: LoraSort) => void
   load: () => Promise<void>
   toggleFavorite: (relPath: string) => Promise<void>
+  saveLora: (relPath: string, fields: LoraEditableFields) => Promise<void>
   rescan: () => Promise<void>
   applyStyle: (style: StyleRecord) => void
   addLoraToWorkbench: (relPath: string) => void
 }
 
-export const useLibrary = create<LibraryState>((set, get) => ({
+export const useLibrary = create<LibraryState>()(persist((set, get) => ({
   loras: [],
   styles: [],
   loaded: false,
+  category: '',
+  favOnly: false,
+  sort: 'recent',
+
+  setCategory: (v) => set({ category: v }),
+  setFavOnly: (v) => set({ favOnly: v }),
+  setSort: (v) => set({ sort: v }),
 
   load: async () => {
     const [{ loras }, styles] = await Promise.all([fetchLoras(), fetchStyles()])
@@ -34,6 +52,11 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     const next = lora.favorite ? 0 : 1
     set({ loras: get().loras.map((l) => (l.rel_path === relPath ? { ...l, favorite: next } : l)) })
     await setFavorite(relPath, !!next)
+  },
+
+  saveLora: async (relPath, fields) => {
+    await updateLora(relPath, fields)
+    set({ loras: get().loras.map((l) => (l.rel_path === relPath ? { ...l, ...fields } : l)) })
   },
 
   rescan: async () => {
@@ -62,4 +85,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     if (wb.params.loras.some((l) => l.relPath === relPath)) return
     wb.setLoras([...wb.params.loras, { relPath, strength: 0.8, enabled: true }])
   },
+}), {
+  name: 'peropix.library',
+  partialize: (s) => ({ category: s.category, favOnly: s.favOnly, sort: s.sort }),
 }))
