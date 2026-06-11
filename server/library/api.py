@@ -662,7 +662,7 @@ async def api_style_create(request):
             "enabled": bool(l.get("enabled", True)),
         })
 
-    sid = db.add_style(
+    sid = db.create_style(
         name=name,
         image_file=image_file,
         width=width,

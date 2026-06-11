@@ -110,7 +110,7 @@ export function buildGraph(p: GenerationParams): ApiGraph {
     g['decode'] = { class_type: 'VAEDecode', inputs: { samples: ['sampler_hires', 0], vae: ['vae', 0] } }
     image = ['decode', 0]
   } else if (p.hires?.enabled && p.hires.method === 'usdu') {
-    if (!p.hires.upscaleModel) throw new Error('USDU: 업스케일 모델이 선택되지 않았습니다')
+    if (!p.hires.upscaleModel) throw new Error('USDU: no upscale model selected')
     g['decode'] = { class_type: 'VAEDecode', inputs: { samples: ['sampler', 0], vae: ['vae', 0] } }
     g['upmodel'] = { class_type: 'UpscaleModelLoader', inputs: { model_name: p.hires.upscaleModel } }
     g['usdu'] = {

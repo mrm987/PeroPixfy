@@ -19,15 +19,15 @@ export function BatchTab() {
     <div className="batch">
       <div className="batch-panel">
         <div className="preset-row">
-          <button className="styles-open" onClick={() => setDrawerOpen(true)}
+          <button className="styles-open" onClick={() => setDrawerOpen(true)} disabled={running}
             title="Browse styles and apply to the base settings">▤ Styles</button>
         </div>
         <div className="field-label">Variations (workbench settings + extra prompt)</div>
         {variations.map((v) => (
           <div key={v.id} className="variation-row">
-            <input className="var-label" value={v.label}
+            <input className="var-label" value={v.label} disabled={running}
               onChange={(e) => updateVariation(v.id, { label: e.target.value })} />
-            <textarea rows={2} value={v.prompt} placeholder="Extra prompt (e.g. standing, smile)"
+            <textarea rows={2} value={v.prompt} placeholder="Extra prompt (e.g. standing, smile)" disabled={running}
               onChange={(e) => updateVariation(v.id, { prompt: e.target.value })} />
             <button onClick={() => removeVariation(v.id)} disabled={running}>✕</button>
           </div>

@@ -13,14 +13,29 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'batch', label: 'Batch' },
 ]
 
+// 해시 동기화 effect가 URL을 덮어쓰기 전에(모듈 로드 시점) 초기 진입 해시를 확보
+const initialHash = location.hash.replace('#', '') as Tab
+
 export default function App() {
   const tab = useUi((s) => s.tab)
   const setTab = useUi((s) => s.setTab)
 
+  // 탭 ↔ URL 해시 양방향 동기화 (#library / #workbench / #batch 직접 진입·북마크 가능)
   useEffect(() => {
-    // #library / #workbench / #batch 로 직접 진입 가능 (스크린샷 검증·북마크용)
-    const hash = location.hash.replace('#', '') as Tab
-    if (TABS.some((t) => t.id === hash)) setTab(hash)
+    history.replaceState(null, '', '#' + tab)
+  }, [tab])
+
+  useEffect(() => {
+    const onHash = () => {
+      const h = location.hash.replace('#', '') as Tab
+      if (TABS.some((t) => t.id === h)) setTab(h)
+    }
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [setTab])
+
+  useEffect(() => {
+    if (TABS.some((t) => t.id === initialHash)) setTab(initialHash)
 
     useWorkbench.getState().init()
 

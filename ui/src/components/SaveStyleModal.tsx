@@ -10,24 +10,33 @@ export function SaveStyleModal({ item, onClose }: { item: HistoryItem; onClose: 
   const [name, setName] = useState('')
   const [tags, setTags] = useState('')
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const save = async () => {
-    if (!name.trim()) return
+    if (busy || !name.trim()) return
     setBusy(true)
-    const p = item.params
-    await createStyle({
-      name: name.trim(),
-      tags: tags.trim() || undefined,
-      checkpoint: p.unet,
-      positive_prompt: p.positive,
-      negative_prompt: p.negative,
-      width: p.width,
-      height: p.height,
-      loras: p.loras.map((l) => ({ lora_rel_path: l.relPath, strength: l.strength, enabled: l.enabled })),
-      image: item.imageUrls[0] ? parseViewUrl(item.imageUrls[0]) : undefined,
-    })
-    await useLibrary.getState().load()
-    onClose()
+    setError(null)
+    try {
+      const p = item.params
+      const res = await createStyle({
+        name: name.trim(),
+        tags: tags.trim() || undefined,
+        checkpoint: p.unet,
+        positive_prompt: p.positive,
+        negative_prompt: p.negative,
+        width: p.width,
+        height: p.height,
+        loras: p.loras.map((l) => ({ lora_rel_path: l.relPath, strength: l.strength, enabled: l.enabled })),
+        image: item.imageUrls[0] ? parseViewUrl(item.imageUrls[0]) : undefined,
+      })
+      if (!res.ok) throw new Error(String(res.error ?? 'Save failed'))
+      await useLibrary.getState().load()
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -46,6 +55,7 @@ export function SaveStyleModal({ item, onClose }: { item: HistoryItem; onClose: 
           Saves model, prompts, LoRA stack ({item.params.loras.filter((l) => l.enabled).length} active)
           and resolution from this result.
         </div>
+        {error && <div className="error">{error}</div>}
         <div className="modal-actions">
           <button onClick={onClose}>Cancel</button>
           <button className="generate" onClick={save} disabled={busy || !name.trim()}>

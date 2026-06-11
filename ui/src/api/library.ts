@@ -80,6 +80,10 @@ async function post(path: string, body: unknown): Promise<Record<string, unknown
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`${path} failed (${res.status}): ${text.slice(0, 200)}`)
+  }
   return res.json()
 }
 

@@ -4,9 +4,14 @@ import { deleteQueued, fetchOutputs, interrupt, submitPrompt, viewUrl } from '..
 import { completeGeneration, failGeneration, recordGeneration, starGeneration } from '../api/gallery'
 import { buildGraph } from '../workflow/builder'
 import { defaultFilenamePrefix } from '../workflow/defaults'
+import type { GenerationParams } from '../workflow/types'
 import { useWorkbench } from './workbench'
 
 const CONCURRENCY = 2
+
+// 실행 시작 시점의 작업대 파라미터 스냅샷 — 실행 중 작업대를 만지거나
+// 스타일을 적용해도 남은 슬롯들이 같은 조건으로 생성되도록 고정
+let baseParams: GenerationParams | null = null
 
 export interface Variation {
   id: string
@@ -59,7 +64,7 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
     }
 
     const variation = s.variations.find((v) => v.id === next.variationId)
-    const base = useWorkbench.getState().params
+    const base = baseParams ?? useWorkbench.getState().params
     const seed = randomSeed()
     const params = {
       ...base,
@@ -99,6 +104,7 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
     start: () => {
       const { variations, count, running } = get()
       if (running || variations.length === 0) return
+      baseParams = useWorkbench.getState().params
       const slots: Slot[] = variations.flatMap((v) =>
         Array.from({ length: count }, (_, i) => ({
           id: uid(), variationId: v.id, index: i,
