@@ -2,9 +2,8 @@
 REM ============================================================
 REM  PeroPixfy installer / updater
 REM  Place this .bat in your ComfyUI portable ROOT
-REM  (the folder that contains  ComfyUI\  and  python_embeded\ )
-REM  e.g.  W:\ComfyUI_windows_portable_nvidia_cu121_or_cpu\ComfyUI_windows_portable
-REM  then double-click it.
+REM  (the folder that contains  ComfyUI\  and  python_embeded\ ,
+REM   usually named  ComfyUI_windows_portable )  then double-click it.
 REM ============================================================
 setlocal
 cd /d "%~dp0"
