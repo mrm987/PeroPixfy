@@ -20,6 +20,8 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), h
 const MIN = 0.05
 const MAX = 10 // 최대 1000% 확대
 const CARD_H = 205 // 렌더러 카드 높이와 동일 — 종횡비로 너비 계산.
+// 타이틀 클릭 히트테스트용 텍스트 폭 측정 (변환 없는 별도 컨텍스트 — 화면 CSS px 기준).
+const _measure = typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d') : null
 
 interface Props {
   slots: SlotLike[]
@@ -104,6 +106,25 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
     const ch = b.maxY - b.minY || 1
     const scale = clamp(Math.min((rect.width - pad * 2) / cw, (rect.height - pad * 2) / ch, 1), MIN, MAX)
     vp.current = { scale, x: pad - b.minX * scale, y: pad - b.minY * scale }
+    kickLowRes()
+    commitViewport()
+  }, [])
+
+  // 슬롯 타이틀 클릭 → 그 슬롯(행: 라벨+카드들)이 화면에 꽉 차게 확대(중앙 정렬).
+  const focusSlot = useCallback((row: LayoutRow) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    let minX = row.x, minY = row.y, maxX = row.x, maxY = row.y
+    for (const n of row.nodes) {
+      minX = Math.min(minX, n.x); minY = Math.min(minY, n.y)
+      maxX = Math.max(maxX, n.x + n.w); maxY = Math.max(maxY, n.y + n.h)
+    }
+    const pad = 40
+    const cw = maxX - minX || 1
+    const ch = maxY - minY || 1
+    const scale = clamp(Math.min((rect.width - pad * 2) / cw, (rect.height - pad * 2) / ch), MIN, MAX)
+    vp.current = { scale, x: rect.width / 2 - (minX + cw / 2) * scale, y: rect.height / 2 - (minY + ch / 2) * scale }
     kickLowRes()
     commitViewport()
   }, [])
@@ -225,6 +246,19 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
       const by = vpc.y + row.y * vpc.scale
       if (pos.x >= bx && pos.x <= bx + ROW_BTN && pos.y >= by && pos.y <= by + ROW_BTN) {
         onCurate(row.slotId)
+        return
+      }
+    }
+
+    // 슬롯 타이틀(화면 좌표 고정) 클릭 → 해당 슬롯으로 확대.
+    if (_measure) _measure.font = '600 16px sans-serif'
+    for (const row of layoutRef.current) {
+      const bx = vpc.x + row.x * vpc.scale
+      const by = vpc.y + row.y * vpc.scale
+      const tx = bx + (rowHasDone(row) ? ROW_BTN + 5 : 0)
+      const tw = _measure ? _measure.measureText(row.label).width : 200
+      if (pos.x >= tx && pos.x <= tx + tw && pos.y >= by && pos.y <= by + ROW_BTN) {
+        focusSlot(row)
         return
       }
     }
