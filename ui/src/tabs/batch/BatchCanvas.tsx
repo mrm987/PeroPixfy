@@ -91,8 +91,8 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
     onViewportChangeRef.current(vp.current)
   }, [])
 
-  // 초기 정렬 + '맞춤' 버튼: 최상단 슬롯을 좌상단에 둔다(전체 맞춤 대신). 가로만 캔버스 폭에 맞추되
-  // 100% 초과 확대는 하지 않는다 — 슬롯이 많아도 위에서부터 읽기 좋게.
+  // 초기 정렬 + '맞춤' 버튼: 모든 슬롯이 다 보이게 가로·세로 둘 다 맞춘 배율(100% 초과 확대는
+  // 안 함)로, 위치는 좌상단(중앙 정렬 아님)에 맞춘다.
   const alignTopLeft = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -101,7 +101,8 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
     const rect = canvas.getBoundingClientRect()
     const pad = 24
     const cw = b.maxX - b.minX || 1
-    const scale = clamp(Math.min((rect.width - pad * 2) / cw, 1), MIN, MAX)
+    const ch = b.maxY - b.minY || 1
+    const scale = clamp(Math.min((rect.width - pad * 2) / cw, (rect.height - pad * 2) / ch, 1), MIN, MAX)
     vp.current = { scale, x: pad - b.minX * scale, y: pad - b.minY * scale }
     kickLowRes()
     commitViewport()
