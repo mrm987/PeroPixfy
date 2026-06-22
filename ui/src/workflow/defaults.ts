@@ -8,8 +8,9 @@ export const ANIMA_DEFAULTS: GenerationParams = {
   clip: 'qwen_3_06b_base.safetensors',
   vae: 'qwen_image_vae.safetensors',
   loras: [],
-  positive: '',
-  negative: '',
+  // Anima v1.0 공식 샘플 이미지의 프롬프트를 기본값으로 — 새 설치/초기화 시 바로 쓸 수 있는 예시.
+  positive: 'masterpiece, best quality, score_7, safe, 1girl, standing, white dress, red hair, a blue butterfly is on her finger, (glitch:2)',
+  negative: 'worst quality, low quality, score_1, score_2, score_3, artist name',
   seed: 0,
   steps: 30,
   cfg: 5,

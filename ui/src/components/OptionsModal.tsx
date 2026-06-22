@@ -73,10 +73,6 @@ export function OptionsModal({ onClose }: { onClose: () => void }) {
             <button type="button" onClick={() => void check()} disabled={checking}>
               {checking ? t('Checking…') : t('Check for updates')}
             </button>
-            {ver && (
-              <button type="button" title={t('Open the folder with the update bat')}
-                onClick={() => void openOutputFolder(ver.rootPath)}>{t('📂 Open')}</button>
-            )}
           </div>
         </label>
         {upd && (
