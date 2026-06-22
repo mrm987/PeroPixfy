@@ -549,7 +549,7 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
   }
 }, {
   name: 'peropix.batch',
-  version: 3,
+  version: 4,
   // 구버전(캐릭터 개념 이전) → 기본 캐릭터 하나에 기존 탭을 귀속시킨다.
   migrate: (persisted, version) => {
     const p = (persisted ?? {}) as Record<string, unknown>
@@ -567,6 +567,8 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
     }
     // v3: 기본 출력 폴더 브랜드명 변경(PeroPix→PeroPixfy). 커스텀 값은 건드리지 않는다.
     if (version < 3 && p.outputFolder === 'PeroPix/Multi') p.outputFolder = 'PeroPixfy/Multi'
+    // v4: 캔버스 초기 정렬을 좌상단으로 변경 — 옛 전체맞춤(중앙) 뷰포트를 1회 초기화해 재정렬.
+    if (version < 4) p.viewports = {}
     return p as unknown as BatchState
   },
   // 슬롯/이름/프리셋/캐릭터 base + 완료된 결과를 보존(재실행해도 캔버스 유지).

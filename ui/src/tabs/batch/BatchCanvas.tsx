@@ -114,14 +114,30 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
     commitViewport()
   }, [])
 
-  // 레이아웃 재계산 — 첫 결과가 생기면 한 번 전체 맞춤.
+  // 초기 정렬: 최상단 슬롯을 좌상단에 둔다(전체 맞춤 대신). 가로만 캔버스 폭에 맞추되
+  // 100% 초과 확대는 하지 않는다 — 슬롯이 많아도 위에서부터 읽기 좋게.
+  const alignTopLeft = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const b = contentBounds(layoutRef.current)
+    if (!b) return
+    const rect = canvas.getBoundingClientRect()
+    const pad = 24
+    const cw = b.maxX - b.minX || 1
+    const scale = clamp(Math.min((rect.width - pad * 2) / cw, 1), MIN, MAX)
+    vp.current = { scale, x: pad - b.minX * scale, y: pad - b.minY * scale }
+    kickLowRes()
+    commitViewport()
+  }, [])
+
+  // 레이아웃 재계산 — 첫 진입(저장된 뷰포트 없음) 시 한 번 좌상단 정렬.
   useEffect(() => {
     layoutRef.current = computeLayout(slots, results, cardW, slotStart)
     if (!didFit.current && layoutRef.current.length) {
-      fit()
+      alignTopLeft()
       didFit.current = true
     }
-  }, [slots, results, cardW, slotStart, fit])
+  }, [slots, results, cardW, slotStart, alignTopLeft])
 
   // 상시 RAF 렌더 루프
   useEffect(() => {
