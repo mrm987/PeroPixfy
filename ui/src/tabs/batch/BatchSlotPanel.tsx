@@ -127,12 +127,18 @@ export function BatchSlotPanel() {
       </div>
       {slots.map((sl, i) => (
         <div key={sl.id}
-          className={`slot-row${sl.locked ? ' locked' : ''}${slotOver === i && slotDrag !== null && slotDrag !== i ? ' drag-over' : ''}`}
+          className={`slot-row${sl.locked ? ' locked' : ''}${slotDrag === i ? ' dragging' : ''}${slotOver === i && slotDrag !== null && slotDrag !== i ? ' drag-over' : ''}`}
           onDragOver={(e) => { if (slotDrag !== null) { e.preventDefault(); setSlotOver(i) } }}
           onDrop={(e) => { e.preventDefault(); if (slotDrag !== null) s.reorderSlots(slotDrag, i); setSlotDrag(null); setSlotOver(null) }}>
           <div className="slot-head">
             <span className="slot-drag" draggable title={t('Drag to reorder')}
-              onDragStart={(e) => { setSlotDrag(i); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)) }}
+              onDragStart={(e) => {
+                setSlotDrag(i)
+                e.dataTransfer.effectAllowed = 'move'
+                e.dataTransfer.setData('text/plain', String(i))
+                const row = (e.currentTarget as HTMLElement).closest('.slot-row')
+                if (row) e.dataTransfer.setDragImage(row, 20, 16) // 행 전체를 고스트로
+              }}
               onDragEnd={() => { setSlotDrag(null); setSlotOver(null) }}>⠿</span>
             <span className="slot-num">{pad3((tab?.slotStart ?? 1) + i)}</span>
             <button className="slot-lock" title={sl.locked ? t('Unlock') : t('Exclude from generation')}
