@@ -3,3 +3,8 @@ node_modules/
 data/
 
 .screenshots/
+
+# dev-only tooling — not needed at runtime / in an end-user clone.
+# (kept locally; git clone only fetches what the plugin needs to run.)
+/ui/scripts/
+/scripts/*.py

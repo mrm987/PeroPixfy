@@ -8,7 +8,7 @@ A lightweight, Anima-only frontend plugin that runs on the ComfyUI engine itself
 
 ## English
 
-Instead of the node-graph UI, you work in a simple 3-tab web app (`http://127.0.0.1:8188/peropix`). Generation goes through the **same server's queue and graph executor**, so output is **pixel-identical to ComfyUI** (verified by pixel comparison for t2i / LoRA chain + bypass / i2i — `ui/scripts/verify_*.ts`).
+Instead of the node-graph UI, you work in a simple 3-tab web app (`http://127.0.0.1:8188/peropix`). Generation goes through the **same server's queue and graph executor**, so output is **pixel-identical to ComfyUI** (verified by pixel comparison for t2i / LoRA chain + bypass / i2i).
 
 ### Install
 
@@ -50,7 +50,7 @@ server/
 ui/                    React+TS+Vite source → `npm run build` → web/
 web/                   build output (served statically by routes.py)
 data/                  loras.db, thumbs/, styles/, settings.json (git-ignored)
-scripts/               run_peropix.bat, compare.py (pixel diff)
+scripts/               run_peropix.bat (lean launcher)
 ```
 
 ### Development
@@ -60,7 +60,6 @@ cd ui
 npm install
 npm run dev        # Vite dev server (proxies to 8188) — ComfyUI must be running
 npm run build      # type-check + build web/
-npm run verify:m1  # parity check (t2i) — m2 (LoRA chain), m6 (i2i/inpaint/hires), m7 (spectrum)
 ```
 
 Core design: the single source of truth for generation parameters is `GenerationParams` (`ui/src/workflow/types.ts`). The graph is always rebuilt via `buildGraph()` (`ui/src/workflow/builder.ts`); a bypassed LoRA is expressed by omitting the node and linking MODEL through directly. Records/reproduction store the params, not the graph.
@@ -73,7 +72,7 @@ ComfyUI 엔진을 그대로 사용하는 Anima 전용 경량 프론트엔드 플
 
 노드 그래프 UI 대신 단순한 3탭 웹앱(`http://127.0.0.1:8188/peropix`)으로 작업하며,
 생성은 같은 서버의 큐·그래프 실행기를 거치므로 **결과물이 ComfyUI와 픽셀 단위로 동일**하다
-(t2i / 로라 체인+bypass / i2i 세 케이스 모두 픽셀 비교로 검증됨 — `ui/scripts/verify_*.ts`).
+(t2i / 로라 체인+bypass / i2i 세 케이스 모두 픽셀 비교로 검증됨).
 
 ### 설치
 
@@ -126,7 +125,7 @@ server/
 ui/                    React+TS+Vite 소스 → `npm run build` → web/
 web/                   빌드 산출물 (routes.py가 정적 서빙)
 data/                  loras.db, thumbs/, styles/, settings.json (git 제외)
-scripts/               run_peropix.bat, compare.py (픽셀 비교)
+scripts/               run_peropix.bat (린 실행 런처)
 ```
 
 ### 개발
@@ -136,7 +135,6 @@ cd ui
 npm install
 npm run dev        # Vite dev 서버 (8188로 프록시) — ComfyUI가 떠 있어야 함
 npm run build      # 타입체크 + web/ 빌드
-npm run verify:m1  # 동일성 검증 (t2i) — m2(로라 체인), m6(i2i/inpaint/hires), m7(spectrum)
 ```
 
 핵심 설계: 생성 파라미터의 단일 진실 공급원은 `GenerationParams`(`ui/src/workflow/types.ts`).
