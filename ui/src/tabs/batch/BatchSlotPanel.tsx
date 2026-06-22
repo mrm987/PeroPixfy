@@ -70,11 +70,17 @@ export function BatchSlotPanel() {
           <div className="preset-list">
             {ordered.map((p, i) => (
               <div key={p.filename}
-                className={`preset-item${p.filename === curFilename ? ' active' : ''}${presetOver === i && presetDrag !== null && presetDrag !== i ? ' drag-over' : ''}`}
+                className={`preset-item${p.filename === curFilename ? ' active' : ''}${presetDrag === i ? ' dragging' : ''}${presetOver === i && presetDrag !== null && presetDrag !== i ? ' drag-over' : ''}`}
                 onDragOver={(e) => { if (presetDrag !== null) { e.preventDefault(); setPresetOver(i) } }}
                 onDrop={(e) => { e.preventDefault(); if (presetDrag !== null) s.reorderPresets(presetDrag, i); setPresetDrag(null); setPresetOver(null) }}>
                 <span className="preset-drag" draggable title={t('Drag to reorder')}
-                  onDragStart={(e) => { setPresetDrag(i); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)) }}
+                  onDragStart={(e) => {
+                    setPresetDrag(i)
+                    e.dataTransfer.effectAllowed = 'move'
+                    e.dataTransfer.setData('text/plain', String(i))
+                    const row = (e.currentTarget as HTMLElement).closest('.preset-item')
+                    if (row) e.dataTransfer.setDragImage(row, 20, 12) // 행 전체를 고스트로
+                  }}
                   onDragEnd={() => { setPresetDrag(null); setPresetOver(null) }}>⠿</span>
                 <button className="preset-name" onClick={() => { void s.applyPreset(p.filename); setPresetOpen(false) }}>{p.name}</button>
                 <button className="preset-act" title={t('Rename preset')} onClick={() => renamePreset(p.filename, p.name)}>✎</button>

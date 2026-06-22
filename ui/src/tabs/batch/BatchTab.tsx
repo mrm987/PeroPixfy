@@ -4,6 +4,7 @@ import { useT } from '../../i18n'
 import { Resizer } from '../../components/Resizer'
 import { activeCharOf, activeTabOf, sanitize, useBatch, type Viewport } from '../../stores/batch'
 import { useUi } from '../../stores/ui'
+import { useWorkbench } from '../../stores/workbench'
 import { ParamsPanel } from '../workbench/ParamsPanel'
 import { BatchCanvas } from './BatchCanvas'
 import type { ResultLike } from './batchCanvasRenderer'
@@ -36,6 +37,8 @@ export function BatchTab() {
   const countPerSlot = useBatch((s) => s.countPerSlot)
   const outputFolder = useBatch((s) => s.outputFolder)
   const activePromptId = useBatch((s) => s.activePromptId)
+  const progress = useWorkbench((s) => s.progress) // WS step 진행률(전역) — 현재 실행 prompt가 배치면 표시
+
   const viewports = useBatch((s) => s.viewports)
   const setViewport = useBatch((s) => s.setViewport)
   const multiW = useUi((s) => s.multiW)
@@ -121,7 +124,9 @@ export function BatchTab() {
         <div className="batch-footer">
           {(running || total > 0) && (
             <div className="queue-bar">
-              <span className="queue-count">{t('Queued {done}/{total}', { done, total })}{running ? '' : t(' · done')}</span>
+              <span className="queue-count">{t('Queued {done}/{total}', { done, total })}{running
+                ? (progress && progress.promptId === activePromptId ? ` · ${progress.value}/${progress.max}` : '')
+                : t(' · done')}</span>
               {running && (
                 <button className="queue-btn danger" onClick={() => void stop()}
                   title={t('Cancel the batch (interrupts the current image and clears the queue)')}>{t('Cancel')}</button>
