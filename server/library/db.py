@@ -109,6 +109,11 @@ def init(db_path):
                 checkpoint TEXT DEFAULT '',
                 positive_prompt TEXT DEFAULT '',
                 negative_prompt TEXT DEFAULT '',
+                sampler TEXT DEFAULT '',
+                scheduler TEXT DEFAULT '',
+                seed INTEGER DEFAULT 0,
+                steps INTEGER DEFAULT 0,
+                cfg REAL DEFAULT 0,
                 notes TEXT DEFAULT '',
                 tags TEXT DEFAULT '',
                 nsfw INTEGER DEFAULT 0,
@@ -123,6 +128,17 @@ def init(db_path):
             c.execute("ALTER TABLE styles ADD COLUMN negative_prompt TEXT DEFAULT ''")
         if "nsfw" not in style_cols:
             c.execute("ALTER TABLE styles ADD COLUMN nsfw INTEGER DEFAULT 0")
+        # 샘플러/스케줄러/시드/스텝/cfg — 스타일에 생성 파라미터까지 저장
+        if "sampler" not in style_cols:
+            c.execute("ALTER TABLE styles ADD COLUMN sampler TEXT DEFAULT ''")
+        if "scheduler" not in style_cols:
+            c.execute("ALTER TABLE styles ADD COLUMN scheduler TEXT DEFAULT ''")
+        if "seed" not in style_cols:
+            c.execute("ALTER TABLE styles ADD COLUMN seed INTEGER DEFAULT 0")
+        if "steps" not in style_cols:
+            c.execute("ALTER TABLE styles ADD COLUMN steps INTEGER DEFAULT 0")
+        if "cfg" not in style_cols:
+            c.execute("ALTER TABLE styles ADD COLUMN cfg REAL DEFAULT 0")
         c.execute("""
             CREATE TABLE IF NOT EXISTS style_loras (
                 style_id INTEGER NOT NULL,
@@ -338,17 +354,20 @@ STYLE_USER_FIELDS = ("name", "notes", "tags", "positive_prompt", "negative_promp
 
 
 def create_style(name, image_file, width, height, workflow_json, checkpoint, loras,
-                 positive_prompt="", negative_prompt=""):
+                 positive_prompt="", negative_prompt="",
+                 sampler="", scheduler="", seed=0, steps=0, cfg=0):
     """Insert a style row + child style_loras rows. Returns the new style id.
     `loras` is a list of {display_name, strength, enabled} dicts."""
     with _LOCK, _conn() as c:
         cur = c.execute(
             """INSERT INTO styles
                (name, image_file, width, height, workflow_json, checkpoint,
-                positive_prompt, negative_prompt, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                positive_prompt, negative_prompt, sampler, scheduler,
+                seed, steps, cfg, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (name, image_file, width, height, workflow_json, checkpoint,
-             positive_prompt, negative_prompt, time.time()),
+             positive_prompt, negative_prompt, sampler, scheduler,
+             seed, steps, cfg, time.time()),
         )
         sid = cur.lastrowid
         if loras:

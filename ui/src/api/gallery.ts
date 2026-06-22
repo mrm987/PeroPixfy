@@ -20,8 +20,10 @@ async function post(path: string, body: unknown): Promise<void> {
   })
 }
 
-export const recordGeneration = (promptId: string, params: GenerationParams) =>
-  post('record', { prompt_id: promptId, params })
+export type GenSource = 'single' | 'multi'
+
+export const recordGeneration = (promptId: string, params: GenerationParams, source: GenSource = 'single') =>
+  post('record', { prompt_id: promptId, params, source })
 
 export const completeGeneration = (promptId: string, files: OutputImage[]) =>
   post('complete', { prompt_id: promptId, files })
@@ -33,7 +35,8 @@ export const starGeneration = (promptId: string, starred: boolean) =>
 
 export const deleteGeneration = (promptId: string) => post('delete', { prompt_id: promptId })
 
-export async function listGenerations(limit = 100): Promise<GenerationRecord[]> {
-  const res = await fetch(`${BASE}/list?limit=${limit}`)
+export async function listGenerations(limit = 100, source?: GenSource): Promise<GenerationRecord[]> {
+  const q = source ? `&source=${source}` : ''
+  const res = await fetch(`${BASE}/list?limit=${limit}${q}`)
   return (await res.json()).generations ?? []
 }

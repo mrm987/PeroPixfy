@@ -1,4 +1,5 @@
-import type { ApiGraph, GenerationParams } from './types'
+import { SPECTRUM_DEFAULTS } from './defaults'
+import type { ApiGraph, ApiNode, GenerationParams } from './types'
 
 /**
  * Builds an API-format prompt graph for the Anima t2i pipeline.
@@ -23,29 +24,9 @@ export function buildGraph(p: GenerationParams): ApiGraph {
     model = [id, 0]
   }
 
-  // Spectrum 가속: 로라 체인 뒤에 MODEL 패처 삽입 (README 권장 배선).
-  // steps는 다운스트림 샘플러와 반드시 일치해야 함 — hires 2-pass도 같은 steps 사용.
-  if (p.spectrum?.enabled) {
-    g['spectrum'] = {
-      class_type: 'DiTSpectrumPatch',
-      inputs: {
-        model,
-        steps: p.steps,
-        window_size: 2.0,
-        flex_window: 0.25,
-        warmup_steps: 6,
-        tail_actual_steps: 3,
-        blend_w: 0.3,
-        cheby_degree: 3,
-        ridge_lambda: 0.1,
-        history_size: 100,
-        enabled: true,
-        one_sampler_only: false,
-        verbose: false,
-      },
-    }
-    model = ['spectrum', 0]
-  }
+  // Spectrum(가속) + Mod Guidance + adaptive SMC-CFG는 전용 올인원 샘플러
+  // SpectrumKSamplerModGuidance가 한 노드에서 처리한다 (아래 sample()). 별도 모델
+  // 패치는 넣지 않으며, 이는 사용자의 실제 워크플로우(그 노드)와 동일한 구성이다.
 
   g['pos'] = { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.positive } }
   g['neg'] = { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.negative } }
@@ -74,81 +55,92 @@ export function buildGraph(p: GenerationParams): ApiGraph {
     }
   }
 
-  const sample = (id: string, latentIn: [string, number], denoise: number) => {
-    g[id] = {
-      class_type: 'KSampler',
-      inputs: {
-        model,
-        positive: ['pos', 0],
-        negative: ['neg', 0],
-        latent_image: latentIn,
-        seed: p.seed,
-        steps: p.steps,
-        cfg: p.cfg,
-        sampler_name: p.sampler,
-        scheduler: p.scheduler,
-        denoise,
-      },
+  // Spectrum이 켜져 있으면 표준 KSampler 대신 올인원 SpectrumKSamplerModGuidance
+  // (가속 + Mod Guidance + adaptive SMC-CFG)를 쓴다 — 가속만 할 때의 퀄리티 저하 보정.
+  const spec = p.spectrum?.enabled ? p.spectrum : null
+  const sample = (id: string, latentIn: [string, number], denoise: number, steps = p.steps) => {
+    const base: ApiNode['inputs'] = {
+      model,
+      positive: ['pos', 0],
+      negative: ['neg', 0],
+      latent_image: latentIn,
+      seed: p.seed,
+      steps,
+      cfg: p.cfg,
+      sampler_name: p.sampler,
+      scheduler: p.scheduler,
+      denoise,
     }
+    g[id] = spec
+      ? {
+          class_type: 'SpectrumKSamplerModGuidance',
+          inputs: {
+            ...base,
+            clip: ['clip', 0],
+            quality_tags: spec.qualityTags ?? SPECTRUM_DEFAULTS.qualityTags,
+            mod_w_profile: spec.modWProfile ?? SPECTRUM_DEFAULTS.modWProfile,
+            adaptive_smc_alpha: spec.smcAlpha ?? SPECTRUM_DEFAULTS.smcAlpha,
+          },
+        }
+      : { class_type: 'KSampler', inputs: base }
   }
-  sample('sampler', latent, p.mode === 't2i' ? 1 : p.denoise)
+  const baseDenoise = p.mode === 'i2i' ? p.i2iDenoise : p.mode === 'inpaint' ? p.inpaintDenoise : 1
+  sample('sampler', latent, baseDenoise)
 
   let image: [string, number]
   const round8 = (n: number) => Math.round(n / 8) * 8
-  if (p.hires?.enabled && p.hires.method === 'latent2pass') {
-    g['hires_up'] = {
-      class_type: 'LatentUpscale',
-      inputs: {
-        samples: ['sampler', 0],
-        upscale_method: 'nearest-exact',
-        width: round8(p.width * p.hires.scale),
-        height: round8(p.height * p.hires.scale),
-        crop: 'disabled',
-      },
+  if (p.hires?.enabled) {
+    // 업스케일 모델로 키운 뒤(모델 고유 배율) 목표 배율(scale × 원본)로 리사이즈 → 재샘플.
+    // 2배 모델로 키우고 1.5배로 줄여 KSampler를 돌리면 GPU 부하를 줄일 수 있다.
+    if (!p.hires.upscaleModel) throw new Error('hires: no upscale model selected')
+    g['decode_base'] = { class_type: 'VAEDecode', inputs: { samples: ['sampler', 0], vae: ['vae', 0] } }
+    g['upmodel'] = { class_type: 'UpscaleModelLoader', inputs: { model_name: p.hires.upscaleModel } }
+    g['up_img'] = { class_type: 'ImageUpscaleWithModel', inputs: { upscale_model: ['upmodel', 0], image: ['decode_base', 0] } }
+    // 목표 스케일 on(기본): 모델 업스케일 결과를 목표 배율로 리사이즈 후 재샘플.
+    // off: 리사이즈 없이 모델 고유 배율 그대로 바로 2패스 (예: 2배 모델 → 2배에서 재샘플).
+    let upscaled: [string, number] = ['up_img', 0]
+    if (p.hires.useTargetScale === true) {
+      g['up_resized'] = {
+        class_type: 'ImageScale',
+        inputs: {
+          image: ['up_img', 0],
+          upscale_method: 'lanczos',
+          width: round8(p.width * p.hires.scale),
+          height: round8(p.height * p.hires.scale),
+          crop: 'disabled',
+        },
+      }
+      upscaled = ['up_resized', 0]
     }
-    sample('sampler_hires', ['hires_up', 0], p.hires.denoise)
+    g['hires_latent'] = { class_type: 'VAEEncode', inputs: { pixels: upscaled, vae: ['vae', 0] } }
+    sample('sampler_hires', ['hires_latent', 0], p.hires.denoise, p.hires.steps ?? p.steps)
     g['decode'] = { class_type: 'VAEDecode', inputs: { samples: ['sampler_hires', 0], vae: ['vae', 0] } }
     image = ['decode', 0]
-  } else if (p.hires?.enabled && p.hires.method === 'usdu') {
-    if (!p.hires.upscaleModel) throw new Error('USDU: no upscale model selected')
-    g['decode'] = { class_type: 'VAEDecode', inputs: { samples: ['sampler', 0], vae: ['vae', 0] } }
-    g['upmodel'] = { class_type: 'UpscaleModelLoader', inputs: { model_name: p.hires.upscaleModel } }
-    g['usdu'] = {
-      class_type: 'UltimateSDUpscale',
-      inputs: {
-        image: ['decode', 0],
-        model,
-        positive: ['pos', 0],
-        negative: ['neg', 0],
-        vae: ['vae', 0],
-        upscale_model: ['upmodel', 0],
-        upscale_by: p.hires.scale,
-        seed: p.seed,
-        steps: p.steps,
-        cfg: p.cfg,
-        sampler_name: p.sampler,
-        scheduler: p.scheduler,
-        denoise: p.hires.denoise,
-        mode_type: 'Linear',
-        tile_width: 512,
-        tile_height: 512,
-        mask_blur: 8,
-        tile_padding: 32,
-        seam_fix_mode: 'None',
-        seam_fix_denoise: 1,
-        seam_fix_width: 64,
-        seam_fix_mask_blur: 8,
-        seam_fix_padding: 16,
-        force_uniform_tiles: true,
-        tiled_decode: false,
-      },
+    // 하이레스 색감 보정: 1패스 원본(decode_base)의 색 통계로 되돌린다.
+    if (p.hires.colorMatch !== false) {
+      g['hires_cm'] = {
+        class_type: 'PeroPixColorMatch',
+        inputs: {
+          image: ['decode', 0],
+          reference: ['decode_base', 0],
+          method: p.hires.colorMatchMethod ?? 'reinhard',
+          strength: p.hires.colorMatchStrength ?? 0.8,
+        },
+      }
+      image = ['hires_cm', 0]
     }
-    image = ['usdu', 0]
   } else {
     g['decode'] = { class_type: 'VAEDecode', inputs: { samples: ['sampler', 0], vae: ['vae', 0] } }
     image = ['decode', 0]
   }
 
-  g['save'] = { class_type: 'SaveImage', inputs: { images: image, filename_prefix: p.filenamePrefix } }
+  // save 설정이 있으면(Multi 탭) 포맷 지정 가능한 PeroPixSaveImage로, 없으면(Single)
+  // 코어 SaveImage(PNG)로 저장한다. 둘 다 PNG는 워크플로우 메타데이터를 보존한다.
+  g['save'] = p.save
+    ? {
+        class_type: 'PeroPixSaveImage',
+        inputs: { images: image, filename_prefix: p.filenamePrefix, format: p.save.format, quality: p.save.quality },
+      }
+    : { class_type: 'SaveImage', inputs: { images: image, filename_prefix: p.filenamePrefix } }
   return g
 }

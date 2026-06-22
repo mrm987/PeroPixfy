@@ -1,0 +1,1138 @@
+"""ComfyUI node definitions for Spectrum inference acceleration."""
+
+import json
+import logging
+
+import comfy.samplers
+import comfy.sd
+import comfy.utils
+import folder_paths
+
+from .mod_guidance import AUTO_ADAPTER_SENTINEL, setup_mod_guidance
+from .spectrum import apply_dit_spectrum_patch, spectrum_sample
+
+logger = logging.getLogger(__name__)
+
+AUTO_CALIBRATOR_SENTINEL = "(auto-download default)"
+
+
+def _adapter_choices():
+    return [AUTO_ADAPTER_SENTINEL] + folder_paths.get_filename_list("loras")
+
+
+def _calibrator_choices():
+    # Re-uses the loras directory for user-supplied artifacts (same convention
+    # as mod-guidance adapters). Auto-download lands in models/anima_dcw_calibrator/.
+    return [AUTO_CALIBRATOR_SENTINEL] + folder_paths.get_filename_list("loras")
+
+# ---------------------------------------------------------------------------
+# Common input definitions
+# ---------------------------------------------------------------------------
+
+_KSAMPLER_INPUTS = {
+    "model": ("MODEL", {"tooltip": "The model used for denoising the input latent."}),
+    "seed": (
+        "INT",
+        {
+            "default": 0,
+            "min": 0,
+            "max": 0xFFFFFFFFFFFFFFFF,
+            "control_after_generate": True,
+        },
+    ),
+    "steps": ("INT", {"default": 28, "min": 1, "max": 10000}),
+    "cfg": (
+        "FLOAT",
+        {"default": 4.0, "min": 0.0, "max": 100.0, "step": 0.1, "round": 0.01},
+    ),
+    "sampler_name": (comfy.samplers.KSampler.SAMPLERS,),
+    "scheduler": (comfy.samplers.KSampler.SCHEDULERS,),
+    "positive": ("CONDITIONING",),
+    "negative": ("CONDITIONING",),
+    "latent_image": ("LATENT",),
+    "denoise": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
+}
+
+_QUALITY_TAGS_INPUT = (
+    "STRING",
+    {
+        "default": "absurdres, highres, masterpiece, best quality, score_9, score_8, newest, year 2025, year 2024",
+        "multiline": True,
+        "dynamicPrompts": True,
+        "tooltip": "Quality tags to steer generation toward via modulation.",
+    },
+)
+
+# Per-block guidance profiles. Each maps to a fixed (w, start, end, taper, taper_scale, final_w)
+# tuple — see docs/mod-guidance.md for the naming + rationale.
+# end_layer = -1 means "all blocks" (resolved against num_blocks at setup time).
+MOD_W_PROFILE_OFF = "off"
+MOD_W_PROFILES = {
+    "step_i8_skip27": dict(w=3.0, start_layer=8,  end_layer=27, taper=0, taper_scale=0.25, final_w=0.0),
+    "step_i14":       dict(w=3.0, start_layer=14, end_layer=-1, taper=0, taper_scale=0.25, final_w=0.0),
+    "uniform_w3":     dict(w=3.0, start_layer=0,  end_layer=-1, taper=0, taper_scale=0.25, final_w=0.0),
+}
+DEFAULT_MOD_W_PROFILE = "step_i8_skip27"
+
+
+_MOD_GUIDANCE_SIMPLE_INPUTS = {
+    "clip": ("CLIP", {"tooltip": "CLIP encoder for encoding positive quality tags."}),
+    "quality_tags": _QUALITY_TAGS_INPUT,
+    "mod_w_profile": (
+        [MOD_W_PROFILE_OFF] + list(MOD_W_PROFILES.keys()),
+        {
+            "default": DEFAULT_MOD_W_PROFILE,
+            "tooltip": (
+                "Per-block guidance schedule preset. "
+                "'off' disables modulation guidance entirely (no adapter download, no extra hook). "
+                "'step_i8_skip27' (default) protects early tonal-DC blocks 0–7 and the "
+                "final compensation block 27, applying w=3 to blocks 8–26 — best overall "
+                "quality but can occasionally show minor anatomy drift on drift-prone LoRAs. "
+                "'step_i14' is the SAFE option: steers only from block 14 onward, reliably "
+                "stays inside the trained manifold at the cost of a slightly less expressive result. "
+                "'uniform_w3' recovers pre-0413 behavior (not recommended — prone to pink-collapse)."
+            ),
+        },
+    ),
+}
+
+
+def _mod_guidance_advanced_inputs():
+    return {
+        "clip": _MOD_GUIDANCE_SIMPLE_INPUTS["clip"],
+        "adapter": (
+            _adapter_choices(),
+            {
+                "tooltip": (
+                    "pooled_text_proj safetensors adapter. "
+                    f"'{AUTO_ADAPTER_SENTINEL}' fetches the default ~12MB weight "
+                    "from the anima_lora release page on first use."
+                ),
+            },
+        ),
+        "quality_tags": _QUALITY_TAGS_INPUT,
+        "mod_w": (
+            "FLOAT",
+            {
+                "default": 3.0,
+                "min": -20.0,
+                "max": 20.0,
+                "step": 0.1,
+                "tooltip": "Peak modulation guidance strength applied per-block.",
+            },
+        ),
+        "mod_start_layer": (
+            "INT",
+            {
+                "default": 8,
+                "min": 0,
+                "max": 999,
+                "tooltip": (
+                    "Inclusive first block index that receives the steering delta. "
+                    "0 = uniform (pre-0413). 8 = protect tonal-DC blocks 0–7 (default)."
+                ),
+            },
+        ),
+        "mod_end_layer": (
+            "INT",
+            {
+                "default": 27,
+                "min": -1,
+                "max": 999,
+                "tooltip": (
+                    "Exclusive last block + 1. 27 (default, Anima has 28 blocks) "
+                    "skips the final compensation block — matches the 'step_i8_skip27' "
+                    "preset + the anima_lora CLI. -1 = all remaining blocks."
+                ),
+            },
+        ),
+        "mod_taper": (
+            "INT",
+            {
+                "default": 0,
+                "min": 0,
+                "max": 999,
+                "tooltip": (
+                    "Number of late slots inside [start, end) to scale by taper_scale. "
+                    "0 disables taper. 2 + end=27 reproduces the 'piecewise' preset."
+                ),
+            },
+        ),
+        "mod_taper_scale": (
+            "FLOAT",
+            {
+                "default": 0.25,
+                "min": 0.0,
+                "max": 1.0,
+                "step": 0.05,
+                "tooltip": "Multiplier applied to tapered slots (e.g. 0.25 -> w*0.25).",
+            },
+        ),
+        "mod_final_w": (
+            "FLOAT",
+            {
+                "default": 0.0,
+                "min": -20.0,
+                "max": 20.0,
+                "step": 0.1,
+                "tooltip": (
+                    "w applied at final_layer. 0.0 = don't disturb the output head (default). "
+                    "Set non-zero only if your LoRA needs final-layer steering."
+                ),
+            },
+        ),
+    }
+
+_SPECTRUM_INPUTS = {
+    "window_size": (
+        "FLOAT",
+        {
+            "default": 2.0,
+            "min": 1.0,
+            "max": 10.0,
+            "step": 0.25,
+            "tooltip": "Initial caching window N — actual forward every floor(N) steps.",
+        },
+    ),
+    "flex_window": (
+        "FLOAT",
+        {
+            "default": 0.25,
+            "min": 0.0,
+            "max": 2.0,
+            "step": 0.05,
+            "tooltip": "Window growth rate — N increases by this after each actual forward.",
+        },
+    ),
+    "warmup_steps": (
+        "INT",
+        {
+            "default": 6,
+            "min": 0,
+            "max": 50,
+            "tooltip": "Number of initial steps that always run actual forwards.",
+        },
+    ),
+    "blend_w": (
+        "FLOAT",
+        {
+            "default": 0.3,
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.05,
+            "tooltip": "Chebyshev/Taylor blend weight (1.0 = pure Chebyshev).",
+        },
+    ),
+    "cheby_degree": (
+        "INT",
+        {
+            "default": 3,
+            "min": 1,
+            "max": 10,
+            "tooltip": "Number of Chebyshev basis functions.",
+        },
+    ),
+    "ridge_lambda": (
+        "FLOAT",
+        {
+            "default": 0.1,
+            "min": 0.001,
+            "max": 10.0,
+            "step": 0.01,
+            "tooltip": "Ridge regression regularization strength.",
+        },
+    ),
+}
+
+_SPECTRUM_DEFAULTS = dict(
+    window_size=2.0,
+    flex_window=0.25,
+    warmup_steps=6,
+    blend_w=0.3,
+    cheby_degree=3,
+    ridge_lambda=0.1,
+)
+
+# SPD / SPEED: multi-resolution progressive diffusion composed with Spectrum
+# (naive-reset compose, validated in anima_lora/bench/spd/compose_report.md).
+# Low-res prefix runs uncached; at σ=spd_sigma the latent is spectral-expanded
+# to full res and Spectrum forecasts the tail. Euler-only.
+_SPD_INPUTS = {
+    "split_mode": (
+        ["single"],
+        {
+            "default": "single",
+            "tooltip": (
+                "SPD resolution schedule. 'single' = one low→full transition "
+                "(v0). The low-res prefix runs at spd_scale, then expands to full "
+                "resolution at σ=spd_sigma."
+            ),
+        },
+    ),
+    "spd_scale": (
+        "FLOAT",
+        {
+            "default": 0.5,
+            "min": 0.25,
+            "max": 1.0,
+            "step": 0.05,
+            "round": 0.01,
+            "tooltip": (
+                "Prefix resolution scale (fraction of full latent H/W) for the "
+                "low-res phase. 0.5 = quarter the tokens, the benched-coherent "
+                "point. 1.0 disables SPD (vanilla Spectrum). Lower than 0.5 is "
+                "untested and stresses the handoff re-warm."
+            ),
+        },
+    ),
+    "spd_sigma": (
+        "FLOAT",
+        {
+            "default": 0.7,
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.01,
+            "round": 0.001,
+            "tooltip": (
+                "Handoff σ: switch from low-res to full-res when the schedule "
+                "drops to this noise level. 0.7 is the validated knee (re-warm "
+                "overlaps Spectrum's natural warmup, so it's cheap). Later/lower "
+                "knees and HF-detail prompts are untested. 1.0 disables SPD."
+            ),
+        },
+    ),
+}
+
+# LoRA-SPD: an SPD-trained LoRA snapshots the resolution schedule it was fit to
+# into safetensors metadata (ss_spd_stages / ss_spd_transition_sigmas, written by
+# anima_lora/scripts/distill_spd.py). Reading it back lets the node auto-configure
+# the SPEED sampler so train/infer geometry stays aligned with no manual tuning.
+# If a selected LoRA carries no schedule metadata, fall back to the validated
+# single-handoff knee rather than erroring.
+SPD_FALLBACK_SCALE = 0.5
+SPD_FALLBACK_SIGMA = 0.7
+
+
+def _read_spd_schedule_meta(lora_name):
+    """Read (stages, transition_sigmas, label) from an SPD LoRA's metadata.
+
+    Returns ``(None, None, None)`` if the file has no schedule metadata or can't
+    be read (e.g. a non-safetensors LoRA) — the caller then falls back to the
+    manual scalars rather than hard-erroring.
+    """
+    from safetensors import safe_open
+
+    lora_path = folder_paths.get_full_path("loras", lora_name)
+    if lora_path is None:
+        return None, None, None
+    try:
+        with safe_open(lora_path, framework="pt") as f:
+            md = f.metadata() or {}
+    except Exception as e:  # not safetensors / unreadable header
+        logger.warning("SPD LoRA: could not read metadata from %s: %s", lora_name, e)
+        return None, None, None
+
+    label = md.get("ss_spd_schedule_label")
+    raw_stages = md.get("ss_spd_stages")
+    raw_trans = md.get("ss_spd_transition_sigmas")
+    try:
+        stages = [float(v) for v in json.loads(raw_stages)] if raw_stages else None
+        trans = [float(v) for v in json.loads(raw_trans)] if raw_trans else None
+    except (ValueError, TypeError) as e:
+        logger.warning(
+            "SPD LoRA: malformed schedule metadata in %s: %s", lora_name, e
+        )
+        return None, None, label
+    return stages, trans, label
+
+
+# SMC-CFG: α-adaptive sliding-mode CFG combine (Wang et al., arXiv:2603.03281,
+# Anima α-adaptive form — see anima_lora/docs/methods/smc_cfg.md). Replaces the
+# vanilla `uncond + w·(cond-uncond)` combine; no extra forwards. α=0 disables.
+_SMC_CFG_LAMBDA_DEFAULT = 5.0
+_SMC_CFG_ALPHA_DEFAULT = 0.1
+
+_SMC_CFG_ALPHA_INPUT = (
+    "FLOAT",
+    {
+        "default": _SMC_CFG_ALPHA_DEFAULT,
+        "min": 0.0,
+        "max": 1.0,
+        "step": 0.05,
+        "round": 0.001,
+        "tooltip": (
+            "α-adaptive Sliding-Mode Control CFG gain. "
+            "0 disables (vanilla CFG combine). 0.2 = production default — "
+            "k_t := α·mean(|v_cond − v_uncond|) per step keeps the bang-bang "
+            "correction in-band across CFG/σ/sample (paper's fixed k=0.1 was "
+            "~14× off on Anima at CFG=4). Recovers detail (fingers, eyes, text); "
+            "outputs run slightly darker. Auto-disabled when CFG=1."
+        ),
+    },
+)
+_SMC_CFG_LAMBDA_INPUT = (
+    "FLOAT",
+    {
+        "default": _SMC_CFG_LAMBDA_DEFAULT,
+        "min": 0.0,
+        "max": 20.0,
+        "step": 0.5,
+        "round": 0.1,
+        "tooltip": (
+            "SMC-CFG sliding-manifold slope λ. Paper sweep {3,4,5,6}; 5 best. "
+            "Higher λ tightens the sign() pattern's grip on small-|e| channels "
+            "(more detail recovery, more darkening); lower λ attenuates both."
+        ),
+    },
+)
+
+# DCW: SNR-t bias correction (arXiv:2604.16044). Anima form, λ < 0,
+# schedule fixed to one_minus_sigma. See anima_lora/docs/methods/dcw.md.
+# Exposed on the Advanced node only — the basic + mod nodes default to off.
+_DCW_INPUTS = {
+    "dcw_mode": (
+        ["off", "manual", "auto"],
+        {
+            "default": "off",
+            "tooltip": (
+                "DCW correction mode. "
+                "'off' disables correction entirely. "
+                "'manual' uses the scalar dcw_lambda × schedule(σ) — predictable, "
+                "user-tunable. "
+                "'auto' uses an OnlineDCWCalibrator fusion head (~few MB, "
+                "auto-downloaded on first use) to predict per-prompt λ̂ from "
+                "warmup observations of the post-CFG velocity. Forces band='LL'. "
+                "Tuned at CFG=4 — at CFG≈1 the head's α̂ direction may "
+                "overshoot; prefer manual then."
+            ),
+        },
+    ),
+    "dcw_lambda": (
+        "FLOAT",
+        {
+            "default": 0.01,
+            "min": -1.0,
+            "max": 1.0,
+            "step": 0.001,
+            "round": 0.0001,
+            "tooltip": (
+                "DCW post-step bias correction strength (manual mode). 0.0 = "
+                "disabled. Default +0.01 is the verified hyperparam for "
+                "LL-only at CFG≥~2 (recovers detail at non-square aspects). "
+                "At CFG=1 / 1024² use ≈ -0.015. Schedule fixed to "
+                "one_minus_sigma. Composes with Spectrum + mod guidance; "
+                "sampler-agnostic. Ignored in auto mode."
+            ),
+        },
+    ),
+    "dcw_band_mask": (
+        ["LL", "all", "HH", "LH+HL+HH"],
+        {
+            "default": "LL",
+            "tooltip": (
+                "Restrict DCW correction to a subset of single-level Haar "
+                "subbands (manual mode). 'LL' (default) is strictly better "
+                "than broadband on Anima — improves all four bands while "
+                "'all' worsens detail bands. 'all' = paper-form broadband "
+                "correction. 'HH' / 'LH+HL+HH' are ablation modes. "
+                "Forced to 'LL' in auto mode."
+            ),
+        },
+    ),
+    "dcw_calibrator": (
+        _calibrator_choices(),
+        {
+            "tooltip": (
+                "Fusion-head safetensors artifact (auto mode only). "
+                f"'{AUTO_CALIBRATOR_SENTINEL}' fetches the default head from "
+                "the ComfyUI-Spectrum-KSampler release page on first use "
+                "(stored under models/anima_dcw_calibrator/). Custom artifacts "
+                "are picked up from the loras directory."
+            ),
+        },
+    ),
+}
+
+
+# ---------------------------------------------------------------------------
+# Nodes
+# ---------------------------------------------------------------------------
+
+
+class SpectrumKSampler:
+    """Drop-in KSampler replacement with Spectrum acceleration using sensible defaults."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                **_KSAMPLER_INPUTS,
+                "adaptive_smc_alpha": _SMC_CFG_ALPHA_INPUT,
+            }
+        }
+
+    RETURN_TYPES = ("LATENT",)
+    FUNCTION = "sample"
+    CATEGORY = "sampling"
+    DESCRIPTION = (
+        "Spectrum-accelerated sampler. Drop-in KSampler replacement that "
+        "skips transformer blocks on predicted steps via Chebyshev polynomial "
+        "feature forecasting for ~2-3x speedup. Optional α-adaptive SMC-CFG "
+        "(default 0.2) modifies the CFG combine for detail recovery. DCW "
+        "lives on the Advanced node."
+    )
+
+    def sample(
+        self,
+        model,
+        seed,
+        steps,
+        cfg,
+        sampler_name,
+        scheduler,
+        positive,
+        negative,
+        latent_image,
+        denoise=1.0,
+        adaptive_smc_alpha=_SMC_CFG_ALPHA_DEFAULT,
+    ):
+        return spectrum_sample(
+            model,
+            seed,
+            steps,
+            cfg,
+            sampler_name,
+            scheduler,
+            positive,
+            negative,
+            latent_image,
+            denoise,
+            **_SPECTRUM_DEFAULTS,
+            dcw_mode="off",
+            smc_cfg_alpha=adaptive_smc_alpha,
+            smc_cfg_lambda=_SMC_CFG_LAMBDA_DEFAULT,
+        )
+
+
+class SpectrumKSamplerModGuidance:
+    """Spectrum sampler with modulation guidance — quality steering via learned projection."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                **_KSAMPLER_INPUTS,
+                **_MOD_GUIDANCE_SIMPLE_INPUTS,
+                "adaptive_smc_alpha": _SMC_CFG_ALPHA_INPUT,
+            }
+        }
+
+    RETURN_TYPES = ("LATENT",)
+    FUNCTION = "sample"
+    CATEGORY = "sampling"
+    DESCRIPTION = (
+        "Spectrum-accelerated sampler with modulation guidance. "
+        "Steers generation toward quality tags via a learned pooled-text "
+        "projection into the AdaLN timestep embedding. The default ~12MB "
+        "pooled_text_proj adapter is auto-downloaded on first use. Quality "
+        "tags are encoded through the full CLIP + LLM adapter pipeline for "
+        "correct post-adapter pooling. Uses sensible Spectrum defaults and "
+        "the 'step_i8' per-block guidance schedule (early-DC protected). "
+        "Optional α-adaptive SMC-CFG (default 0.2) modifies the CFG combine "
+        "for detail recovery. DCW lives on the Advanced node. "
+        "Set mod_w_profile='off' to skip mod guidance entirely."
+    )
+
+    def sample(
+        self,
+        model,
+        clip,
+        seed,
+        steps,
+        cfg,
+        sampler_name,
+        scheduler,
+        positive,
+        negative,
+        latent_image,
+        quality_tags,
+        mod_w_profile,
+        denoise=1.0,
+        adaptive_smc_alpha=_SMC_CFG_ALPHA_DEFAULT,
+    ):
+        if mod_w_profile == MOD_W_PROFILE_OFF:
+            m = model
+        else:
+            profile = MOD_W_PROFILES.get(mod_w_profile) or MOD_W_PROFILES[DEFAULT_MOD_W_PROFILE]
+            m = model.clone()
+            setup_mod_guidance(
+                m,
+                clip,
+                positive,
+                negative,
+                None,
+                quality_tags,
+                profile["w"],
+                start_layer=profile["start_layer"],
+                end_layer=profile["end_layer"],
+                taper=profile["taper"],
+                taper_scale=profile["taper_scale"],
+                final_w=profile["final_w"],
+            )
+        return spectrum_sample(
+            m,
+            seed,
+            steps,
+            cfg,
+            sampler_name,
+            scheduler,
+            positive,
+            negative,
+            latent_image,
+            denoise,
+            **_SPECTRUM_DEFAULTS,
+            dcw_mode="off",
+            smc_cfg_alpha=adaptive_smc_alpha,
+            smc_cfg_lambda=_SMC_CFG_LAMBDA_DEFAULT,
+        )
+
+
+class SpectrumKSamplerAdvanced:
+    """Full Spectrum sampler with modulation guidance and tunable forecasting parameters."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                **_KSAMPLER_INPUTS,
+                **_mod_guidance_advanced_inputs(),
+                **_SPECTRUM_INPUTS,
+                **_DCW_INPUTS,
+                "adaptive_smc_alpha": _SMC_CFG_ALPHA_INPUT,
+                "smc_cfg_lambda": _SMC_CFG_LAMBDA_INPUT,
+            }
+        }
+
+    RETURN_TYPES = ("LATENT",)
+    FUNCTION = "sample"
+    CATEGORY = "sampling"
+    DESCRIPTION = (
+        "Spectrum-accelerated sampler with modulation guidance and full "
+        "control over forecasting parameters. Combines quality steering "
+        "via learned pooled-text projection with adjustable Chebyshev "
+        "polynomial feature forecasting for tuned speed/quality tradeoff. "
+        "Exposes DCW (post-step SNR-t bias correction, manual + auto modes) "
+        "and α-adaptive SMC-CFG (velocity-space sliding-mode CFG combine)."
+    )
+
+    def sample(
+        self,
+        model,
+        clip,
+        seed,
+        steps,
+        cfg,
+        sampler_name,
+        scheduler,
+        positive,
+        negative,
+        latent_image,
+        adapter,
+        quality_tags,
+        mod_w,
+        mod_start_layer=8,
+        mod_end_layer=27,
+        mod_taper=0,
+        mod_taper_scale=0.25,
+        mod_final_w=0.0,
+        denoise=1.0,
+        window_size=2.0,
+        flex_window=0.25,
+        warmup_steps=7,
+        blend_w=0.3,
+        cheby_degree=3,
+        ridge_lambda=0.1,
+        dcw_mode="off",
+        dcw_lambda=0.01,
+        dcw_band_mask="LL",
+        dcw_calibrator=AUTO_CALIBRATOR_SENTINEL,
+        adaptive_smc_alpha=_SMC_CFG_ALPHA_DEFAULT,
+        smc_cfg_lambda=_SMC_CFG_LAMBDA_DEFAULT,
+    ):
+        m = model.clone()
+        setup_mod_guidance(
+            m,
+            clip,
+            positive,
+            negative,
+            adapter,
+            quality_tags,
+            mod_w,
+            start_layer=mod_start_layer,
+            end_layer=mod_end_layer,
+            taper=mod_taper,
+            taper_scale=mod_taper_scale,
+            final_w=mod_final_w,
+        )
+        return spectrum_sample(
+            m,
+            seed,
+            steps,
+            cfg,
+            sampler_name,
+            scheduler,
+            positive,
+            negative,
+            latent_image,
+            denoise,
+            window_size=window_size,
+            flex_window=flex_window,
+            warmup_steps=warmup_steps,
+            blend_w=blend_w,
+            cheby_degree=cheby_degree,
+            ridge_lambda=ridge_lambda,
+            dcw_mode=dcw_mode,
+            dcw_lambda=dcw_lambda,
+            dcw_band_mask=dcw_band_mask,
+            dcw_calibrator=dcw_calibrator,
+            clip=clip,
+            smc_cfg_alpha=adaptive_smc_alpha,
+            smc_cfg_lambda=smc_cfg_lambda,
+        )
+
+
+class AnimaModGuidance:
+    """Standalone modulation-guidance model patcher.
+
+    Pulls the quality-steering setup out of the sampler so it composes with any
+    sampler (vanilla KSampler, Spectrum, or the SPEED node) by sitting upstream
+    on the MODEL input. Returns a patched MODEL clone — the actual positive /
+    negative conditioning is still wired into the sampler as usual; this node
+    reads them only to compute the steering delta direction.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model": ("MODEL", {"tooltip": "Model to patch with mod guidance."}),
+                **_MOD_GUIDANCE_SIMPLE_INPUTS,
+                "positive": ("CONDITIONING",),
+                "negative": ("CONDITIONING",),
+            }
+        }
+
+    RETURN_TYPES = ("MODEL",)
+    FUNCTION = "patch"
+    CATEGORY = "model_patches"
+    DESCRIPTION = (
+        "Modulation guidance as a standalone model patcher. Steers generation "
+        "toward quality tags via a learned pooled-text projection into the AdaLN "
+        "timestep embedding (the default ~12MB adapter is auto-downloaded on "
+        "first use). Wire its output MODEL into any sampler — composes with the "
+        "Spectrum and SPEED (Spectrum+SPD) samplers. Set mod_w_profile='off' to "
+        "pass the model through unchanged."
+    )
+
+    def patch(self, model, clip, quality_tags, mod_w_profile, positive, negative):
+        if mod_w_profile == MOD_W_PROFILE_OFF:
+            return (model,)
+        profile = MOD_W_PROFILES.get(mod_w_profile) or MOD_W_PROFILES[DEFAULT_MOD_W_PROFILE]
+        m = model.clone()
+        setup_mod_guidance(
+            m,
+            clip,
+            positive,
+            negative,
+            None,
+            quality_tags,
+            profile["w"],
+            start_layer=profile["start_layer"],
+            end_layer=profile["end_layer"],
+            taper=profile["taper"],
+            taper_scale=profile["taper_scale"],
+            final_w=profile["final_w"],
+        )
+        return (m,)
+
+
+class DiTSpectrumPatch:
+    """Standalone DiT Spectrum MODEL patcher.
+
+    Applies only the original Spectrum final_layer-pre-feature forecasting path
+    to a MODEL clone. The returned MODEL can be wired into ComfyUI's built-in
+    KSampler, KSampler Advanced, Custom Sampler, or other sampler nodes.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model": ("MODEL", {"tooltip": "DiT MODEL to patch with Spectrum."}),
+                "steps": (
+                    "INT",
+                    {
+                        "default": 30,
+                        "min": 1,
+                        "max": 10000,
+                        "tooltip": "Must match the downstream sampler's steps.",
+                    },
+                ),
+                "window_size": (
+                    "FLOAT",
+                    {
+                        "default": 2.0,
+                        "min": 1.0,
+                        "max": 10.0,
+                        "step": 0.25,
+                        "tooltip": "Initial caching window; 1.0 disables cached steps.",
+                    },
+                ),
+                "flex_window": (
+                    "FLOAT",
+                    {
+                        "default": 0.25,
+                        "min": 0.0,
+                        "max": 2.0,
+                        "step": 0.05,
+                        "tooltip": "Window growth after each actual forward.",
+                    },
+                ),
+                "warmup_steps": (
+                    "INT",
+                    {
+                        "default": 6,
+                        "min": 0,
+                        "max": 10000,
+                        "tooltip": "Initial steps forced to actual DiT forwards.",
+                    },
+                ),
+                "tail_actual_steps": (
+                    "INT",
+                    {
+                        "default": 3,
+                        "min": 0,
+                        "max": 10000,
+                        "tooltip": "Final steps forced to actual DiT forwards.",
+                    },
+                ),
+                "blend_w": (
+                    "FLOAT",
+                    {
+                        "default": 0.3,
+                        "min": 0.0,
+                        "max": 1.0,
+                        "step": 0.05,
+                        "tooltip": "Chebyshev/Taylor blend weight; 1.0 is pure Chebyshev.",
+                    },
+                ),
+                "cheby_degree": (
+                    "INT",
+                    {
+                        "default": 3,
+                        "min": 1,
+                        "max": 10,
+                        "tooltip": "Chebyshev polynomial degree.",
+                    },
+                ),
+                "ridge_lambda": (
+                    "FLOAT",
+                    {
+                        "default": 0.1,
+                        "min": 0.001,
+                        "max": 10.0,
+                        "step": 0.01,
+                        "tooltip": "Ridge regression regularization strength.",
+                    },
+                ),
+                "history_size": (
+                    "INT",
+                    {
+                        "default": 100,
+                        "min": 5,
+                        "max": 10000,
+                        "tooltip": "Forecaster buffer size.",
+                    },
+                ),
+                "enabled": ("BOOLEAN", {"default": True}),
+                "one_sampler_only": (
+                    "BOOLEAN",
+                    {
+                        "default": False,
+                        "tooltip": (
+                            "Apply Spectrum only to the first sampler run that "
+                            "uses this patched MODEL within a workflow run; later "
+                            "sampler runs (e.g. hi-res fix) pass through. Re-arms "
+                            "on each new workflow execution."
+                        ),
+                    },
+                ),
+                "verbose": (
+                    "BOOLEAN",
+                    {
+                        "default": False,
+                        "tooltip": "Log actual/cached step decisions.",
+                    },
+                ),
+            }
+        }
+
+    RETURN_TYPES = ("MODEL",)
+    FUNCTION = "patch"
+    CATEGORY = "model_patches"
+    DESCRIPTION = (
+        "Standalone DiT Spectrum model patch. Forecasts the DiT feature before "
+        "final_layer and re-runs only final_layer/unpatchify on cached steps. "
+        "Wire before a normal KSampler, KSampler Advanced, or Custom Sampler. "
+        "Does not perform sampling and does not include mod guidance, DCW, "
+        "SMC-CFG, or SPEED/SPD."
+    )
+
+    def patch(
+        self,
+        model,
+        steps=30,
+        window_size=2.0,
+        flex_window=0.25,
+        warmup_steps=6,
+        tail_actual_steps=3,
+        blend_w=0.3,
+        cheby_degree=3,
+        ridge_lambda=0.1,
+        history_size=100,
+        enabled=True,
+        one_sampler_only=False,
+        verbose=False,
+    ):
+        patched = apply_dit_spectrum_patch(
+            model,
+            steps=steps,
+            window_size=window_size,
+            flex_window=flex_window,
+            warmup_steps=warmup_steps,
+            tail_actual_steps=tail_actual_steps,
+            blend_w=blend_w,
+            cheby_degree=cheby_degree,
+            ridge_lambda=ridge_lambda,
+            history_size=history_size,
+            enabled=enabled,
+            one_sampler_only=one_sampler_only,
+            verbose=verbose,
+        )
+        return (patched,)
+
+
+class SpectrumSPDKSampler:
+    """KSampler (Spectrum + SPD) — the SPEED sampler.
+
+    Low-res SPD prefix (uncached) → spectral expansion at the handoff →
+    Spectrum-forecasted full-res tail. Consumes whatever MODEL it is given, so
+    mod guidance composes by sitting upstream (AnimaModGuidance node).
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                **_KSAMPLER_INPUTS,
+                **_SPD_INPUTS,
+                "adaptive_smc_alpha": _SMC_CFG_ALPHA_INPUT,
+            }
+        }
+
+    RETURN_TYPES = ("LATENT",)
+    FUNCTION = "sample"
+    CATEGORY = "sampling"
+    DESCRIPTION = (
+        "SPEED sampler: SPD multi-resolution progressive diffusion composed with "
+        "Spectrum. Runs the low-res prefix (spd_scale) uncached, spectral-expands "
+        "to full resolution at σ=spd_sigma, then Spectrum forecasts the full-res "
+        "tail (phase-2-only naive-reset compose, validated at scale 0.5 / σ0.7). "
+        "Stacks SPD's token saving on Spectrum's block saving. Euler-only "
+        "(the σ schedule is re-spaced mid-loop). Mod guidance composes via the "
+        "upstream AnimaModGuidance node. DCW lives on the Spectrum Advanced node."
+    )
+
+    def sample(
+        self,
+        model,
+        seed,
+        steps,
+        cfg,
+        sampler_name,
+        scheduler,
+        positive,
+        negative,
+        latent_image,
+        split_mode,
+        spd_scale,
+        spd_sigma,
+        denoise=1.0,
+        adaptive_smc_alpha=_SMC_CFG_ALPHA_DEFAULT,
+    ):
+        return spectrum_sample(
+            model,
+            seed,
+            steps,
+            cfg,
+            sampler_name,
+            scheduler,
+            positive,
+            negative,
+            latent_image,
+            denoise,
+            **_SPECTRUM_DEFAULTS,
+            dcw_mode="off",
+            smc_cfg_alpha=adaptive_smc_alpha,
+            smc_cfg_lambda=_SMC_CFG_LAMBDA_DEFAULT,
+            spd_scale=spd_scale,
+            spd_sigma=spd_sigma,
+        )
+
+
+class SpectrumSPDLoRAKSampler:
+    """KSampler (SPD LoRA) — loads an SPD-trained LoRA and auto-schedules SPEED.
+
+    A LoRA distilled by the SPD trajectory-adapter workflow (anima_lora
+    ``make exp-spd``) is fit to a specific resolution schedule and snapshots it
+    into its safetensors metadata. This node loads such a LoRA onto the MODEL and
+    reads ``ss_spd_stages`` / ``ss_spd_transition_sigmas`` to drive the SPEED
+    (SPD + Spectrum) sampler automatically — no manual scale/σ tuning, and the
+    inference geometry matches what the adapter trained on. Chain a stock
+    LoraLoader / AnimaModGuidance upstream to stack style LoRAs or mod guidance.
+    """
+
+    def __init__(self):
+        self.loaded_lora = None  # (path, state_dict) cache, mirrors LoraLoader
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                **_KSAMPLER_INPUTS,
+                "lora_name": (
+                    folder_paths.get_filename_list("loras"),
+                    {
+                        "tooltip": (
+                            "SPD-trained LoRA (anima_lora make exp-spd). Its "
+                            "resolution schedule is read from the file's "
+                            "ss_spd_stages / ss_spd_transition_sigmas metadata "
+                            "and applied automatically."
+                        ),
+                    },
+                ),
+                "lora_strength": (
+                    "FLOAT",
+                    {
+                        "default": 1.0,
+                        "min": -10.0,
+                        "max": 10.0,
+                        "step": 0.01,
+                        "tooltip": "LoRA weight multiplier applied to the MODEL.",
+                    },
+                ),
+                "adaptive_smc_alpha": _SMC_CFG_ALPHA_INPUT,
+            }
+        }
+
+    RETURN_TYPES = ("LATENT",)
+    FUNCTION = "sample"
+    CATEGORY = "sampling"
+    DESCRIPTION = (
+        "Loads an SPD-trained LoRA and runs the SPEED (SPD + Spectrum) sampler "
+        "with the resolution schedule auto-read from the adapter's metadata "
+        "(ss_spd_stages / ss_spd_transition_sigmas — supports multi-stage). "
+        "Aligns inference geometry with training, no manual scale/σ tuning. "
+        "Euler-only (σ is re-spaced mid-loop). Falls back to the validated "
+        "0.5 / σ0.7 single handoff only if the LoRA carries no schedule metadata. "
+        "Mod guidance / extra LoRAs compose via upstream nodes; DCW lives on the "
+        "Spectrum Advanced node."
+    )
+
+    def _apply_lora(self, model, lora_name, strength):
+        lora_path = folder_paths.get_full_path("loras", lora_name)
+        lora = None
+        if self.loaded_lora is not None:
+            if self.loaded_lora[0] == lora_path:
+                lora = self.loaded_lora[1]
+            else:
+                self.loaded_lora = None
+        if lora is None:
+            lora = comfy.utils.load_torch_file(lora_path, safe_load=True)
+            self.loaded_lora = (lora_path, lora)
+        # clip=None / strength_clip=0: model-only patch (LoraLoaderModelOnly form).
+        model_lora, _ = comfy.sd.load_lora_for_models(model, None, lora, strength, 0)
+        return model_lora
+
+    def sample(
+        self,
+        model,
+        seed,
+        steps,
+        cfg,
+        sampler_name,
+        scheduler,
+        positive,
+        negative,
+        latent_image,
+        lora_name,
+        lora_strength,
+        denoise=1.0,
+        adaptive_smc_alpha=_SMC_CFG_ALPHA_DEFAULT,
+    ):
+        m = self._apply_lora(model, lora_name, lora_strength)
+
+        spd_stages, spd_transition_sigmas, label = _read_spd_schedule_meta(lora_name)
+        if spd_stages is None:
+            logger.warning(
+                "SPD LoRA '%s' has no ss_spd_stages metadata; falling back to the "
+                "validated %.2f / σ%.2f single handoff.",
+                lora_name, SPD_FALLBACK_SCALE, SPD_FALLBACK_SIGMA,
+            )
+        else:
+            logger.info(
+                "SPD LoRA '%s': auto schedule label=%s stages=%s σ=%s",
+                lora_name, label, spd_stages, spd_transition_sigmas,
+            )
+
+        return spectrum_sample(
+            m,
+            seed,
+            steps,
+            cfg,
+            sampler_name,
+            scheduler,
+            positive,
+            negative,
+            latent_image,
+            denoise,
+            **_SPECTRUM_DEFAULTS,
+            dcw_mode="off",
+            smc_cfg_alpha=adaptive_smc_alpha,
+            smc_cfg_lambda=_SMC_CFG_LAMBDA_DEFAULT,
+            spd_scale=SPD_FALLBACK_SCALE,
+            spd_sigma=SPD_FALLBACK_SIGMA,
+            spd_stages=spd_stages,
+            spd_transition_sigmas=spd_transition_sigmas,
+        )
+
+
+NODE_CLASS_MAPPINGS = {
+    "SpectrumKSampler": SpectrumKSampler,
+    "SpectrumKSamplerModGuidance": SpectrumKSamplerModGuidance,
+    "SpectrumKSamplerAdvanced": SpectrumKSamplerAdvanced,
+    "SpectrumSPDKSampler": SpectrumSPDKSampler,
+    "SpectrumSPDLoRAKSampler": SpectrumSPDLoRAKSampler,
+    "AnimaModGuidance": AnimaModGuidance,
+    "DiTSpectrumPatch": DiTSpectrumPatch,
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "SpectrumKSampler": "KSampler (Spectrum)",
+    "SpectrumKSamplerModGuidance": "KSampler (Spectrum + Mod Guidance)",
+    "SpectrumKSamplerAdvanced": "KSampler (Spectrum + Mod Guidance Advanced)",
+    "SpectrumSPDKSampler": "KSampler (Spectrum + SPD / SPEED)",
+    "SpectrumSPDLoRAKSampler": "KSampler (SPD LoRA / auto-schedule)",
+    "AnimaModGuidance": "Anima Mod Guidance (model patch)",
+    "DiTSpectrumPatch": "DiT Spectrum Patch",
+}

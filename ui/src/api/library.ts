@@ -37,6 +37,11 @@ export interface StyleRecord {
   checkpoint: string
   positive_prompt: string
   negative_prompt: string
+  sampler: string
+  scheduler: string
+  seed: number
+  steps: number
+  cfg: number
   tags: string
   notes: string
   nsfw: number
@@ -146,6 +151,11 @@ export interface CreateStylePayload {
   checkpoint: string
   positive_prompt: string
   negative_prompt: string
+  sampler?: string
+  scheduler?: string
+  seed?: number
+  steps?: number
+  cfg?: number
   width: number
   height: number
   loras: { lora_rel_path: string; display_name?: string; strength: number; enabled: boolean }[]

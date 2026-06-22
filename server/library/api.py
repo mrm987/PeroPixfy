@@ -542,6 +542,7 @@ async def api_style_upload(request):
     lora_refs = styles.parse_loras_from_workflow(workflow)
     checkpoint = styles.parse_checkpoint_from_workflow(workflow)
     positive_prompt, negative_prompt = styles.parse_prompts_from_workflow(workflow)
+    samp = styles.parse_sampler_from_workflow(workflow)
 
     known = {l["rel_path"] for l in db.get_all()}
     for lref in lora_refs:
@@ -558,6 +559,11 @@ async def api_style_upload(request):
         loras=lora_refs,
         positive_prompt=positive_prompt,
         negative_prompt=negative_prompt,
+        sampler=samp["sampler"],
+        scheduler=samp["scheduler"],
+        seed=samp["seed"],
+        steps=samp["steps"],
+        cfg=samp["cfg"],
     )
     return web.json_response({"ok": True, "style": db.get_style(sid)})
 
@@ -671,6 +677,11 @@ async def api_style_create(request):
         checkpoint=data.get("checkpoint") or "",
         positive_prompt=data.get("positive_prompt") or "",
         negative_prompt=data.get("negative_prompt") or "",
+        sampler=data.get("sampler") or "",
+        scheduler=data.get("scheduler") or "",
+        seed=int(data.get("seed") or 0),
+        steps=int(data.get("steps") or 0),
+        cfg=float(data.get("cfg") or 0),
         loras=loras,
     )
     if data.get("tags"):

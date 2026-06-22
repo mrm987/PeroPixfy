@@ -6,6 +6,8 @@ import {
   type LoraEditableFields, type LoraRecord, type ScanState, type StyleRecord, type UpdateState,
 } from '../api/library'
 import type { LoraEntry } from '../workflow/types'
+import { activeCharOf, useBatch } from './batch'
+import { useUi } from './ui'
 import { useWorkbench } from './workbench'
 
 export type LoraSort = 'name' | 'recent' | 'favorite'
@@ -149,23 +151,80 @@ export const useLibrary = create<LibraryState>()(persist((set, get) => {
     // 현재 작업대 파라미터에 스타일을 적용 (탭 전환은 호출부 책임 —
     // 라이브러리에서는 작업대로 이동, 드로어에서는 그 자리 유지)
     applyStyle: (style) => {
-      const loras: LoraEntry[] = (style.loras ?? [])
-        .filter((l) => l.lora_rel_path)
-        .map((l) => ({ relPath: l.lora_rel_path, strength: l.strength, enabled: !!l.enabled }))
       const wb = useWorkbench.getState()
-      wb.set({
+      // 설치된 로라 목록(/object_info)에 basename으로 매칭해 확장자·서브폴더 차이를
+      // 흡수한다. 설치본이 있으면 그 정확한 경로로, 없으면 워크플로우에 적힌 이름을
+      // 그대로 둬서 스택에 빨강 ⚠(미설치)로 보이게 한다 — 드롭하지 않는다.
+      const available = wb.availableLoras ?? []
+      const baseOf = (s: string) =>
+        s.replace(/\\/g, '/').split('/').pop()!.replace(/\.(safetensors|ckpt|pt)$/i, '').toLowerCase()
+      const byBase = new Map<string, string>()
+      for (const a of available) if (!byBase.has(baseOf(a))) byBase.set(baseOf(a), a)
+      const resolve = (raw: string) => {
+        const r = raw.replace(/\\/g, '/')
+        if (!r) return ''
+        if (available.includes(r)) return r
+        return byBase.get(baseOf(r)) ?? r
+      }
+      const loras: LoraEntry[] = (style.loras ?? [])
+        .map((l) => ({
+          relPath: resolve(l.lora_rel_path || l.display_name || ''),
+          strength: l.strength,
+          enabled: !!l.enabled,
+        }))
+        .filter((l) => l.relPath)
+
+      // 스타일의 체크포인트를 설치된 모델 목록(/object_info)에 매칭한다. 구분자(-_. 공백)
+      // 차이를 흡수해 anima-base-v1.0 ↔ anima_baseV10 같은 동일 모델을 잡는다. 설치본이
+      // 없으면 현재 모델을 그대로 두고(생성 검증 오류 방지) 안내만 띄운다.
+      const unets = wb.availableUnets ?? []
+      const stripKey = (s: string) =>
+        s.replace(/\\/g, '/').split('/').pop()!.replace(/\.(safetensors|ckpt|gguf|sft|pt)$/i, '')
+          .replace(/[-_.\s]/g, '').toLowerCase()
+      const resolveUnet = (ckpt: string) => {
+        const r = ckpt.replace(/\\/g, '/')
+        if (unets.includes(r)) return r
+        const k = stripKey(r)
+        return unets.find((u) => stripKey(u) === k) ?? ''
+      }
+      const wantUnet = style.checkpoint ? resolveUnet(style.checkpoint) : ''
+      const ckptMissing = !!style.checkpoint && unets.length > 0 && !wantUnet
+
+      const patch = {
         positive: style.positive_prompt,
         negative: style.negative_prompt,
         loras,
-        ...(style.checkpoint ? { unet: style.checkpoint } : {}),
+        ...(wantUnet ? { unet: wantUnet } : {}),
         ...(style.width > 0 && style.height > 0 ? { width: style.width, height: style.height } : {}),
-      })
+        ...(style.sampler ? { sampler: style.sampler } : {}),
+        ...(style.scheduler ? { scheduler: style.scheduler } : {}),
+        ...(style.steps > 0 ? { steps: style.steps } : {}),
+        ...(style.cfg > 0 ? { cfg: style.cfg } : {}),
+        ...(style.seed > 0 ? { seed: style.seed } : {}),
+      }
+      // Multi 탭에 있으면 현재 캐릭터 base에, 아니면 작업대(workbench)에 적용한다.
+      if (useUi.getState().tab === 'batch') useBatch.getState().setCharBase(patch)
+      else wb.set(patch)
+      wb.setNotice(
+        ckptMissing
+          ? `Style model '${style.checkpoint}' is not installed — keeping the current model.`
+          : null,
+      )
     },
 
     addLoraToWorkbench: (relPath) => {
       const wb = useWorkbench.getState()
-      if (wb.params.loras.some((l) => l.relPath === relPath)) return
-      wb.setLoras([...wb.params.loras, { relPath, strength: 0.8, enabled: true }])
+      // Multi 탭이면 현재 캐릭터 base에, 아니면 작업대 스택에 추가한다.
+      if (useUi.getState().tab === 'batch') {
+        const char = activeCharOf(useBatch.getState())
+        if (char && !char.base.loras.some((l) => l.relPath === relPath)) {
+          useBatch.getState().setCharBase({ loras: [...char.base.loras, { relPath, strength: 0.8, enabled: false }] })
+        }
+      } else if (!wb.params.loras.some((l) => l.relPath === relPath)) {
+        wb.setLoras([...wb.params.loras, { relPath, strength: 0.8, enabled: false }])
+      }
+      // 새로 추가됐든 이미 있든, 해당 로라 행을 flash로 강조해 위치를 보여준다.
+      wb.setFlashLora(relPath)
     },
   }
 }, {

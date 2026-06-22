@@ -76,11 +76,11 @@ await waitOutputs(await submit(
 ))
 console.log('      inpaint OK')
 
-console.log('[4/4] hires latent2pass 그래프 실행 확인...')
+console.log('[4/4] hires 그래프 실행 확인...')
 await waitOutputs(await submit(
   buildGraph({
     ...base, mode: 't2i', steps: 12,
-    hires: { enabled: true, method: 'latent2pass', scale: 1.5, denoise: 0.5 },
+    hires: { enabled: true, scale: 1.5, denoise: 0.5, upscaleModel: base.hires?.upscaleModel ?? '' },
     filenamePrefix: 'PeroPix/verify/m6_hires',
   }),
   'verify-m6',

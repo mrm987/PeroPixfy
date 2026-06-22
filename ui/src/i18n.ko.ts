@@ -1,0 +1,269 @@
+// 한국어 번역 (영문 키 → 한국어). 없는 키는 영문 그대로 표시됨.
+export const ko: Record<string, string> = {
+  // 전역 / App
+  'Single': '싱글',
+  'Multi': '멀티',
+  'Settings': '설정',
+  'Open Styles & LoRAs': '스타일 & 로라 열기',
+  'Styles & LoRAs': '스타일 & 로라',
+  'Collapse panel': '패널 접기',
+  'Drag to resize': '드래그해 크기조절',
+
+  // Params 섹션
+  'Source image': '소스 이미지',
+  'Model': '모델',
+  'LoRAs': '로라',
+  'Positive': '포지티브',
+  'Negative': '네거티브',
+  'Resolution': '해상도',
+  'Sampling': '샘플링',
+  'Advanced': '고급',
+  // Params 필드
+  'Model (UNet)': '모델 (UNet)',
+  'width': '가로',
+  'height': '세로',
+  'steps': '스텝',
+  'cfg': 'CFG',
+  'seed': '시드',
+  'sampler': '샘플러',
+  'scheduler': '스케줄러',
+  'batch size': '배치 크기',
+  'denoise': '디노이즈',
+  'mod guidance': 'mod guidance',
+  'positive': '포지티브',
+  'negative': '네거티브',
+  'Custom': '직접 입력',
+  'Random': '랜덤',
+  'landscape': '가로',
+  'portrait': '세로',
+  'square': '정사각',
+  'T2I': 'T2I',
+  'I2I': 'I2I',
+  'Inpaint': '인페인트',
+  'Queue {n}': '큐 {n}',
+  'Spectrum nodes are not loaded': 'Spectrum 노드가 로드되지 않음',
+  'Speeds up generation while keeping quality.': '품질을 유지하면서 생성 속도를 높입니다.',
+  ' (node missing)': ' (노드 없음)',
+  // 소스/마스크 (i2i/inpaint)
+  'Draw a mask via "Inpaint" on a result image, or load an image':
+    '결과 이미지에서 "Inpaint"로 마스크를 그리거나, 이미지를 불러오세요',
+  'Use "To I2I" on a result image, or load an image':
+    '결과 이미지에서 "To I2I"를 사용하거나, 이미지를 불러오세요',
+  '✓ Mask applied (red = repaint area)': '✓ 마스크 적용됨 (빨강 = 다시 그릴 영역)',
+  'No mask yet': '아직 마스크 없음',
+  'Edit mask': '마스크 편집',
+  'Draw mask': '마스크 그리기',
+  'Randomize seed': '시드 랜덤',
+  'Randomize the seed for each generated image (off = use the seed above)':
+    '생성마다 시드 랜덤 (끄면 위 시드 사용)',
+  'Spectrum (+ Mod Guidance)': 'Spectrum (+ Mod Guidance)',
+  'Spectrum (+ Mod Guidance) (node missing)': 'Spectrum (+ Mod Guidance) (노드 없음)',
+  'Quality tags (mod guidance)': '퀄리티 태그 (mod guidance)',
+  // Hires
+  'Hires fix': '하이레스 픽스',
+  'upscale model': '업스케일 모델',
+  'hires denoise': '하이레스 디노이즈',
+  'hires steps': '하이레스 스텝',
+  'Use target scale': '목표 스케일 사용',
+  'target scale (× orig)': '목표 배율 (× 원본)',
+  'Color match (restore original colors)': '컬러 매치 (원본 색 복원)',
+  'color method': '컬러 방식',
+  'color strength': '컬러 강도',
+  'Generate the image, then redraw it larger for more detail. Slower.':
+    '이미지를 생성한 뒤 더 크게 다시 그려 디테일을 높입니다. 더 느립니다.',
+  "Upscale models only enlarge by a fixed factor — turn this on to auto-adjust the result to your exact target size. Off keeps the model's own factor.":
+    '업스케일 모델은 고정 배율로만 키우기 때문에, 켜면 정확히 목표 크기가 되도록 자동 조정합니다. 끄면 모델 고유 배율을 그대로 씁니다.',
+  "Hires can make colors look duller — this restores the original image's vivid colors.":
+    '하이레스를 거치면 색이 칙칙해질 수 있는데, 원본의 생생한 색감으로 되돌립니다.',
+  // 생성 / 큐
+  'Generate': '생성',
+  'Add to queue': '큐에 추가',
+  'Cancel current': '현재 취소',
+  'Clear queue': '큐 비우기',
+  'Cancel': '취소',
+  'Interrupt the current generation (the queue keeps going)': '현재 생성 중단 (큐는 계속 진행)',
+  'Clear the entire queue and stop everything': '전체 큐 비우고 모두 정지',
+  'Fixed to source image: {w} × {h} (i2i/inpaint keeps the source resolution)':
+    '소스 이미지에 고정: {w} × {h} (i2i/inpaint은 소스 해상도 유지)',
+
+  // Multi(Batch)
+  'Base': '베이스',
+  'Slot': '슬롯',
+  '↧ Import Single settings': '↧ 싱글 설정 가져오기',
+  'Copy the current Single tab settings (model, LoRAs, prompts, resolution…) into this character\'s base':
+    '현재 싱글 탭 설정(모델, 로라, 프롬프트, 해상도…)을 이 캐릭터 베이스로 복사',
+  'Cancel the batch (interrupts the current image and clears the queue)':
+    '배치 취소 (현재 이미지 중단 + 큐 비움)',
+  'Queued {done}/{total}': '큐 {done}/{total}',
+  ' · done': ' · 완료',
+  '{slots} slots × {per} = {total}': '{slots} 슬롯 × {per} = {total}',
+  '+ Character': '+ 캐릭터',
+  'Add character': '캐릭터 추가',
+  'Delete character': '캐릭터 삭제',
+  'Double-click to rename': '더블클릭으로 이름변경',
+  'New tab': '새 탭',
+  'Close tab': '탭 닫기',
+  // 프리셋 바
+  '— No preset —': '— 프리셋 없음 —',
+  'New': '새로',
+  'Duplicate': '복제',
+  'Rename': '이름변경',
+  'Delete': '삭제',
+  'Move preset up': '프리셋 위로',
+  'Move preset down': '프리셋 아래로',
+  'New preset': '새 프리셋',
+  'Duplicate current preset': '현재 프리셋 복제',
+  'Rename preset': '프리셋 이름변경',
+  'Delete preset': '프리셋 삭제',
+  // 삽입 위치
+  'Base positive · slot prompt position': '베이스 포지티브 · 슬롯 프롬프트 위치',
+  'empty': '비어있음',
+  'at end': '끝에',
+  'before "{tag}"': '"{tag}" 앞',
+  'Base positive is empty — each slot prompt is used as-is.':
+    '베이스 포지티브가 비어있음 — 각 슬롯 프롬프트가 그대로 사용됨.',
+  'Drag onto a tag (or click a tag) to move where the slot prompt goes':
+    '태그에 드래그(또는 클릭)해 슬롯 프롬프트 위치를 옮김',
+  '▸ slot prompt': '▸ 슬롯 프롬프트',
+  'Click (or drop the block) to insert the slot prompt before this':
+    '클릭(또는 블록 드롭)해 이 앞에 슬롯 프롬프트 삽입',
+  'Insert at the end (default)': '끝에 삽입 (기본)',
+  '⏎end': '⏎끝',
+  // 슬롯 에디터
+  'Slots': '슬롯',
+  'Start': '시작',
+  'Slot numbering start': '슬롯 번호 시작',
+  'Name (file prefix, optional)': '이름 (파일 접두어, 선택)',
+  'Unlock': '잠금 해제',
+  'Exclude from generation': '생성에서 제외',
+  'Move up': '위로',
+  'Move down': '아래로',
+  'Remove': '제거',
+  "This slot's prompt": '이 슬롯의 프롬프트',
+  '+ Add slot': '+ 슬롯 추가',
+  // 저장 설정
+  'Save settings': '저장 설정',
+  'format': '포맷',
+  'quality': '품질',
+  'images per slot': '슬롯당 이미지 수',
+  'Exclude slot number from filename': '파일명에서 슬롯 번호 제외',
+  "jpg/webp don't save the generation info inside the image (png only).":
+    'jpg/webp는 생성 정보를 이미지 안에 저장하지 않습니다 (png만 가능).',
+  'Set up the character/parameters in the Base tab, add per-slot prompts in the Slot tab, then generate.':
+    'Base 탭에서 캐릭터/파라미터를 설정하고, Slot 탭에서 슬롯별 프롬프트를 추가한 뒤 생성하세요.',
+  '{n} selected': '{n}개 선택됨',
+  'Delete selected': '선택 삭제',
+  'Clear': '선택 해제',
+
+  // Canvas 줌 툴바
+  'Zoom in': '확대',
+  'Zoom out': '축소',
+  'Fit all': '전체 맞춤',
+  'Fit': '맞춤',
+  'Open output folder': '출력 폴더 열기',
+
+  // Curation
+  'Zoom out (Numpad -)': '축소 (넘패드 -)',
+  'Zoom in (Numpad +)': '확대 (넘패드 +)',
+  'Reset zoom': '줌 초기화',
+  'Reset': '초기화',
+  'Delete this image': '이 이미지 삭제',
+  'Wheel: prev/next image · Drag (when zoomed): pan · Double-click: reset zoom':
+    '휠: 이전/다음 · 드래그(확대 시): 이동 · 더블클릭: 줌 초기화',
+  'Keep only this image and delete the other {n}?': '이 이미지만 남기고 나머지 {n}개를 삭제할까요?',
+  '(untitled)': '(제목 없음)',
+  'Keep only this · delete others ({n})': '이것만 남기기 · 나머지 삭제 ({n})',
+
+  // Workbench 결과
+  "Load this result's settings back into the panel": '이 결과 설정을 패널로 불러오기',
+  "Set this result's settings as a Multi character's base": '이 결과 설정을 멀티 캐릭터 베이스로 지정',
+  'Save as style': '스타일로 저장',
+  "Save this result's model, prompts and LoRA stack as a style":
+    '이 결과의 모델·프롬프트·로라 스택을 스타일로 저장',
+  'Open the folder containing this image': '이 이미지가 있는 폴더 열기',
+  'Remove from history': '기록에서 제거',
+  'Show starred images only': '즐겨찾기만 보기',
+  'Star': '즐겨찾기',
+  'Generation failed': '생성 실패',
+  'Results will appear here': '결과가 여기 표시됩니다',
+  'Generating…': '생성 중…',
+  'seed {n}': '시드 {n}',
+  'Reuse settings': '설정 재사용',
+  '⮕ Set as char ▾': '⮕ 캐릭터로 지정 ▾',
+  '+ New character': '+ 새 캐릭터',
+  'Applied these settings to a new character (char{n}).': '이 설정을 새 캐릭터(char{n})에 적용했습니다.',
+  "Applied these settings to '{name}'.": "이 설정을 '{name}'에 적용했습니다.",
+  'To I2I': 'I2I로',
+  '📂 Folder': '📂 폴더',
+  '★ Starred': '★ 즐겨찾기',
+  '☆ All': '☆ 전체',
+  'seed {n} · Ctrl+click to multi-select': '시드 {n} · Ctrl+클릭으로 다중선택',
+  'No starred images': '즐겨찾기한 이미지 없음',
+
+  // Library / Style / LoRA
+  'Name': '이름',
+  'Tags (comma separated)': '태그 (쉼표 구분)',
+  'Style name': '스타일 이름',
+  'e.g. cel, soft-light': '예: cel, soft-light',
+  'Save': '저장',
+  'Search LoRA…': '로라 검색…',
+  'Drag to reorder': '드래그해 순서변경',
+  'Enable': '활성화',
+  'Strength': '강도',
+  'no preview': '미리보기 없음',
+
+  // Options
+  'Language': '언어',
+  'Close': '닫기',
+  'Single output folder': '싱글 출력 폴더',
+  'Multi output folder': '멀티 출력 폴더',
+  'Select': '선택',
+  '📂 Open': '📂 열기',
+  'Pick a folder (any location)': '폴더 선택 (아무 위치)',
+  'Open the folder': '폴더 열기',
+  'Reset to default': '기본값으로 초기화',
+  "A relative path saves inside ComfyUI's output folder; pick any folder to save elsewhere. Single adds date/mode subfolders, Multi adds character/slot — automatically.":
+    '상대 경로는 ComfyUI 출력 폴더 안에 저장됩니다. 다른 위치에 저장하려면 폴더를 직접 선택하세요. 싱글은 날짜/모드, 멀티는 캐릭터/슬롯 하위폴더를 자동으로 만듭니다.',
+
+  // 다이얼로그 (confirm/prompt)
+  'New preset name': '새 프리셋 이름',
+  'preset': '프리셋',
+  "Delete preset '{name}'?": "프리셋 '{name}'을(를) 삭제할까요?",
+  "Delete character '{name}'? (its tabs and results are removed too)":
+    "캐릭터 '{name}'을(를) 삭제할까요? (탭과 결과도 함께 제거됨)",
+
+  // SaveStyleModal
+  'Saving…': '저장 중…',
+  'Saves model, prompts, LoRA stack ({n} active) and resolution from this result.':
+    '이 결과의 모델·프롬프트·로라 스택({n}개 활성)·해상도를 저장합니다.',
+
+  // MaskEditor
+  'Brush': '브러시',
+  'Eraser': '지우개',
+  'Clear all': '모두 지우기',
+  'Apply mask': '마스크 적용',
+
+  // LoRA 스택/피커
+  'LoRAs ({n}/{m})': '로라 ({n}/{m})',
+  '+ Add LoRA': '+ 로라 추가',
+  '{name} — not installed (excluded on generate)': '{name} — 미설치 (생성 시 제외됨)',
+  '— select LoRA —': '— 로라 선택 —',
+  'no match': '일치 없음',
+
+  // LibraryDock
+  '✦ Styles & LoRAs': '✦ 스타일 & 로라',
+
+  // SetupBanner
+  'Models downloaded — reload to use them.': '모델 다운로드 완료 — 사용하려면 새로고침하세요.',
+  'All required models are installed.': '필수 모델이 모두 설치됨.',
+  'Required models are missing — generation will fail until you download them.':
+    '필수 모델이 없습니다 — 다운로드 전엔 생성이 실패합니다.',
+  'An optional model is missing.': '선택 모델이 하나 없습니다.',
+  'Reload': '새로고침',
+  'Download all missing ({n})': '없는 항목 모두 다운로드 ({n})',
+  'Downloading…': '다운로드 중…',
+  ' (optional)': ' (선택)',
+  '✓ installed': '✓ 설치됨',
+  '✓ you already have models here': '✓ 이미 모델이 있습니다',
+  'missing': '없음',
+}

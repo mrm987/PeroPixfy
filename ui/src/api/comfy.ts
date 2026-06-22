@@ -75,14 +75,64 @@ export async function interrupt(): Promise<void> {
   await fetch('/interrupt', { method: 'POST' })
 }
 
+/** 이미지 저장 폴더를 OS 탐색기로 연다. file(상대경로)을 주면 그 파일을 선택해 연다. */
+export async function openOutputFolder(file?: string): Promise<void> {
+  await fetch('/peropix/api/open-folder', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file: file ?? '' }),
+  })
+}
+
+/** 대기 큐 전체 비우기 (실행 중인 작업은 별도 interrupt 필요). */
+export async function clearQueue(): Promise<void> {
+  await fetch('/queue', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clear: true }),
+  })
+}
+
 export function viewUrl(img: OutputImage): string {
+  // type 'abs' = output 밖 절대경로 저장물 → /view로는 못 받으니 전용 라우트로.
+  if (img.type === 'abs') {
+    const q = new URLSearchParams({ dir: img.subfolder, file: img.filename })
+    return `/peropix/api/localview?${q}`
+  }
   const q = new URLSearchParams({ filename: img.filename, subfolder: img.subfolder, type: img.type })
   return `/view?${q}`
+}
+
+/** 네이티브 폴더 선택 다이얼로그(서버=내 PC)를 띄워 고른 절대경로를 반환. 취소 시 null. */
+export async function pickFolder(): Promise<string | null> {
+  const res = await fetch('/peropix/api/pick-folder', { method: 'POST' })
+  return (await res.json()).path ?? null
+}
+
+/** 파일 참조들이 실제로 존재하는지 일괄 확인(인덱스 대응 bool 배열). */
+export async function checkFilesExist(files: OutputImage[]): Promise<boolean[]> {
+  const res = await fetch('/peropix/api/exists', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files }),
+  })
+  return (await res.json()).exists ?? []
+}
+
+/** 다운스케일 webp 썸네일 URL (캔버스 줌아웃 LOD용). 백엔드에서 가로 w로 리사이즈. */
+export function thumbUrl(img: OutputImage, w = 360): string {
+  const q = new URLSearchParams({
+    filename: img.filename, subfolder: img.subfolder, type: img.type, w: String(w),
+  })
+  return `/peropix/api/thumb?${q}`
 }
 
 /** viewUrl()의 역변환 — 갤러리 기록에서 파일 참조를 복원할 때 사용. */
 export function parseViewUrl(url: string): OutputImage | undefined {
   const q = new URLSearchParams(url.split('?')[1] ?? '')
+  if (url.startsWith('/peropix/api/localview')) {
+    const file = q.get('file')
+    if (!file) return undefined
+    return { filename: file, subfolder: q.get('dir') ?? '', type: 'abs' }
+  }
   const filename = q.get('filename')
   if (!filename) return undefined
   return { filename, subfolder: q.get('subfolder') ?? '', type: q.get('type') ?? 'output' }
@@ -105,7 +155,12 @@ export async function fetchNodeInfo(cls: string): Promise<NodeObjectInfo | null>
 /** Extracts the choices of an enum-typed input (e.g. sampler_name, unet_name). */
 export function enumValues(info: NodeObjectInfo | null, field: string): string[] {
   const spec = info?.input.required?.[field] ?? info?.input.optional?.[field]
-  return Array.isArray(spec) && Array.isArray(spec[0]) ? (spec[0] as string[]) : []
+  if (!Array.isArray(spec)) return []
+  // 구형 스키마: [[opt1, opt2, ...], {config}] — spec[0]이 옵션 배열.
+  if (Array.isArray(spec[0])) return spec[0] as string[]
+  // 신형 COMBO 스키마: ["COMBO", { options: [...] }] — 일부(커스텀) 노드가 이 형식을 쓴다.
+  const cfg = spec[1] as { options?: unknown } | undefined
+  return Array.isArray(cfg?.options) ? (cfg!.options as string[]) : []
 }
 
 interface WsMessage {
