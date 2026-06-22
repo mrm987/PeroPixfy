@@ -1,4 +1,4 @@
-"""PeroPixComfy — ComfyUI-powered dedicated frontend for Anima workflows.
+"""PeroPixfy — ComfyUI-powered dedicated frontend for Anima workflows.
 
 Registers no graph nodes; everything lives behind HTTP routes on ComfyUI's
 own aiohttp server (see server/routes.py).
@@ -16,7 +16,7 @@ try:
     NODE_CLASS_MAPPINGS.update(_SPECTRUM_NODES)
     NODE_CLASS_DISPLAY_NAME_MAPPINGS.update(_SPECTRUM_DISPLAY)
 except Exception as e:  # 벤더 노드가 깨져도 플러그인 본체(UI/생성)는 계속 동작.
-    print(f"[PeroPixComfy] vendored Spectrum nodes unavailable: {e}")
+    print(f"[PeroPixfy] vendored Spectrum nodes unavailable: {e}")
 
 # ComfyUI는 NODE_DISPLAY_NAME_MAPPINGS 이름으로 읽으므로 별칭으로 노출.
 NODE_DISPLAY_NAME_MAPPINGS = NODE_CLASS_DISPLAY_NAME_MAPPINGS  # noqa: F401

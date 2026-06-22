@@ -1,4 +1,4 @@
-# PeroPixComfy
+# PeroPixfy
 
 ComfyUI 엔진을 그대로 사용하는 Anima 전용 경량 프론트엔드 플러그인.
 
@@ -9,14 +9,12 @@ ComfyUI 엔진을 그대로 사용하는 Anima 전용 경량 프론트엔드 플
 ## 실행
 
 **기본**: 평소 쓰던 bat(예: run_nvidia_gpu_SageAttention.bat)으로 ComfyUI를 띄우고,
-사이드바의 **PeroPix 탭**을 누르면 전체화면으로 전환된다 (`← ComfyUI` 버튼 또는 ESC로 복귀).
-ComfyUI ↔ PeroPix를 오가도 양쪽 상태(노드 그래프·생성 진행)는 유지된다.
+사이드바의 **PeroPixfy 탭**을 누르면 전체화면으로 전환된다 (`← ComfyUI` 버튼 또는 ESC로 복귀).
 `http://127.0.0.1:8188/peropix` 직접 접속도 가능 (런처는 web_extension/, 본체와 독립).
 
 **옵션**: `scripts\run_peropix.bat` — 린 프로파일(`--disable-all-custom-nodes
---whitelist-custom-nodes PeroPixComfy comfyui-spectrum-ksampler comfyui-spectrum-sdxl
-ComfyUI_UltimateSDUpscale` + SageAttention 플래그). 커스텀노드 임포트만 줄이는 것이라
-시작 시간 이득은 제한적 (대부분 로라 로딩 시간).
+--whitelist-custom-nodes PeroPixfy` + SageAttention 플래그). Spectrum은 PeroPixfy에 벤더링돼
+함께 로드된다. 커스텀노드 임포트만 줄이는 것이라 시작 시간 이득은 제한적 (대부분 로라 로딩 시간).
 
 ## 탭 구성
 
@@ -58,5 +56,16 @@ npm run verify:m1  # 동일성 검증 (t2i) — m2(로라 체인), m6(i2i/inpain
 그래프는 항상 `buildGraph()`(`ui/src/workflow/builder.ts`)로 재생성하며, bypass 로라는
 노드 생략 + MODEL 링크 직결로 표현한다. 기록·재현은 그래프가 아닌 params를 저장한다.
 
-W:\ ComfyUI custom_nodes에는 디렉터리 정션으로 연결되어 있다:
-`W:\...\ComfyUI\custom_nodes\PeroPixComfy → D:\ClaudeCode\PeroPixComfy`
+## 설치 (배포)
+
+```
+cd ComfyUI/custom_nodes
+git clone https://github.com/mrm987/PeroPixfy.git
+W:\...\python_embeded\python.exe -m pip install -r PeroPixfy/requirements.txt   # color-matcher
+```
+
+`web/`가 빌드 산출물로 함께 들어있어 별도 빌드 없이 동작한다. `data/`(프리셋·갤러리·설정)는
+첫 실행 시 자동 생성된다. ComfyUI 재시작 후 사이드바 **PeroPixfy 탭**.
+
+> 개발 시에는 별도 작업 폴더를 custom_nodes에 디렉터리 정션으로 연결해 쓰기도 한다
+> (`mklink /J ...\custom_nodes\PeroPixfy  <작업폴더>`).

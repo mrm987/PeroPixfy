@@ -1,4 +1,4 @@
-"""PeroPixComfy 그래프 노드.
+"""PeroPixfy 그래프 노드.
 
 PeroPixSaveImage: 코어 SaveImage 호환이면서 png/jpg/webp 포맷을 선택할 수 있다.
 - PNG: 코어 SaveImage와 동일하게 prompt/workflow 메타데이터(tEXt 청크)를 임베드해
