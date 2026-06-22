@@ -232,7 +232,7 @@ def _run_scan(force):
 routes = PromptServer.instance.routes
 
 
-@routes.get("/peropix/api/library/list")
+@routes.get("/peropixfy/api/library/list")
 async def api_list(request):
     loras = db.get_all()
     counts = db.get_style_counts_per_lora()
@@ -241,7 +241,7 @@ async def api_list(request):
     return web.json_response({"loras": loras, "scan": _scan_state})
 
 
-@routes.post("/peropix/api/library/scan")
+@routes.post("/peropixfy/api/library/scan")
 async def api_scan(request):
     force = request.rel_url.query.get("force") == "1"
     with _scan_lock:
@@ -252,12 +252,12 @@ async def api_scan(request):
     return web.json_response({"started": True})
 
 
-@routes.get("/peropix/api/library/scan-status")
+@routes.get("/peropixfy/api/library/scan-status")
 async def api_scan_status(request):
     return web.json_response(_scan_state)
 
 
-@routes.post("/peropix/api/library/update")
+@routes.post("/peropixfy/api/library/update")
 async def api_update(request):
     data = await request.json()
     rel = data.get("rel_path")
@@ -268,7 +268,7 @@ async def api_update(request):
     return web.json_response({"ok": True, "lora": db.get_one(rel)})
 
 
-@routes.post("/peropix/api/library/check-updates")
+@routes.post("/peropixfy/api/library/check-updates")
 async def api_check_updates(request):
     targets = None
     if request.body_exists:
@@ -285,12 +285,12 @@ async def api_check_updates(request):
     return web.json_response({"started": True})
 
 
-@routes.get("/peropix/api/library/check-updates/status")
+@routes.get("/peropixfy/api/library/check-updates/status")
 async def api_check_updates_status(request):
     return web.json_response(_update_state)
 
 
-@routes.post("/peropix/api/library/delete")
+@routes.post("/peropixfy/api/library/delete")
 async def api_delete(request):
     """Permanently delete a LoRA file from disk and remove its DB row.
     No Recycle Bin — frontend must confirm before calling this. We deliberately
@@ -315,7 +315,7 @@ async def api_delete(request):
     return web.json_response({"ok": True, "removed_file": bool(abs_path)})
 
 
-@routes.post("/peropix/api/library/preview-rescan")
+@routes.post("/peropixfy/api/library/preview-rescan")
 async def api_preview_rescan(request):
     """Re-fetch CivitAI + safetensors data WITHOUT writing to DB. Returns the
     fields the edit dialog should display so the user can review before Save.
@@ -374,7 +374,7 @@ async def api_preview_rescan(request):
     return web.json_response({"ok": True, "preview": preview})
 
 
-@routes.post("/peropix/api/library/rescan")
+@routes.post("/peropixfy/api/library/rescan")
 async def api_rescan(request):
     """Re-process a single LoRA, overwriting existing auto-fetched data.
     Clears user_edited first so all USER_FIELDS get refreshed too — matches
@@ -399,7 +399,7 @@ async def api_rescan(request):
     return web.json_response({"ok": True, "lora": db.get_one(rel)})
 
 
-@routes.post("/peropix/api/library/favorite")
+@routes.post("/peropixfy/api/library/favorite")
 async def api_favorite(request):
     data = await request.json()
     rel = data.get("rel_path")
@@ -409,7 +409,7 @@ async def api_favorite(request):
     return web.json_response({"ok": True})
 
 
-@routes.post("/peropix/api/library/upload-thumb")
+@routes.post("/peropixfy/api/library/upload-thumb")
 async def api_upload_thumb(request):
     reader = await request.multipart()
     rel, saved = None, None
@@ -426,13 +426,13 @@ async def api_upload_thumb(request):
                         break
                     f.write(chunk)
     if rel and saved:
-        url = f"/peropix/api/library/thumb?file={saved}"
+        url = f"/peropixfy/api/library/thumb?file={saved}"
         db.update_user(rel, {"thumb_url": url, "thumb_type": "image"})
         return web.json_response({"ok": True, "thumb_url": url})
     return web.json_response({"ok": False}, status=400)
 
 
-@routes.get("/peropix/api/library/thumb")
+@routes.get("/peropixfy/api/library/thumb")
 async def api_thumb(request):
     fn = os.path.basename(request.rel_url.query.get("file", ""))
     path = os.path.join(THUMB_DIR, fn)
@@ -441,7 +441,7 @@ async def api_thumb(request):
     return web.Response(status=404)
 
 
-@routes.get("/peropix/api/library/thumb-large")
+@routes.get("/peropixfy/api/library/thumb-large")
 async def api_thumb_large(request):
     """Serve the cached large (width=720) variant for the lightbox.
     Falls back transparently to the small thumb when:
@@ -466,9 +466,9 @@ async def api_thumb_large(request):
     nocache = {"Cache-Control": "no-store"}
 
     def _serve_small():
-        # small_url is "/peropix/api/library/thumb?file=<fname>" — extract <fname>
+        # small_url is "/peropixfy/api/library/thumb?file=<fname>" — extract <fname>
         # and serve directly to avoid a redirect round-trip.
-        if small_url.startswith("/peropix/api/library/thumb?file="):
+        if small_url.startswith("/peropixfy/api/library/thumb?file="):
             fname = small_url.split("file=", 1)[1]
             p = os.path.join(THUMB_DIR, os.path.basename(fname))
             if os.path.isfile(p):
@@ -513,7 +513,7 @@ def _match_lora_to_db(display_name, known_loras):
     return ""
 
 
-@routes.post("/peropix/api/library/styles/upload")
+@routes.post("/peropixfy/api/library/styles/upload")
 async def api_style_upload(request):
     """Multipart upload: save the image, extract its embedded ComfyUI workflow,
     parse out LoRAs/checkpoints, link to our LoRA DB. Returns the new style."""
@@ -568,7 +568,7 @@ async def api_style_upload(request):
     return web.json_response({"ok": True, "style": db.get_style(sid)})
 
 
-@routes.get("/peropix/api/library/styles/list")
+@routes.get("/peropixfy/api/library/styles/list")
 async def api_style_list(request):
     """Returns all styles. Each row gets an image_missing flag set when the
     referenced image file is gone from disk — lets the frontend show a clear
@@ -581,7 +581,7 @@ async def api_style_list(request):
     return web.json_response({"styles": styles_list})
 
 
-@routes.post("/peropix/api/library/styles/update")
+@routes.post("/peropixfy/api/library/styles/update")
 async def api_style_update(request):
     data = await request.json()
     sid = data.get("id")
@@ -591,7 +591,7 @@ async def api_style_update(request):
     return web.json_response({"ok": True, "style": db.get_style(sid)})
 
 
-@routes.post("/peropix/api/library/styles/delete")
+@routes.post("/peropixfy/api/library/styles/delete")
 async def api_style_delete(request):
     data = await request.json()
     sid = data.get("id")
@@ -613,7 +613,7 @@ async def api_style_delete(request):
     return web.json_response({"ok": True})
 
 
-@routes.get("/peropix/api/library/styles/image")
+@routes.get("/peropixfy/api/library/styles/image")
 async def api_style_image(request):
     fn = os.path.basename(request.rel_url.query.get("file", ""))
     path = os.path.join(styles.styles_dir(), fn)
@@ -622,7 +622,7 @@ async def api_style_image(request):
     return web.Response(status=404)
 
 
-@routes.get("/peropix/api/library/styles/workflow")
+@routes.get("/peropixfy/api/library/styles/workflow")
 async def api_style_workflow(request):
     sid = request.rel_url.query.get("id", "")
     if not sid.isdigit():
@@ -634,7 +634,7 @@ async def api_style_workflow(request):
                         content_type="application/json")
 
 
-@routes.post("/peropix/api/library/styles/create")
+@routes.post("/peropixfy/api/library/styles/create")
 async def api_style_create(request):
     """Create a style directly from generation params (PeroPix workbench
     "save as style"). Unlike /styles/upload there is no workflow PNG to parse —

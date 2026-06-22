@@ -5,7 +5,7 @@ own aiohttp server (see server/routes.py).
 """
 
 # 표시용 선언 버전. 릴리스마다 올린다. 업데이트 존재 판단은 git 커밋 비교가 담당
-# (server/routes.py의 /peropix/api/check-update). 적용은 update_peropixfy.bat.
+# (server/routes.py의 /peropixfy/api/check-update). 적용은 update_peropixfy.bat.
 __version__ = "1.0.0"
 
 from .nodes import NODE_CLASS_DISPLAY_NAME_MAPPINGS, NODE_CLASS_MAPPINGS  # noqa: F401

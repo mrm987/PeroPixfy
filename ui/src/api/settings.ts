@@ -5,12 +5,12 @@ export type SavedDefaults = Partial<
 >
 
 export async function fetchSettings(): Promise<SavedDefaults> {
-  const res = await fetch('/peropix/api/settings')
+  const res = await fetch('/peropixfy/api/settings')
   return res.json()
 }
 
 export async function saveSettings(s: SavedDefaults): Promise<void> {
-  await fetch('/peropix/api/settings', {
+  await fetch('/peropixfy/api/settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(s),

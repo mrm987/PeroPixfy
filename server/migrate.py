@@ -34,7 +34,7 @@ def import_style_manager_data(data_dir: str) -> None:
     con = sqlite3.connect(db_path)
     try:
         con.execute(
-            "UPDATE loras SET thumb_url = REPLACE(thumb_url, '/lora-manager/', '/peropix/api/library/')"
+            "UPDATE loras SET thumb_url = REPLACE(thumb_url, '/lora-manager/', '/peropixfy/api/library/')"
         )
         con.commit()
     finally:

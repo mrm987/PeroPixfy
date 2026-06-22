@@ -23,7 +23,7 @@ export function loadTags(): Promise<void> {
   if (loaded) return Promise.resolve()
   if (loading) return loading
   loading = (async () => {
-    const res = await fetch('/peropix/tags.json')
+    const res = await fetch('/peropixfy/tags.json')
     if (!res.ok) return
     const tags = (await res.json()) as TagEntry[]
     const index: Record<string, TagEntry[]> = {}

@@ -18,12 +18,12 @@ export interface SetupAsset {
 }
 
 export async function fetchSetupStatus(): Promise<SetupAsset[]> {
-  const res = await fetch('/peropix/api/setup/status')
+  const res = await fetch('/peropixfy/api/setup/status')
   return (await res.json()).assets ?? []
 }
 
 export async function startSetupDownload(keys?: string[]): Promise<boolean> {
-  const res = await fetch('/peropix/api/setup/download', {
+  const res = await fetch('/peropixfy/api/setup/download', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ keys: keys ?? null }),

@@ -19,7 +19,7 @@ from server import PromptServer
 from . import gallery
 from . import presets
 from . import setup as _setup
-from .library import api as _library_api  # noqa: F401  (registers /peropix/api/library/*)
+from .library import api as _library_api  # noqa: F401  (registers /peropixfy/api/library/*)
 
 PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB_DIR = os.path.join(PLUGIN_DIR, "web")
@@ -41,7 +41,7 @@ def _git(*args, timeout=15):
     )
 
 
-@routes.get("/peropix")
+@routes.get("/peropixfy")
 async def index(request):
     # index.html은 매 빌드마다 새 에셋 해시를 참조하므로 절대 캐시하면 안 된다.
     # (vite build가 emptyOutDir로 옛 해시를 지우기 때문에, 스테일 index.html을
@@ -52,7 +52,7 @@ async def index(request):
     )
 
 
-@routes.get("/peropix/assets/{path:.*}")
+@routes.get("/peropixfy/assets/{path:.*}")
 async def assets(request):
     base = os.path.normpath(os.path.join(WEB_DIR, "assets"))
     full = os.path.normpath(os.path.join(base, request.match_info["path"]))
@@ -71,7 +71,7 @@ _THUMB_DIR = os.path.join(PLUGIN_DIR, "data", "thumbs_out")
 os.makedirs(_THUMB_DIR, exist_ok=True)
 
 
-@routes.get("/peropix/api/thumb")
+@routes.get("/peropixfy/api/thumb")
 async def output_thumb(request):
     """출력 이미지를 가로 w로 다운스케일한 webp 썸네일. 캔버스가 줌아웃 상태에서
     풀해상도 대신 이걸 받으면 디코딩 비트맵이 작아져 메모리·래스터화 부하가 준다.
@@ -127,7 +127,7 @@ async def output_thumb(request):
     )
 
 
-@routes.get("/peropix/api/localview")
+@routes.get("/peropixfy/api/localview")
 async def localview(request):
     """output 밖 절대경로에 저장된 이미지를 풀해상도로 서빙(/view는 output 한정이라 불가).
     로컬 단일 사용자 도구라 사용자가 고른 폴더의 파일을 그대로 제공한다."""
@@ -142,7 +142,7 @@ async def localview(request):
     return web.FileResponse(path, headers={"Content-Type": ct, "Cache-Control": "no-cache"})
 
 
-@routes.get("/peropix/api/output-dir")
+@routes.get("/peropixfy/api/output-dir")
 async def output_dir_get(request):
     try:
         return web.json_response({"path": os.path.abspath(folder_paths.get_output_directory())})
@@ -241,7 +241,7 @@ def _pick_folder():
         return _pick_folder_classic()
 
 
-@routes.post("/peropix/api/pick-folder")
+@routes.post("/peropixfy/api/pick-folder")
 async def pick_folder(request):
     path = await asyncio.get_event_loop().run_in_executor(None, _pick_folder)
     return web.json_response({"path": path})
@@ -336,7 +336,7 @@ def _open_and_focus(folder, select_file=None):
                 pass
 
 
-@routes.post("/peropix/api/open-folder")
+@routes.post("/peropixfy/api/open-folder")
 async def open_folder(request):
     """이미지가 저장된 폴더를 탐색기로 열고 그 창을 브라우저 앞으로 가져온다. file이
     주어지면 그 파일을 선택해 연다. output 디렉터리 밖 경로는 거부."""
@@ -376,19 +376,19 @@ async def open_folder(request):
         return web.json_response({"ok": False, "error": str(e)}, status=500)
 
 
-@routes.get("/peropix/api/presets")
+@routes.get("/peropixfy/api/presets")
 async def presets_list(request):
     return web.json_response({"presets": presets.list_presets()})
 
 
-@routes.post("/peropix/api/presets")
+@routes.post("/peropixfy/api/presets")
 async def presets_create(request):
     data = await request.json()
     fn = presets.create_preset(data.get("name") or "preset", data.get("slots") or [])
     return web.json_response({"ok": True, "filename": fn})
 
 
-@routes.get("/peropix/api/presets/{filename}")
+@routes.get("/peropixfy/api/presets/{filename}")
 async def presets_get(request):
     p = presets.get_preset(request.match_info["filename"])
     if p is None:
@@ -396,20 +396,20 @@ async def presets_get(request):
     return web.json_response(p)
 
 
-@routes.put("/peropix/api/presets/{filename}")
+@routes.put("/peropixfy/api/presets/{filename}")
 async def presets_update(request):
     data = await request.json()
     ok = presets.update_preset(request.match_info["filename"], data.get("name") or "preset", data.get("slots") or [])
     return web.json_response({"ok": ok}, status=200 if ok else 404)
 
 
-@routes.delete("/peropix/api/presets/{filename}")
+@routes.delete("/peropixfy/api/presets/{filename}")
 async def presets_delete(request):
     ok = presets.delete_preset(request.match_info["filename"])
     return web.json_response({"ok": ok}, status=200 if ok else 404)
 
 
-@routes.get("/peropix/tags.json")
+@routes.get("/peropixfy/tags.json")
 async def tags_json(request):
     # 태그 자동완성용 Danbooru 태그 목록 (ui/public/tags.json → web/tags.json).
     path = os.path.join(WEB_DIR, "tags.json")
@@ -418,7 +418,7 @@ async def tags_json(request):
     return web.FileResponse(path, headers={"Cache-Control": "public, max-age=86400"})
 
 
-@routes.post("/peropix/api/gallery/record")
+@routes.post("/peropixfy/api/gallery/record")
 async def gallery_record(request):
     data = await request.json()
     gallery.record(data["prompt_id"], json.dumps(data["params"], ensure_ascii=False),
@@ -426,28 +426,28 @@ async def gallery_record(request):
     return web.json_response({"ok": True})
 
 
-@routes.post("/peropix/api/gallery/complete")
+@routes.post("/peropixfy/api/gallery/complete")
 async def gallery_complete(request):
     data = await request.json()
     gallery.complete(data["prompt_id"], data.get("files", []))
     return web.json_response({"ok": True})
 
 
-@routes.post("/peropix/api/gallery/fail")
+@routes.post("/peropixfy/api/gallery/fail")
 async def gallery_fail(request):
     data = await request.json()
     gallery.fail(data["prompt_id"])
     return web.json_response({"ok": True})
 
 
-@routes.post("/peropix/api/gallery/star")
+@routes.post("/peropixfy/api/gallery/star")
 async def gallery_star(request):
     data = await request.json()
     gallery.set_starred(data["prompt_id"], bool(data.get("starred")))
     return web.json_response({"ok": True})
 
 
-@routes.get("/peropix/api/version")
+@routes.get("/peropixfy/api/version")
 async def peropix_version(request):
     """현재 버전 — 선언 버전(__version__) + git 커밋/날짜/브랜치 + 플러그인/포터블 루트 경로."""
     try:
@@ -477,7 +477,7 @@ async def peropix_version(request):
     return web.json_response(info)
 
 
-@routes.post("/peropix/api/check-update")
+@routes.post("/peropixfy/api/check-update")
 async def peropix_check_update(request):
     """origin에서 fetch 후 HEAD가 몇 커밋 뒤처졌는지 계산(읽기 전용). 적용은 안 한다."""
     try:
@@ -540,7 +540,7 @@ def _delete_output_files(files, keep=None):
                 pass
 
 
-@routes.post("/peropix/api/gallery/delete")
+@routes.post("/peropixfy/api/gallery/delete")
 async def gallery_delete(request):
     data = await request.json()
     pid = data["prompt_id"]
@@ -551,7 +551,7 @@ async def gallery_delete(request):
     return web.json_response({"ok": True})
 
 
-@routes.get("/peropix/api/gallery/list")
+@routes.get("/peropixfy/api/gallery/list")
 async def gallery_list(request):
     limit = int(request.query.get("limit", "100"))
     offset = int(request.query.get("offset", "0"))
@@ -559,7 +559,7 @@ async def gallery_list(request):
     return web.json_response({"generations": gallery.list_recent(limit, offset, source)})
 
 
-@routes.post("/peropix/api/exists")
+@routes.post("/peropixfy/api/exists")
 async def files_exist(request):
     """주어진 파일 참조들이 실제로 존재하는지 일괄 확인. 캔버스 진입 시 원본이 외부에서
     삭제된 프리뷰를 솎아내는 데 쓴다. type='abs'는 subfolder가 절대 폴더."""
@@ -588,12 +588,12 @@ async def files_exist(request):
     return web.json_response({"exists": out})
 
 
-@routes.get("/peropix/api/setup/status")
+@routes.get("/peropixfy/api/setup/status")
 async def setup_status(request):
     return web.json_response({"assets": _setup.status()})
 
 
-@routes.post("/peropix/api/setup/download")
+@routes.post("/peropixfy/api/setup/download")
 async def setup_download(request):
     data = await request.json()
     keys = data.get("keys") or [it["key"] for it in _setup.MANIFEST]
@@ -603,7 +603,7 @@ async def setup_download(request):
 SETTINGS_PATH = os.path.join(PLUGIN_DIR, "data", "settings.json")
 
 
-@routes.get("/peropix/api/settings")
+@routes.get("/peropixfy/api/settings")
 async def settings_get(request):
     if os.path.isfile(SETTINGS_PATH):
         with open(SETTINGS_PATH, encoding="utf-8") as f:
@@ -611,7 +611,7 @@ async def settings_get(request):
     return web.json_response({})
 
 
-@routes.post("/peropix/api/settings")
+@routes.post("/peropixfy/api/settings")
 async def settings_set(request):
     data = await request.json()
     os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)

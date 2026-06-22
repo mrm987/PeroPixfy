@@ -77,7 +77,7 @@ export async function interrupt(): Promise<void> {
 
 /** 이미지 저장 폴더를 OS 탐색기로 연다. file(상대경로)을 주면 그 파일을 선택해 연다. */
 export async function openOutputFolder(file?: string): Promise<void> {
-  await fetch('/peropix/api/open-folder', {
+  await fetch('/peropixfy/api/open-folder', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ file: file ?? '' }),
@@ -97,7 +97,7 @@ export function viewUrl(img: OutputImage): string {
   // type 'abs' = output 밖 절대경로 저장물 → /view로는 못 받으니 전용 라우트로.
   if (img.type === 'abs') {
     const q = new URLSearchParams({ dir: img.subfolder, file: img.filename })
-    return `/peropix/api/localview?${q}`
+    return `/peropixfy/api/localview?${q}`
   }
   const q = new URLSearchParams({ filename: img.filename, subfolder: img.subfolder, type: img.type })
   return `/view?${q}`
@@ -105,7 +105,7 @@ export function viewUrl(img: OutputImage): string {
 
 /** 네이티브 폴더 선택 다이얼로그(서버=내 PC)를 띄워 고른 절대경로를 반환. 취소 시 null. */
 export async function pickFolder(): Promise<string | null> {
-  const res = await fetch('/peropix/api/pick-folder', { method: 'POST' })
+  const res = await fetch('/peropixfy/api/pick-folder', { method: 'POST' })
   return (await res.json()).path ?? null
 }
 
@@ -120,7 +120,7 @@ export interface VersionInfo {
 }
 /** 현재 버전 정보 (선언 버전 + git 커밋/날짜 + 플러그인 경로). */
 export async function getVersion(): Promise<VersionInfo> {
-  return (await fetch('/peropix/api/version')).json()
+  return (await fetch('/peropixfy/api/version')).json()
 }
 
 export interface UpdateInfo {
@@ -134,12 +134,12 @@ export interface UpdateInfo {
 }
 /** origin과 비교해 업데이트 존재 여부 확인 (읽기 전용 — 적용은 update_peropixfy.bat). */
 export async function checkUpdate(): Promise<UpdateInfo> {
-  return (await fetch('/peropix/api/check-update', { method: 'POST' })).json()
+  return (await fetch('/peropixfy/api/check-update', { method: 'POST' })).json()
 }
 
 /** 파일 참조들이 실제로 존재하는지 일괄 확인(인덱스 대응 bool 배열). */
 export async function checkFilesExist(files: OutputImage[]): Promise<boolean[]> {
-  const res = await fetch('/peropix/api/exists', {
+  const res = await fetch('/peropixfy/api/exists', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files }),
   })
   return (await res.json()).exists ?? []
@@ -150,13 +150,13 @@ export function thumbUrl(img: OutputImage, w = 360): string {
   const q = new URLSearchParams({
     filename: img.filename, subfolder: img.subfolder, type: img.type, w: String(w),
   })
-  return `/peropix/api/thumb?${q}`
+  return `/peropixfy/api/thumb?${q}`
 }
 
 /** viewUrl()의 역변환 — 갤러리 기록에서 파일 참조를 복원할 때 사용. */
 export function parseViewUrl(url: string): OutputImage | undefined {
   const q = new URLSearchParams(url.split('?')[1] ?? '')
-  if (url.startsWith('/peropix/api/localview')) {
+  if (url.startsWith('/peropixfy/api/localview')) {
     const file = q.get('file')
     if (!file) return undefined
     return { filename: file, subfolder: q.get('dir') ?? '', type: 'abs' }

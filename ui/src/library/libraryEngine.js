@@ -382,53 +382,53 @@ function injectStyle() {
 
 // --- API helpers -----------------------------------------------------------
 const api = {
-  list: () => fetch("/peropix/api/library/list").then(r => r.json()),
-  scan: (force) => fetch("/peropix/api/library/scan" + (force ? "?force=1" : ""), { method: "POST" }).then(r => r.json()),
-  status: () => fetch("/peropix/api/library/scan-status").then(r => r.json()),
-  update: (body) => fetch("/peropix/api/library/update", {
+  list: () => fetch("/peropixfy/api/library/list").then(r => r.json()),
+  scan: (force) => fetch("/peropixfy/api/library/scan" + (force ? "?force=1" : ""), { method: "POST" }).then(r => r.json()),
+  status: () => fetch("/peropixfy/api/library/scan-status").then(r => r.json()),
+  update: (body) => fetch("/peropixfy/api/library/update", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   }).then(r => r.json()),
-  favorite: (rel, fav) => fetch("/peropix/api/library/favorite", {
+  favorite: (rel, fav) => fetch("/peropixfy/api/library/favorite", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ rel_path: rel, favorite: fav }),
   }).then(r => r.json()),
-  rescan: (rel) => fetch("/peropix/api/library/rescan", {
+  rescan: (rel) => fetch("/peropixfy/api/library/rescan", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ rel_path: rel }),
   }).then(r => r.json()),
-  previewRescan: (rel) => fetch("/peropix/api/library/preview-rescan", {
+  previewRescan: (rel) => fetch("/peropixfy/api/library/preview-rescan", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ rel_path: rel }),
   }).then(r => r.json()),
-  remove: (rel) => fetch("/peropix/api/library/delete", {
+  remove: (rel) => fetch("/peropixfy/api/library/delete", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ rel_path: rel }),
   }).then(r => r.json()),
-  checkUpdates: (relPaths) => fetch("/peropix/api/library/check-updates", {
+  checkUpdates: (relPaths) => fetch("/peropixfy/api/library/check-updates", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ rel_paths: relPaths || null }),
   }).then(r => r.json()),
-  checkUpdatesStatus: () => fetch("/peropix/api/library/check-updates/status").then(r => r.json()),
+  checkUpdatesStatus: () => fetch("/peropixfy/api/library/check-updates/status").then(r => r.json()),
   uploadThumb: (rel, file) => {
     const fd = new FormData();
     fd.append("rel_path", rel);
     fd.append("file", file);
-    return fetch("/peropix/api/library/upload-thumb", { method: "POST", body: fd }).then(r => r.json());
+    return fetch("/peropixfy/api/library/upload-thumb", { method: "POST", body: fd }).then(r => r.json());
   },
-  styleList: () => fetch("/peropix/api/library/styles/list").then(r => r.json()),
+  styleList: () => fetch("/peropixfy/api/library/styles/list").then(r => r.json()),
   styleUpload: (file) => {
     const fd = new FormData();
     fd.append("file", file);
-    return fetch("/peropix/api/library/styles/upload", { method: "POST", body: fd }).then(r => r.json());
+    return fetch("/peropixfy/api/library/styles/upload", { method: "POST", body: fd }).then(r => r.json());
   },
-  styleUpdate: (body) => fetch("/peropix/api/library/styles/update", {
+  styleUpdate: (body) => fetch("/peropixfy/api/library/styles/update", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   }).then(r => r.json()),
-  styleDelete: (id) => fetch("/peropix/api/library/styles/delete", {
+  styleDelete: (id) => fetch("/peropixfy/api/library/styles/delete", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id }),
   }).then(r => r.json()),
-  styleWorkflow: (id) => fetch(`/peropix/api/library/styles/workflow?id=${id}`).then(r => r.json()),
+  styleWorkflow: (id) => fetch(`/peropixfy/api/library/styles/workflow?id=${id}`).then(r => r.json()),
 };
 
 // Close a modal when the user clicks its backdrop — but ONLY if the click
@@ -1113,13 +1113,13 @@ function openMediaLightbox(url, opts) {
 function openStyleImageView(s) {
   if (!s || !s.image_file || s.image_missing) return;
   openMediaLightbox(
-    `/peropix/api/library/styles/image?file=${encodeURIComponent(s.image_file)}`,
+    `/peropixfy/api/library/styles/image?file=${encodeURIComponent(s.image_file)}`,
     { alt: s.name || "" },
   );
 }
 
 async function loadStyleThumb(imgEl, file) {
-  const url = `/peropix/api/library/styles/image?file=${encodeURIComponent(file)}`;
+  const url = `/peropixfy/api/library/styles/image?file=${encodeURIComponent(file)}`;
   const MAX = 3;
   for (let attempt = 0; attempt < MAX; attempt++) {
     try {
@@ -1850,7 +1850,7 @@ async function copy(text) {
 // CivitAI's CDN serves the full-res original by default (often several MB).
 // Rewrite the transform segment to request a small resized thumbnail instead
 // (measured ~3.8MB -> ~37KB), which is what kills scroll smoothness otherwise.
-// Local-upload URLs (/peropix/api/library/...) and other hosts don't match and pass through.
+// Local-upload URLs (/peropixfy/api/library/...) and other hosts don't match and pass through.
 function thumbSrc(url) {
   return url.replace(/(image\.civitai\.com\/[^/]+\/[0-9a-f-]+\/)[^/]+(\/)/i, "$1width=300$2");
 }
@@ -1901,7 +1901,7 @@ function makeThumb(l) {
       // in the save handler refreshes l, so post-Save clicks get a new URL.
       wrap.onclick = () => {
         const v = l.updated_at || 0;
-        const largeUrl = `/peropix/api/library/thumb-large?rel=${encodeURIComponent(l.rel_path)}&v=${v}`;
+        const largeUrl = `/peropixfy/api/library/thumb-large?rel=${encodeURIComponent(l.rel_path)}&v=${v}`;
         openMediaLightbox(largeUrl);
       };
     }

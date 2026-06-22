@@ -1,6 +1,6 @@
 // PeroPix 런처 — ComfyUI 사이드바 탭에서 전체화면 PeroPix로 전환.
 // 확장 API 의존은 registerSidebarTab 하나뿐 (Style-Manager에서 검증된 패턴).
-// 런처가 깨져도 /peropix 직접 접속은 항상 동작한다.
+// 런처가 깨져도 /peropixfy 직접 접속은 항상 동작한다.
 import { app } from "../../scripts/app.js";
 
 // 언어: SPA(같은 오리진)가 옵션에서 저장한 peropix.ui state.lang을 우선, 없으면 시스템 언어.
@@ -41,7 +41,7 @@ function ensureOverlay() {
 
   // iframe은 한 번만 만들고 display로만 전환 — 오가도 양쪽 상태가 유지됨
   const frame = document.createElement("iframe");
-  frame.src = "/peropix";
+  frame.src = "/peropixfy";
   frame.style.cssText = "flex:1;border:0;";
 
   overlay.append(bar, frame);

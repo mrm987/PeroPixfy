@@ -1,5 +1,5 @@
-// Multi 탭 슬롯 프리셋 API (/peropix/api/presets).
-const BASE = '/peropix/api/presets'
+// Multi 탭 슬롯 프리셋 API (/peropixfy/api/presets).
+const BASE = '/peropixfy/api/presets'
 
 export interface PresetSlot {
   name: string

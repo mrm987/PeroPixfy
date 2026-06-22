@@ -61,7 +61,7 @@ class PeroPixSaveImage:
             fmt = "png"
         ext = "jpg" if fmt == "jpg" else fmt
         # filename_prefix가 절대경로면 그 폴더에 직접 저장(output 밖 자유 경로). ui에는
-        # type="abs" + subfolder=절대폴더로 돌려줘, 프런트가 /peropix/api/localview로 표시한다.
+        # type="abs" + subfolder=절대폴더로 돌려줘, 프런트가 /peropixfy/api/localview로 표시한다.
         if os.path.isabs(filename_prefix):
             full_output_folder = os.path.dirname(filename_prefix) or filename_prefix
             filename = os.path.basename(filename_prefix) or "PeroPixfy"

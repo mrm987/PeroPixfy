@@ -40,7 +40,7 @@ def _resized_civitai(url):
 
 def download(sha, url):
     """Fetch the thumbnail and cache it as <sha>.<ext>. Returns the served URL
-    ("/peropix/api/library/thumb?file=...") on success, or None on failure / before
+    ("/peropixfy/api/library/thumb?file=...") on success, or None on failure / before
     init()."""
     if not _THUMB_DIR or not sha or not url:
         return None
@@ -60,7 +60,7 @@ def download(sha, url):
                 f.write(r.content)
         except OSError:
             return None
-    return f"/peropix/api/library/thumb?file={fname}"
+    return f"/peropixfy/api/library/thumb?file={fname}"
 
 
 def _resized_civitai_large(url):

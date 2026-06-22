@@ -37,7 +37,7 @@ Put **[`peropixfy_update.bat`](https://github.com/mrm987/PeroPixfy/releases/late
 
 ## Development
 
-PeroPixfy runs on the ComfyUI engine itself. Instead of the node graph you work in a web app served by ComfyUI's own server — normally opened from the **sidebar tab** (a fullscreen overlay; the address bar stays on the ComfyUI page), or reached directly at `http://127.0.0.1:8188/peropix`. Generation goes through the **same server's queue and graph executor**, so output is **pixel-identical to ComfyUI** (verified across t2i / LoRA chain + bypass / i2i).
+PeroPixfy runs on the ComfyUI engine itself. Instead of the node graph you work in a web app served by ComfyUI's own server — normally opened from the **sidebar tab** (a fullscreen overlay; the address bar stays on the ComfyUI page), or reached directly at `http://127.0.0.1:8188/peropixfy`. Generation goes through the **same server's queue and graph executor**, so output is **pixel-identical to ComfyUI** (verified across t2i / LoRA chain + bypass / i2i).
 
 ### Manual install
 
@@ -53,7 +53,7 @@ The built `web/` is bundled, so it runs without a build step. `data/` (presets, 
 
 ### Running
 
-- **Default** — launch ComfyUI with your usual bat; the launcher (`web_extension/`) adds the sidebar tab. `http://127.0.0.1:8188/peropix` also works directly.
+- **Default** — launch ComfyUI with your usual bat; the launcher (`web_extension/`) adds the sidebar tab. `http://127.0.0.1:8188/peropixfy` also works directly.
 - **Lean (optional)** — `scripts\run_peropix.bat`: `--disable-all-custom-nodes --whitelist-custom-nodes PeroPixfy` (+ SageAttention). Spectrum is vendored, so it loads too. The gain is limited (most startup time is LoRA loading).
 
 ### Build from source
@@ -70,8 +70,8 @@ npm run build   # type-check + build web/
 ```
 __init__.py   ComfyUI plugin entry (routes only — no graph nodes)
 server/
-  routes.py   serves the /peropix SPA + gallery/settings API (ComfyUI deps isolated here)
-  library/    vendored Style-Manager — /peropix/api/library/*
+  routes.py   serves the /peropixfy SPA + gallery/settings API (ComfyUI deps isolated here)
+  library/    vendored Style-Manager — /peropixfy/api/library/*
   gallery.py  generations table (generation records)
   migrate.py  one-time import of existing Style-Manager data
 ui/           React + TS + Vite source → npm run build → web/

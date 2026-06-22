@@ -1,4 +1,4 @@
-const BASE = '/peropix/api/library'
+const BASE = '/peropixfy/api/library'
 
 export interface LoraRecord {
   rel_path: string

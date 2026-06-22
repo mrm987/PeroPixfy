@@ -5,7 +5,7 @@ const COMFY = 'http://127.0.0.1:8188'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/peropix/',
+  base: '/peropixfy/',
   build: { outDir: '../web', emptyOutDir: true },
   server: {
     proxy: {
@@ -17,7 +17,7 @@ export default defineConfig({
       '/models': COMFY,
       '/queue': COMFY,
       '/interrupt': COMFY,
-      '/peropix/api': COMFY,
+      '/peropixfy/api': COMFY,
       '/ws': { target: COMFY, ws: true },
     },
   },

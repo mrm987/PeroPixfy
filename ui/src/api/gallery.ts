@@ -1,7 +1,7 @@
 import type { OutputImage } from './comfy'
 import type { GenerationParams } from '../workflow/types'
 
-const BASE = '/peropix/api/gallery'
+const BASE = '/peropixfy/api/gallery'
 
 export interface GenerationRecord {
   prompt_id: string
