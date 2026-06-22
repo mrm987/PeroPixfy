@@ -19,6 +19,11 @@ export function BatchSlotPanel() {
   const hasBase = basePositive.trim() !== ''
   const insertSel = tab?.promptInsert == null || tab.promptInsert >= n ? n : tab.promptInsert
   const [dragOver, setDragOver] = useState<number | null>(null)
+  const [presetOpen, setPresetOpen] = useState(false)
+  const [presetDrag, setPresetDrag] = useState<number | null>(null)
+  const [presetOver, setPresetOver] = useState<number | null>(null)
+  const [slotDrag, setSlotDrag] = useState<number | null>(null)
+  const [slotOver, setSlotOver] = useState<number | null>(null)
   const insertSummary = insertSel >= n ? t('at end') : t('before "{tag}"', { tag: (toks[insertSel]?.text || '').trim() })
 
   // 드래그해 옮기는 단일 'slot prompt' 블록 (현재 삽입 위치에 인라인 표시).
@@ -32,7 +37,6 @@ export function BatchSlotPanel() {
   const curName = tab?.name ?? ''
   const { format, quality, countPerSlot, excludeSlotNumber, presets, presetOrder } = s
   const ordered = sortPresets(presets, presetOrder)
-  const orderIdx = ordered.findIndex((p) => p.filename === curFilename)
 
   useEffect(() => { void s.loadPresetList() }, [s.loadPresetList]) // eslint-disable-line react-hooks/exhaustive-deps
   // 편집 자동저장 — 프리셋 탭의 슬롯이 바뀌면 디바운스 후 프리셋 파일에 기록.
@@ -44,32 +48,43 @@ export function BatchSlotPanel() {
 
   const onNewPreset = () => {
     const name = window.prompt(t('New preset name'), t('preset'))?.trim()
-    if (name) void s.newPreset(name)
+    if (name) { void s.newPreset(name); setPresetOpen(false) }
   }
-  const onRename = () => {
-    if (!curFilename) return
-    const name = window.prompt(t('Rename preset'), curName)?.trim()
-    if (name) void s.renamePreset(curFilename, name)
+  const renamePreset = (filename: string, cur: string) => {
+    const name = window.prompt(t('Rename preset'), cur)?.trim()
+    if (name) void s.renamePreset(filename, name)
   }
-  const onDelete = () => {
-    if (curFilename && window.confirm(t("Delete preset '{name}'?", { name: curName }))) void s.removePreset(curFilename)
+  const deletePreset = (filename: string, nm: string) => {
+    if (window.confirm(t("Delete preset '{name}'?", { name: nm }))) void s.removePreset(filename)
   }
 
   return (
     <div className="batch-slot-panel">
-      {/* 프리셋 바 — 편집은 자동저장. ↑↓ 순서변경 + New/Duplicate/Rename/Delete */}
-      <div className="preset-bar">
-        <select value={curFilename ?? ''}
-          onChange={(e) => { if (e.target.value) void s.applyPreset(e.target.value); else s.openNewTab() }}>
-          <option value="">{t('— No preset —')}</option>
-          {ordered.map((p) => <option key={p.filename} value={p.filename}>{p.name}</option>)}
-        </select>
-        <button onClick={() => curFilename && s.movePreset(curFilename, -1)} disabled={orderIdx <= 0} title={t('Move preset up')}>↑</button>
-        <button onClick={() => curFilename && s.movePreset(curFilename, 1)} disabled={orderIdx < 0 || orderIdx >= ordered.length - 1} title={t('Move preset down')}>↓</button>
-        <button onClick={onNewPreset} title={t('New preset')}>{t('New')}</button>
-        <button onClick={() => void s.duplicatePreset()} title={t('Duplicate current preset')}>{t('Duplicate')}</button>
-        <button onClick={onRename} disabled={!curFilename} title={t('Rename preset')}>{t('Rename')}</button>
-        <button onClick={onDelete} disabled={!curFilename} title={t('Delete preset')}>{t('Delete')}</button>
+      {/* 프리셋 드롭다운 — 선택/순서변경(드래그)/이름변경/복제/삭제/새로 만들기를 리스트 안에서. 편집은 자동저장. */}
+      <div className="preset-dd">
+        <button className="preset-dd-toggle" onClick={() => setPresetOpen((o) => !o)}>
+          <span className="preset-dd-cur">{curName || t('— No preset —')}</span>
+          <span className="preset-dd-caret">{presetOpen ? '▴' : '▾'}</span>
+        </button>
+        {presetOpen && (
+          <div className="preset-list">
+            {ordered.map((p, i) => (
+              <div key={p.filename}
+                className={`preset-item${p.filename === curFilename ? ' active' : ''}${presetOver === i && presetDrag !== null && presetDrag !== i ? ' drag-over' : ''}`}
+                onDragOver={(e) => { if (presetDrag !== null) { e.preventDefault(); setPresetOver(i) } }}
+                onDrop={(e) => { e.preventDefault(); if (presetDrag !== null) s.reorderPresets(presetDrag, i); setPresetDrag(null); setPresetOver(null) }}>
+                <span className="preset-drag" draggable title={t('Drag to reorder')}
+                  onDragStart={(e) => { setPresetDrag(i); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)) }}
+                  onDragEnd={() => { setPresetDrag(null); setPresetOver(null) }}>⠿</span>
+                <button className="preset-name" onClick={() => { void s.applyPreset(p.filename); setPresetOpen(false) }}>{p.name}</button>
+                <button className="preset-act" title={t('Rename preset')} onClick={() => renamePreset(p.filename, p.name)}>✎</button>
+                <button className="preset-act" title={t('Duplicate')} onClick={() => { void s.duplicatePresetFile(p.filename); setPresetOpen(false) }}>⎘</button>
+                <button className="preset-act" title={t('Delete preset')} onClick={() => deletePreset(p.filename, p.name)}>✕</button>
+              </div>
+            ))}
+            <button className="preset-new" onClick={onNewPreset}>＋ {t('New preset')}</button>
+          </div>
+        )}
       </div>
 
       {/* base positive를 원본 그대로(쉼표·공백·개행 보존) 읽기전용 표시 + 단일 'slot prompt' 블록을
@@ -111,16 +126,20 @@ export function BatchSlotPanel() {
         </label>
       </div>
       {slots.map((sl, i) => (
-        <div key={sl.id} className={`slot-row${sl.locked ? ' locked' : ''}`}>
+        <div key={sl.id}
+          className={`slot-row${sl.locked ? ' locked' : ''}${slotOver === i && slotDrag !== null && slotDrag !== i ? ' drag-over' : ''}`}
+          onDragOver={(e) => { if (slotDrag !== null) { e.preventDefault(); setSlotOver(i) } }}
+          onDrop={(e) => { e.preventDefault(); if (slotDrag !== null) s.reorderSlots(slotDrag, i); setSlotDrag(null); setSlotOver(null) }}>
           <div className="slot-head">
+            <span className="slot-drag" draggable title={t('Drag to reorder')}
+              onDragStart={(e) => { setSlotDrag(i); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)) }}
+              onDragEnd={() => { setSlotDrag(null); setSlotOver(null) }}>⠿</span>
             <span className="slot-num">{pad3((tab?.slotStart ?? 1) + i)}</span>
             <button className="slot-lock" title={sl.locked ? t('Unlock') : t('Exclude from generation')}
               onClick={() => s.updateSlot(sl.id, { locked: !sl.locked })}>{sl.locked ? '🔒' : '🔓'}</button>
             <input className="slot-name" placeholder={t('Name (file prefix, optional)')} value={sl.name}
               onChange={(e) => s.updateSlot(sl.id, { name: e.target.value })} />
             <div className="slot-actions">
-              <button onClick={() => s.moveSlot(sl.id, -1)} disabled={i === 0} title={t('Move up')}>↑</button>
-              <button onClick={() => s.moveSlot(sl.id, 1)} disabled={i === slots.length - 1} title={t('Move down')}>↓</button>
               <button onClick={() => s.duplicateSlot(sl.id)} title={t('Duplicate')}>⎘</button>
               <button onClick={() => s.removeSlot(sl.id)} disabled={slots.length <= 1} title={t('Remove')}>✕</button>
             </div>

@@ -752,13 +752,29 @@ button.danger:hover { background: #7f1d1d; color: #fff; border-color: #7f1d1d; }
 .batch-slot-panel { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
 .batch-slot-panel > * { flex-shrink: 0; }
 
-.preset-bar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-.preset-bar select { flex: 1 1 100%; min-width: 0; }
-.preset-bar button { padding: 4px 8px; font-size: 12px; flex: 1 1 0; }
+/* 프리셋 드롭다운 — 선택/순서변경(드래그)/이름변경/복제/삭제/새로 만들기를 리스트 안에서 */
+.preset-dd { position: relative; }
+.preset-dd-toggle { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; }
+.preset-dd-cur { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preset-dd-caret { color: var(--muted); flex-shrink: 0; }
+.preset-list { margin-top: 4px; border: 1px solid var(--border, #3a3a3a); border-radius: 6px; overflow: hidden; background: var(--panel, #1e1e24); }
+.preset-item { display: flex; align-items: center; gap: 2px; padding: 2px 4px; }
+.preset-item.active { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.preset-item.drag-over { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.preset-drag { cursor: grab; user-select: none; color: var(--muted); padding: 0 4px; line-height: 1; flex-shrink: 0; }
+.preset-drag:active { cursor: grabbing; }
+.preset-name { flex: 1; min-width: 0; text-align: left; background: transparent; border: none; cursor: pointer; padding: 4px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preset-name:hover { background: var(--secondary-background-hover, rgba(255,255,255,0.06)); border-radius: 4px; }
+.preset-act { padding: 2px 6px; font-size: 12px; background: transparent; border: none; cursor: pointer; color: var(--muted); flex-shrink: 0; }
+.preset-act:hover { color: var(--text, #e8e8ee); }
+.preset-new { width: 100%; padding: 5px; font-size: 12px; border-top: 1px solid var(--border, #3a3a3a); }
 
 .slot-row { display: flex; flex-direction: column; gap: 4px; }
 .slot-row.locked { opacity: 0.5; }
+.slot-row.drag-over { outline: 2px dashed var(--accent); outline-offset: -2px; border-radius: 4px; }
 .slot-head { display: flex; align-items: center; gap: 6px; }
+.slot-drag { cursor: grab; user-select: none; color: var(--muted); padding: 0 2px; line-height: 1; flex-shrink: 0; }
+.slot-drag:active { cursor: grabbing; }
 .slot-num { font-family: monospace; font-size: 11px; color: var(--muted); flex-shrink: 0; text-align: right; }
 .slot-lock { padding: 0 2px; flex-shrink: 0; background: transparent; border: none; cursor: pointer; font-size: 14px; }
 .slot-name { flex: 1; min-width: 0; }

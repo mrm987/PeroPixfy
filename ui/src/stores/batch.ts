@@ -167,14 +167,17 @@ interface BatchState {
   removeSlot: (id: string) => void
   duplicateSlot: (id: string) => void
   moveSlot: (id: string, dir: -1 | 1) => void
+  reorderSlots: (from: number, to: number) => void // 드래그 reorder (인덱스 기반)
   setSetting: (patch: Partial<Pick<BatchState, 'outputFolder' | 'format' | 'quality' | 'countPerSlot' | 'excludeSlotNumber' | 'randomizeSeed'>>) => void
   // 프리셋
   loadPresetList: () => Promise<void>
   applyPreset: (filename: string) => Promise<void>
   overwritePreset: () => Promise<void> // 편집 자동저장(현재 탭 슬롯 → 프리셋 파일)
   duplicatePreset: () => Promise<void>
+  duplicatePresetFile: (filename: string) => Promise<void> // 특정 프리셋 파일을 복제
   newPreset: (name: string) => Promise<void>
   movePreset: (filename: string, dir: -1 | 1) => void
+  reorderPresets: (from: number, to: number) => void // 드롭다운 드래그 reorder
   renamePreset: (filename: string, name: string) => Promise<void>
   removePreset: (filename: string) => Promise<void>
   // 실행
@@ -370,6 +373,14 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
         ;[next[i], next[j]] = [next[j], next[i]]
         return { slots: next }
       }),
+    reorderSlots: (from, to) =>
+      patchActive((t) => {
+        if (from === to || from < 0 || to < 0 || from >= t.slots.length || to >= t.slots.length) return {}
+        const next = [...t.slots]
+        const [moved] = next.splice(from, 1)
+        next.splice(to, 0, moved)
+        return { slots: next }
+      }),
     setSetting: (patch) => set(patch),
 
     loadPresetList: async () => {
@@ -403,6 +414,14 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
       await get().loadPresetList()
       await get().applyPreset(filename)
     },
+    // 특정 프리셋 파일을 복제(현재 탭과 무관) — 파일에서 슬롯을 읽어 사본 생성 후 연다.
+    duplicatePresetFile: async (filename) => {
+      const p = await presetApi.getPreset(filename)
+      const slots = (p.slots ?? []).map((sl) => ({ name: sl.name, prompt: sl.prompt, locked: sl.locked, promptH: sl.promptH }))
+      const nf = await presetApi.createPreset(`${p.name || 'preset'} copy`, slots)
+      await get().loadPresetList()
+      await get().applyPreset(nf)
+    },
     // 빈 슬롯 1개짜리 새 프리셋을 만들고 연다.
     newPreset: async (name) => {
       const filename = await presetApi.createPreset(name, [{ name: '', prompt: '', locked: false }])
@@ -418,6 +437,15 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
         if (i < 0 || j < 0 || j >= ordered.length) return s
         const next = [...ordered]
         ;[next[i], next[j]] = [next[j], next[i]]
+        return { presetOrder: next }
+      }),
+    reorderPresets: (from, to) =>
+      set((s) => {
+        const ordered = sortPresets(s.presets, s.presetOrder).map((p) => p.filename)
+        if (from === to || from < 0 || to < 0 || from >= ordered.length || to >= ordered.length) return s
+        const next = [...ordered]
+        const [m] = next.splice(from, 1)
+        next.splice(to, 0, m)
         return { presetOrder: next }
       }),
     renamePreset: async (filename, name) => {
