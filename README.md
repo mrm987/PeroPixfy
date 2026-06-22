@@ -12,6 +12,10 @@ Instead of the node-graph UI, you work in a simple 3-tab web app (`http://127.0.
 
 ### Install
 
+**One-click (Windows portable):** download [`install_peropixfy.bat`](install_peropixfy.bat), drop it in your ComfyUI portable root (the folder that contains `ComfyUI\` and `python_embeded\`), and double-click — it clones + installs the dependency, and updates on re-run.
+
+Or manually:
+
 ```
 cd ComfyUI/custom_nodes
 git clone https://github.com/mrm987/PeroPixfy.git
@@ -72,6 +76,10 @@ ComfyUI 엔진을 그대로 사용하는 Anima 전용 경량 프론트엔드 플
 (t2i / 로라 체인+bypass / i2i 세 케이스 모두 픽셀 비교로 검증됨 — `ui/scripts/verify_*.ts`).
 
 ### 설치
+
+**원클릭(Windows 포터블):** [`install_peropixfy.bat`](install_peropixfy.bat)를 받아 ComfyUI 포터블 루트(`ComfyUI\`·`python_embeded\`가 있는 폴더)에 두고 더블클릭 — clone + 의존성 설치, 재실행 시 자동 업데이트.
+
+또는 수동으로:
 
 ```
 cd ComfyUI/custom_nodes
