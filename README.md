@@ -37,7 +37,7 @@ Put **[`peropixfy_update.bat`](https://github.com/mrm987/PeroPixfy/releases/late
 
 ## Development
 
-PeroPixfy runs on the ComfyUI engine itself. Instead of the node graph you get a web app at `http://127.0.0.1:8188/peropix`, and generation goes through the **same server's queue and graph executor** — so output is **pixel-identical to ComfyUI** (verified across t2i / LoRA chain + bypass / i2i).
+PeroPixfy runs on the ComfyUI engine itself. Instead of the node graph you work in a web app served by ComfyUI's own server — normally opened from the **sidebar tab** (a fullscreen overlay; the address bar stays on the ComfyUI page), or reached directly at `http://127.0.0.1:8188/peropix`. Generation goes through the **same server's queue and graph executor**, so output is **pixel-identical to ComfyUI** (verified across t2i / LoRA chain + bypass / i2i).
 
 ### Manual install
 
