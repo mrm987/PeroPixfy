@@ -202,10 +202,12 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       const rect = canvas.getBoundingClientRect()
-      const cx = e.clientX - rect.left
-      const cy = e.clientY - rect.top
+      // 커서가 아니라 화면 중심 기준으로 줌 — 중심 좌표는 드래그(팬)로만 이동한다.
+      const cx = rect.width / 2
+      const cy = rect.height / 2
       const cur = vp.current
-      const ns = clamp(cur.scale * (1 - e.deltaY * 0.0015), MIN, MAX)
+      // 부드러운 줌: 지수식(틱당 변화량 작게, deltaY가 커도 음수 배율 없이 안전).
+      const ns = clamp(cur.scale * Math.exp(-e.deltaY * 0.0007), MIN, MAX)
       const k = ns / cur.scale
       vp.current = { scale: ns, x: cx - (cx - cur.x) * k, y: cy - (cy - cur.y) * k }
       // 줌 중에는 강제 저해상도를 쓰지 않는다 — LOD 임계값(FULL_RES_THRESHOLD)이
