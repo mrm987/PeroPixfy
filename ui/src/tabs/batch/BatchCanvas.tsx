@@ -91,30 +91,7 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
     onViewportChangeRef.current(vp.current)
   }, [])
 
-  const fit = useCallback(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const b = contentBounds(layoutRef.current)
-    if (!b) return
-    const rect = canvas.getBoundingClientRect()
-    const pad = 40
-    const cw = b.maxX - b.minX || 1
-    const ch = b.maxY - b.minY || 1
-    const scale = clamp(
-      Math.min((rect.width - pad * 2) / cw, (rect.height - pad * 2) / ch, 1.5),
-      MIN,
-      MAX,
-    )
-    vp.current = {
-      scale,
-      x: rect.width / 2 - (b.minX + cw / 2) * scale,
-      y: rect.height / 2 - (b.minY + ch / 2) * scale,
-    }
-    kickLowRes()
-    commitViewport()
-  }, [])
-
-  // 초기 정렬: 최상단 슬롯을 좌상단에 둔다(전체 맞춤 대신). 가로만 캔버스 폭에 맞추되
+  // 초기 정렬 + '맞춤' 버튼: 최상단 슬롯을 좌상단에 둔다(전체 맞춤 대신). 가로만 캔버스 폭에 맞추되
   // 100% 초과 확대는 하지 않는다 — 슬롯이 많아도 위에서부터 읽기 좋게.
   const alignTopLeft = useCallback(() => {
     const canvas = canvasRef.current
@@ -339,7 +316,7 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
       <div className="zoom-toolbar">
         <button onClick={() => zoomBy(1.25)} title={t('Zoom in')}>＋</button>
         <button onClick={() => zoomBy(0.8)} title={t('Zoom out')}>－</button>
-        <button onClick={fit} title={t('Fit all')}>{t('Fit')}</button>
+        <button onClick={alignTopLeft} title={t('Fit all')}>{t('Fit')}</button>
         <button onClick={onOpenFolder} title={t('Open output folder')}>📂</button>
       </div>
       <canvas
