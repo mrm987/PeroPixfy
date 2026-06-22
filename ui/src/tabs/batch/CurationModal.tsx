@@ -3,6 +3,9 @@ import { useT } from '../../i18n'
 import { activeTabOf, useBatch } from '../../stores/batch'
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi)
+// 생성 중 삭제로 파일 번호가 재사용돼도 옛(삭제된) 이미지가 캐시에서 나오지 않도록
+// 결과별 고유 키(result.id)를 URL에 붙인다. (캔버스 렌더러·Single과 동일한 방식.)
+const bust = (url: string, key: string) => `${url}&v=${encodeURIComponent(key)}`
 
 /**
  * 에셋 선별(큐레이션) 모달 — 한 슬롯의 결과들을 Single처럼 큰 이미지 + 썸네일 리스트로
@@ -126,7 +129,7 @@ export function CurationModal({ slotId, onClose }: { slotId: string; onClose: ()
             onDoubleClick={resetZoom}
             style={{ cursor: zoom.scale > 1 ? 'grab' : 'default' }}
             title={t('Wheel: prev/next image · Drag (when zoomed): pan · Double-click: reset zoom')}>
-            <img ref={imgRef} src={cur.imageUrls[0]} alt="" draggable={false}
+            <img ref={imgRef} src={bust(cur.imageUrls[0], cur.id)} alt="" draggable={false}
               onLoad={() => setZoom((z) => applyClamp(z.scale, z.x, z.y))}
               style={{ transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})` }} />
           </div>
@@ -135,7 +138,7 @@ export function CurationModal({ slotId, onClose }: { slotId: string; onClose: ()
         <div className="curate-strip">
           {items.map((it, i) => (
             <div key={it.id} className={`curate-thumb${i === safeIdx ? ' active' : ''}`} onClick={() => setIdx(i)}>
-              <img src={it.imageUrls[0]} alt="" />
+              <img src={bust(it.imageUrls[0], it.id)} alt="" />
               <button className="curate-del" title={t('Delete this image')}
                 onClick={(e) => { e.stopPropagation(); void removeResults([it.id]) }}>✕</button>
             </div>

@@ -230,7 +230,12 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
     await Promise.all(pendingIds.map((id) => deleteGeneration(id)))
   },
 
-  onProgress: (promptId, value, max) => set({ progress: { promptId, value, max } }),
+  onProgress: (promptId, value, max) => {
+    // 자기 큐(Single)의 프롬프트만 반영. Multi 프롬프트의 진행 이벤트가 들어와도 무시해야
+    // Single 큐 UI가 Multi 때문에 갱신되거나(취소 후) 잔류하지 않는다.
+    if (!get().history.some((h) => h.promptId === promptId)) return
+    set({ progress: { promptId, value, max } })
+  },
 
   onDone: async (promptId) => {
     if (!get().history.some((h) => h.promptId === promptId)) return

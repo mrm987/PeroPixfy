@@ -63,7 +63,7 @@ export default function App() {
       const wb = useWorkbench.getState()
       const batch = useBatch.getState()
       ws = openSocket({
-        onProgress: (id, v, m) => { wb.onProgress(id, v, m); batch.onProgress(id) },
+        onProgress: (id, v, m) => { wb.onProgress(id, v, m); batch.onProgress(id, v, m) },
         onDone: (id) => { wb.onDone(id); batch.onDone(id) },
         onError: (id) => { wb.onError(id); batch.onError(id) },
       })

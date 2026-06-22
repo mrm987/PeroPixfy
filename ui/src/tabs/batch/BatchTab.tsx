@@ -4,7 +4,6 @@ import { useT } from '../../i18n'
 import { Resizer } from '../../components/Resizer'
 import { activeCharOf, activeTabOf, sanitize, useBatch, type Viewport } from '../../stores/batch'
 import { useUi } from '../../stores/ui'
-import { useWorkbench } from '../../stores/workbench'
 import { ParamsPanel } from '../workbench/ParamsPanel'
 import { BatchCanvas } from './BatchCanvas'
 import type { ResultLike } from './batchCanvasRenderer'
@@ -37,7 +36,7 @@ export function BatchTab() {
   const countPerSlot = useBatch((s) => s.countPerSlot)
   const outputFolder = useBatch((s) => s.outputFolder)
   const activePromptId = useBatch((s) => s.activePromptId)
-  const progress = useWorkbench((s) => s.progress) // WS step 진행률(전역) — 현재 실행 prompt가 배치면 표시
+  const progress = useBatch((s) => s.progress) // Multi 자체 step 진행률 (Single과 분리 — 서로 큐 UI 오염 X)
 
   const viewports = useBatch((s) => s.viewports)
   const setViewport = useBatch((s) => s.setViewport)

@@ -73,13 +73,18 @@ function loadImage(src: string): HTMLImageElement | null {
   return null
 }
 
-function getImageForNode(viewUrlStr: string, screenSize: number): HTMLImageElement | null {
+function getImageForNode(viewUrlStr: string, screenSize: number, bust = ''): HTMLImageElement | null {
+  // bust: 결과별 고유 키(result.id, 큐 등록 시점 확정)를 URL에 붙여 캐시를 분리.
+  // 생성 중 기존 이미지를 지우면 ComfyUI 카운터가 같은 파일명을 재사용할 수 있는데,
+  // src가 같으면 imageCache(와 브라우저 캐시)가 지워진 옛 이미지를 그대로 반환한다.
+  // 고유 키를 붙이면 결과마다 다른 src가 되어 항상 현재 파일을 새로 불러온다.
+  const v = bust ? `&v=${encodeURIComponent(bust)}` : ''
   if (!forceLowRes && screenSize > FULL_RES_THRESHOLD) {
-    const full = loadImage(viewUrlStr)
+    const full = loadImage(viewUrlStr + v)
     if (full) return full // 풀해상도 준비됐으면 그걸로, 아니면 아래 썸네일로 폴백.
   }
   const parsed = parseViewUrl(viewUrlStr)
-  return loadImage(parsed ? thumbUrl(parsed, THUMB_W) : viewUrlStr)
+  return loadImage((parsed ? thumbUrl(parsed, THUMB_W) : viewUrlStr) + v)
 }
 
 const pad3 = (n: number) => String(n).padStart(3, '0')
@@ -169,7 +174,7 @@ export function render(
           ctx.fillStyle = '#2a2a35'
           ctx.fillRect(node.x + 3, node.y + 3, node.w - 6, node.h - 6)
         } else {
-          const img = getImageForNode(node.result.imageUrls[0], screenSize)
+          const img = getImageForNode(node.result.imageUrls[0], screenSize, node.result.id)
           if (img) {
             const pad = 4
             const sc = Math.min(

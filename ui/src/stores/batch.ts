@@ -144,6 +144,7 @@ interface BatchState {
   running: boolean
   runningTabId: string | null
   activePromptId: string | null // WS 진행률 기준 '지금 실제로 실행 중'인 프롬프트
+  progress: { promptId: string; value: number; max: number } | null // 현재 실행 프롬프트의 step 진행률(Multi 전용 — Single과 분리)
 
   // 캐릭터
   addCharacter: () => void
@@ -185,7 +186,7 @@ interface BatchState {
   stop: () => Promise<void>
   removeResults: (ids: string[]) => Promise<void>
   pruneMissing: () => Promise<void>
-  onProgress: (promptId: string) => void
+  onProgress: (promptId: string, value?: number, max?: number) => void
   onDone: (promptId: string) => Promise<void>
   onError: (promptId: string) => void
 }
@@ -252,6 +253,7 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
     running: false,
     runningTabId: null,
     activePromptId: null,
+    progress: null,
 
     addCharacter: () =>
       set((s) => {
@@ -498,7 +500,7 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
     },
 
     stop: async () => {
-      set({ running: false, activePromptId: null })
+      set({ running: false, activePromptId: null, progress: null })
       // 모든 탭의 제출된 대기 프롬프트를 ComfyUI 큐에서 제거하고 현재 작업을 중단.
       const queued = get().tabs.flatMap((t) => t.results.filter((r) => r.status === 'queued' && r.promptId))
       if (queued.length > 0) {
@@ -538,16 +540,20 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
       if (missing.length) await get().removeResults(missing)
     },
 
-    onProgress: (promptId) => {
+    onProgress: (promptId, value, max) => {
       // 큐에 2개를 미리 넣어도 ComfyUI는 1개씩 실행한다. 지금 실제로 도는 프롬프트를
       // 기록해, 캔버스가 그것만 'generating…', 미리 제출된 건 'queued'로 표시하게 한다.
+      // 이 탭들이 소유한 프롬프트만 반영 — Single 프롬프트의 진행 이벤트는 무시한다.
       if (get().tabs.some((t) => t.results.some((r) => r.promptId === promptId))) {
-        set({ activePromptId: promptId })
+        set({
+          activePromptId: promptId,
+          progress: value != null && max != null ? { promptId, value, max } : get().progress,
+        })
       }
     },
 
     onDone: async (promptId) => {
-      if (get().activePromptId === promptId) set({ activePromptId: null })
+      if (get().activePromptId === promptId) set({ activePromptId: null, progress: null })
       const tab = get().tabs.find((t) => t.results.some((r) => r.promptId === promptId))
       if (!tab) return
       const outputs = await fetchOutputs(promptId)
@@ -563,7 +569,7 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
     },
 
     onError: (promptId) => {
-      if (get().activePromptId === promptId) set({ activePromptId: null })
+      if (get().activePromptId === promptId) set({ activePromptId: null, progress: null })
       const tab = get().tabs.find((t) => t.results.some((r) => r.promptId === promptId))
       if (!tab) return
       failGeneration(promptId)

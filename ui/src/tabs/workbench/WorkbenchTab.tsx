@@ -40,6 +40,20 @@ export function WorkbenchTab() {
   const singleW = useUi((s) => s.singleW)
   const setPref = useUi((s) => s.setPref)
 
+  // '캐릭터로 지정' 같은 동작 확인 문구는 잠깐만 띄우고 자동으로 거둔다(영구 잔류 방지).
+  // 그 사이 다른 문구(예: 생성 시 미설치 LoRA 안내)로 바뀌었으면 건드리지 않도록, 현재
+  // 문구가 방금 띄운 그 문구일 때만 지운다.
+  const flashRef = useRef<{ msg: string; timer: number } | null>(null)
+  const flashNotice = (msg: string) => {
+    if (flashRef.current) clearTimeout(flashRef.current.timer)
+    const timer = window.setTimeout(() => {
+      if (useWorkbench.getState().notice === msg) setNotice(null)
+      flashRef.current = null
+    }, 4000)
+    flashRef.current = { msg, timer }
+    setNotice(msg)
+  }
+
   const selected = history.find((h) => h.promptId === selectedId) ?? history[0]
   // 프리뷰 리스트·전환은 이 목록 기준 (별표 필터 적용 시 별표한 것만).
   const visible = starredOnly ? history.filter((h) => h.starred) : history
@@ -110,6 +124,16 @@ export function WorkbenchTab() {
     el?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' })
   }, [selected?.promptId])
 
+  // 다른 이미지를 선택하면 방금 띄운 확인 문구를 거둔다(현재 문구가 그 문구일 때만).
+  useEffect(() => {
+    const f = flashRef.current
+    if (!f) return
+    if (useWorkbench.getState().notice === f.msg) setNotice(null)
+    clearTimeout(f.timer)
+    flashRef.current = null
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId])
+
   // 프리뷰 리스트 클릭: Ctrl/⌘+클릭은 다중선택 토글, 일반 클릭은 보기 전환.
   const onThumbClick = (e: React.MouseEvent, promptId: string) => {
     if (e.ctrlKey || e.metaKey) {
@@ -175,10 +199,10 @@ export function WorkbenchTab() {
                 if (!v) return
                 if (v === '__new__') {
                   addCharacterFromParams(selected.params)
-                  setNotice(t('Applied these settings to a new character (char{n}).', { n: String(characters.length + 1).padStart(2, '0') }))
+                  flashNotice(t('Applied these settings to a new character (char{n}).', { n: String(characters.length + 1).padStart(2, '0') }))
                 } else {
                   setCharacterBase(v, selected.params)
-                  setNotice(t("Applied these settings to '{name}'.", { name: characters.find((c) => c.id === v)?.name ?? '' }))
+                  flashNotice(t("Applied these settings to '{name}'.", { name: characters.find((c) => c.id === v)?.name ?? '' }))
                 }
                 e.currentTarget.value = ''
               }}>
