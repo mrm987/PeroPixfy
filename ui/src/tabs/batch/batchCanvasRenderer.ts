@@ -130,6 +130,7 @@ export function render(
   selected: Set<string>,
   hovered: string | null,
   activePromptId: string | null,
+  hoverTitle: string | null = null,
 ) {
   const s = vp.scale
   ctx.save()
@@ -236,16 +237,26 @@ export function render(
       ctx.fillText('⛶', sx + ROW_BTN / 2, sy + ROW_BTN / 2 + 0.5)
       tx = sx + ROW_BTN + 5
     }
-    // 타이틀 — 카드 위에 겹쳐도 읽히게 그림자.
+    // 타이틀 — 카드 위에 겹쳐도 읽히게 그림자. 호버 시 밝게 + 보라 밑줄(클릭=확대 표시).
+    const hot = row.slotId === hoverTitle
     ctx.font = '600 16px sans-serif'
     ctx.textAlign = 'left'
     ctx.textBaseline = 'top'
     ctx.shadowColor = 'rgba(0, 0, 0, 0.85)'
     ctx.shadowBlur = 3
-    ctx.fillStyle = '#e2e8f0'
+    ctx.fillStyle = hot ? '#ffffff' : '#e2e8f0'
     ctx.fillText(row.label, tx, sy + 2)
     ctx.shadowColor = 'transparent'
     ctx.shadowBlur = 0
+    if (hot) {
+      const tw = ctx.measureText(row.label).width
+      ctx.strokeStyle = '#a78bfa'
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.moveTo(tx, sy + 19)
+      ctx.lineTo(tx + tw, sy + 19)
+      ctx.stroke()
+    }
   }
 
   // 줌 레벨 표시 (화면 좌표)

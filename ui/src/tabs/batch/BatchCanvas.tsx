@@ -52,6 +52,7 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
   const activeRef = useRef(activePromptId)
   activeRef.current = activePromptId
   const hover = useRef<string | null>(null)
+  const hoverTitle = useRef<string | null>(null) // 호버 중인 슬롯 타이틀(강조용)
   const rafRef = useRef(0)
   const lowResTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -110,7 +111,7 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
     commitViewport()
   }, [])
 
-  // 슬롯 타이틀 클릭 → 그 슬롯(행: 라벨+카드들)이 화면에 꽉 차게 확대(중앙 정렬).
+  // 슬롯 타이틀 클릭 → 그 슬롯을 280%로 확대(슬롯 콘텐츠 중심을 화면 중앙에).
   const focusSlot = useCallback((row: LayoutRow) => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -120,13 +121,38 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
       minX = Math.min(minX, n.x); minY = Math.min(minY, n.y)
       maxX = Math.max(maxX, n.x + n.w); maxY = Math.max(maxY, n.y + n.h)
     }
-    const pad = 40
-    const cw = maxX - minX || 1
-    const ch = maxY - minY || 1
-    const scale = clamp(Math.min((rect.width - pad * 2) / cw, (rect.height - pad * 2) / ch), MIN, MAX)
-    vp.current = { scale, x: rect.width / 2 - (minX + cw / 2) * scale, y: rect.height / 2 - (minY + ch / 2) * scale }
+    const scale = clamp(2.8, MIN, MAX)
+    const ccx = (minX + maxX) / 2
+    const ccy = (minY + maxY) / 2
+    vp.current = { scale, x: rect.width / 2 - ccx * scale, y: rect.height / 2 - ccy * scale }
     kickLowRes()
     commitViewport()
+  }, [])
+
+  // 화면 좌표 pos가 어떤 슬롯 타이틀 위인지(클릭=확대). 큐레이트 버튼은 별도. 없으면 null.
+  const titleHitAt = useCallback((px: number, py: number): LayoutRow | null => {
+    const vpc = vp.current
+    if (_measure) _measure.font = '600 16px sans-serif'
+    for (const row of layoutRef.current) {
+      const bx = vpc.x + row.x * vpc.scale
+      const by = vpc.y + row.y * vpc.scale
+      const tx = bx + (rowHasDone(row) ? ROW_BTN + 5 : 0)
+      const tw = _measure ? _measure.measureText(row.label).width : 200
+      if (px >= tx && px <= tx + tw && py >= by && py <= by + ROW_BTN) return row
+    }
+    return null
+  }, [])
+
+  // 큐레이트 버튼(⛶) 위인지. 없으면 null.
+  const curateHitAt = useCallback((px: number, py: number): LayoutRow | null => {
+    const vpc = vp.current
+    for (const row of layoutRef.current) {
+      if (!rowHasDone(row)) continue
+      const bx = vpc.x + row.x * vpc.scale
+      const by = vpc.y + row.y * vpc.scale
+      if (px >= bx && px <= bx + ROW_BTN && py >= by && py <= by + ROW_BTN) return row
+    }
+    return null
   }, [])
 
   // 레이아웃 재계산 — 첫 진입(저장된 뷰포트 없음) 시 한 번 좌상단 정렬.
@@ -158,6 +184,7 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
         selRef.current,
         hover.current,
         activeRef.current,
+        hoverTitle.current,
       )
       if (selRect.current) {
         const s = selRect.current
@@ -238,30 +265,11 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
     }
     if (e.button !== 0) return
 
-    // 슬롯 타이틀 옆 큐레이션 버튼(화면 좌표 고정)을 먼저 검사 — 맞으면 모달 열고 종료.
-    const vpc = vp.current
-    for (const row of layoutRef.current) {
-      if (!rowHasDone(row)) continue
-      const bx = vpc.x + row.x * vpc.scale
-      const by = vpc.y + row.y * vpc.scale
-      if (pos.x >= bx && pos.x <= bx + ROW_BTN && pos.y >= by && pos.y <= by + ROW_BTN) {
-        onCurate(row.slotId)
-        return
-      }
-    }
-
-    // 슬롯 타이틀(화면 좌표 고정) 클릭 → 해당 슬롯으로 확대.
-    if (_measure) _measure.font = '600 16px sans-serif'
-    for (const row of layoutRef.current) {
-      const bx = vpc.x + row.x * vpc.scale
-      const by = vpc.y + row.y * vpc.scale
-      const tx = bx + (rowHasDone(row) ? ROW_BTN + 5 : 0)
-      const tw = _measure ? _measure.measureText(row.label).width : 200
-      if (pos.x >= tx && pos.x <= tx + tw && pos.y >= by && pos.y <= by + ROW_BTN) {
-        focusSlot(row)
-        return
-      }
-    }
+    // 화면 좌표 고정 UI: 큐레이션 버튼(⛶) → 모달, 타이틀 텍스트 → 슬롯 280% 확대.
+    const cu = curateHitAt(pos.x, pos.y)
+    if (cu) { onCurate(cu.slotId); return }
+    const ti = titleHitAt(pos.x, pos.y)
+    if (ti) { focusSlot(ti); return }
 
     const w = toWorld(pos.x, pos.y)
     const hit = hitTest(layoutRef.current, w.x, w.y)
@@ -320,6 +328,11 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
       onSelectionChange(res)
       return
     }
+    // 타이틀/큐레이트 버튼 위면 클릭 가능 표시(포인터) + 타이틀 강조.
+    const tRow = titleHitAt(pos.x, pos.y)
+    hoverTitle.current = tRow ? tRow.slotId : null
+    const overUI = !!(tRow || curateHitAt(pos.x, pos.y))
+    if (canvasRef.current) canvasRef.current.style.cursor = overUI ? 'pointer' : 'default'
     const w = toWorld(pos.x, pos.y)
     hover.current = hitTest(layoutRef.current, w.x, w.y)
   }
@@ -331,6 +344,11 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
       selecting.current = false
       selRect.current = null
     }
+  }
+  const onMouseLeave = () => {
+    onMouseUp()
+    hoverTitle.current = null
+    if (canvasRef.current) canvasRef.current.style.cursor = 'default'
   }
 
   const zoomBy = (f: number) => {
@@ -360,7 +378,7 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
-        onMouseLeave={onMouseUp}
+        onMouseLeave={onMouseLeave}
         onContextMenu={(e) => e.preventDefault()}
       />
     </div>
