@@ -47,10 +47,16 @@ _TASK = None
 
 
 def _target_dir(folder):
-    """folder_paths가 아는 폴더면 그 첫 경로, 모르면 models/{folder}."""
+    """folder_paths가 아는 폴더면 그 경로, 모르면 models/{folder}.
+    한 타입에 여러 경로가 매핑된 경우(예: diffusion_models -> [models/unet, models/diffusion_models])
+    이름이 정확히 일치하는 폴더를 우선한다 — 정본 위치(diffusion_models)에 받도록.
+    (unet/diffusion_models는 별칭이라 어디 받든 인식은 되지만, 관례상 정본 폴더를 쓴다.)"""
     try:
         dirs = folder_paths.get_folder_paths(folder)
         if dirs:
+            for d in dirs:
+                if os.path.basename(os.path.normpath(d)) == folder:
+                    return d
             return dirs[0]
     except Exception:
         pass
