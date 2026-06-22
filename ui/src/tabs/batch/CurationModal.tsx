@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { parseViewUrl, thumbUrl } from '../../api/comfy'
 import { useT } from '../../i18n'
 import { activeTabOf, useBatch } from '../../stores/batch'
 
@@ -6,6 +7,12 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), h
 // 생성 중 삭제로 파일 번호가 재사용돼도 옛(삭제된) 이미지가 캐시에서 나오지 않도록
 // 결과별 고유 키(result.id)를 URL에 붙인다. (캔버스 렌더러·Single과 동일한 방식.)
 const bust = (url: string, key: string) => `${url}&v=${encodeURIComponent(key)}`
+// 하단 스트립은 다운스케일 thumb 엔드포인트로 로드 — 다수 이미지(슬롯당 최대 64장)일 때
+// 풀해상도 N장 대신 가벼운 썸네일 N장만 받는다. 큰 이미지는 현재 1장만 풀해상도.
+const stripSrc = (url: string, key: string) => {
+  const p = parseViewUrl(url)
+  return `${p ? thumbUrl(p, 240) : url}&v=${encodeURIComponent(key)}`
+}
 
 /**
  * 에셋 선별(큐레이션) 모달 — 한 슬롯의 결과들을 Single처럼 큰 이미지 + 썸네일 리스트로
@@ -13,7 +20,7 @@ const bust = (url: string, key: string) => `${url}&v=${encodeURIComponent(key)}`
  * 버튼·슬라이더·넘패드 +/-. 줌 상태는 이미지를 넘겨도 유지된다. 결과는 스토어에서
  * 라이브로 읽어 삭제가 즉시 반영된다.
  */
-export function CurationModal({ slotId, onClose }: { slotId: string; onClose: () => void }) {
+export function CurationModal({ slotId, aspect, onClose }: { slotId: string; aspect: number; onClose: () => void }) {
   const t = useT()
   const results = useBatch((s) => activeTabOf(s)?.results ?? [])
   const slotName = useBatch((s) => activeTabOf(s)?.slots.find((sl) => sl.id === slotId)?.name ?? '')
@@ -137,8 +144,9 @@ export function CurationModal({ slotId, onClose }: { slotId: string; onClose: ()
         </div>
         <div className="curate-strip">
           {items.map((it, i) => (
-            <div key={it.id} className={`curate-thumb${i === safeIdx ? ' active' : ''}`} onClick={() => setIdx(i)}>
-              <img src={bust(it.imageUrls[0], it.id)} alt="" />
+            <div key={it.id} className={`curate-thumb${i === safeIdx ? ' active' : ''}`}
+              style={{ aspectRatio: String(aspect) }} onClick={() => setIdx(i)}>
+              <img src={stripSrc(it.imageUrls[0], it.id)} alt="" loading="lazy" />
               <button className="curate-del" title={t('Delete this image')}
                 onClick={(e) => { e.stopPropagation(); void removeResults([it.id]) }}>✕</button>
             </div>

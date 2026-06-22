@@ -219,7 +219,7 @@ export function BatchTab() {
         )}
       </div>
 
-      {curateSlot && <CurationModal slotId={curateSlot} onClose={() => setCurateSlot(null)} />}
+      {curateSlot && <CurationModal slotId={curateSlot} aspect={aspect} onClose={() => setCurateSlot(null)} />}
     </div>
   )
 }
