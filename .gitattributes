@@ -1,0 +1,4 @@
+# Windows batch files: store and serve verbatim (no EOL normalization) so they
+# keep CRLF whether cloned (any autocrlf setting) or downloaded raw from GitHub.
+# cmd.exe mishandles goto/labels and parenthesized blocks under LF line endings.
+*.bat -text

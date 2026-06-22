@@ -17,16 +17,17 @@ echo Root: %CD%
 echo.
 
 REM --- sanity: must run from the ComfyUI portable ROOT (the folder that
-REM     contains both ComfyUI\ and python_embeded\ — one level ABOVE ComfyUI) ---
-if exist "ComfyUI\" if exist "python_embeded\" goto :rootok
-echo [ERROR] Wrong location: %CD%
-echo This .bat must run from the ComfyUI portable ROOT — the folder that
-echo contains both "ComfyUI\" and "python_embeded\" ^(one level ABOVE the
-echo ComfyUI folder^). Move this .bat there and double-click it again.
-echo.
-pause
-exit /b 1
-:rootok
+REM     contains both ComfyUI\ and python_embeded\, one level ABOVE ComfyUI).
+REM     goto-free so it still works even if this file has LF line endings. ---
+set "_ROOTOK=1"
+if not exist "ComfyUI\" set "_ROOTOK="
+if not exist "python_embeded\" set "_ROOTOK="
+if not defined _ROOTOK echo [ERROR] Wrong location: %CD%
+if not defined _ROOTOK echo Run this from the ComfyUI portable ROOT - the folder that
+if not defined _ROOTOK echo contains both the "ComfyUI" folder and the "python_embeded" folder,
+if not defined _ROOTOK echo i.e. one level ABOVE the ComfyUI folder. Move it there and retry.
+if not defined _ROOTOK pause
+if not defined _ROOTOK exit /b 1
 
 REM --- need git ---
 where git >nul 2>nul
