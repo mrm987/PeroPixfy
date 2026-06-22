@@ -19,6 +19,7 @@ export function SetupBanner() {
   const t = useT()
   const [assets, setAssets] = useState<SetupAsset[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [startedDownload, setStartedDownload] = useState(false)
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const refresh = useCallback(async () => {
@@ -45,24 +46,25 @@ export function SetupBanner() {
   if (!loaded) return null
   const missing = assets.filter((a) => !a.present)
   const reqMissing = assets.filter((a) => a.required && !a.present)
-  const finished = assets.some((a) => a.progress?.status === 'done')
-  const errored = assets.some((a) => a.progress?.status === 'error')
-  if (missing.length === 0 && !downloading && !finished && !errored) return null
+  // '방금 다운로드함'은 이 세션에서 다운로드를 돌렸고 이제 전부 존재할 때만 true. 서버의
+  // 영속 'done' 진행상태에 의존하면 새로고침/ComfyUI 재시작 전까지 배너가 안 사라진다(버그).
+  const justFinished = startedDownload && !downloading && missing.length === 0
+  if (missing.length === 0 && !downloading && !justFinished) return null
 
   const allPresent = missing.length === 0
-  const startAll = () => void startSetupDownload(missing.map((a) => a.key)).then(refresh)
+  const startAll = () => { setStartedDownload(true); void startSetupDownload(missing.map((a) => a.key)).then(refresh) }
 
   return (
     <div className={`setup-banner${reqMissing.length ? ' warn' : ''}`}>
       <div className="setup-head">
         <span>
           {allPresent
-            ? (finished ? t('Models downloaded — reload to use them.') : t('All required models are installed.'))
+            ? (justFinished ? t('Models downloaded — reload to use them.') : t('All required models are installed.'))
             : reqMissing.length
               ? t('Required models are missing — generation will fail until you download them.')
               : t('An optional model is missing.')}
         </span>
-        {allPresent && finished ? (
+        {allPresent && justFinished ? (
           <button onClick={() => location.reload()}>{t('Reload')}</button>
         ) : !downloading && missing.length > 0 ? (
           <button onClick={startAll}>{t('Download all missing ({n})', { n: missing.length })}</button>
