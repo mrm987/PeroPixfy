@@ -116,6 +116,7 @@ export interface VersionInfo {
   branch: string | null
   isGit: boolean
   path: string
+  rootPath: string // ComfyUI 포터블 루트 (peropixfy_*.bat 위치)
 }
 /** 현재 버전 정보 (선언 버전 + git 커밋/날짜 + 플러그인 경로). */
 export async function getVersion(): Promise<VersionInfo> {

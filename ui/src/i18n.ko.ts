@@ -230,8 +230,9 @@ export const ko: Record<string, string> = {
   'Checking…': '확인 중…',
   'not a git checkout': 'git 설치 아님',
   'You are up to date.': '최신 버전입니다.',
-  'Update available — {n} commit(s) behind. Run update_peropixfy.bat in the plugin folder, then restart ComfyUI.':
-    '업데이트 있음 — {n}개 커밋 뒤처짐. 플러그인 폴더의 update_peropixfy.bat을 실행한 뒤 ComfyUI를 재시작하세요.',
+  'Open the folder with the update bat': '업데이트 bat이 있는 폴더 열기',
+  'Update available — {n} commit(s) behind. Run peropixfy_update.bat in the ComfyUI portable root, then restart ComfyUI.':
+    '업데이트 있음 — {n}개 커밋 뒤처짐. ComfyUI 포터블 루트의 peropixfy_update.bat을 실행한 뒤 ComfyUI를 재시작하세요.',
   'Update check failed: {error}': '업데이트 확인 실패: {error}',
 
   // 다이얼로그 (confirm/prompt)

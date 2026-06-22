@@ -12,7 +12,7 @@ Instead of the node-graph UI, you work in a simple 3-tab web app (`http://127.0.
 
 ### Install
 
-**One-click (Windows portable):** download [`install_peropixfy.bat`](install_peropixfy.bat), drop it in your ComfyUI portable root (the folder that contains `ComfyUI\` and `python_embeded\`), and double-click — it clones + installs the dependency, and updates on re-run.
+**One-click (Windows portable):** download [`peropixfy_install.bat`](peropixfy_install.bat), drop it in your ComfyUI portable root (the folder that contains `ComfyUI\` and `python_embeded\`), and double-click — it clones + installs the dependency. To update later, put [`peropixfy_update.bat`](peropixfy_update.bat) in the same folder and run it (it does `git pull` + deps), then restart ComfyUI.
 
 Or manually:
 
@@ -77,7 +77,7 @@ ComfyUI 엔진을 그대로 사용하는 Anima 전용 경량 프론트엔드 플
 
 ### 설치
 
-**원클릭(Windows 포터블):** [`install_peropixfy.bat`](install_peropixfy.bat)를 받아 ComfyUI 포터블 루트(`ComfyUI\`·`python_embeded\`가 있는 폴더)에 두고 더블클릭 — clone + 의존성 설치, 재실행 시 자동 업데이트.
+**원클릭(Windows 포터블):** [`peropixfy_install.bat`](peropixfy_install.bat)를 받아 ComfyUI 포터블 루트(`ComfyUI\`·`python_embeded\`가 있는 폴더)에 두고 더블클릭 — clone + 의존성 설치. 이후 업데이트는 같은 폴더에 [`peropixfy_update.bat`](peropixfy_update.bat)을 두고 실행(`git pull` + 의존성)한 뒤 ComfyUI를 재시작.
 
 또는 수동으로:
 

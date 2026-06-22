@@ -449,9 +449,13 @@ async def gallery_star(request):
 
 @routes.get("/peropix/api/version")
 async def peropix_version(request):
-    """현재 버전 — 선언 버전(__version__) + git 커밋/날짜/브랜치 + 플러그인 경로."""
+    """현재 버전 — 선언 버전(__version__) + git 커밋/날짜/브랜치 + 플러그인/포터블 루트 경로."""
+    try:
+        root = os.path.dirname(folder_paths.base_path)  # ComfyUI 폴더의 부모 = 포터블 루트(bat 위치)
+    except Exception:
+        root = os.path.dirname(os.path.dirname(os.path.dirname(PLUGIN_DIR)))
     info = {"version": None, "commit": None, "date": None, "branch": None,
-            "isGit": False, "path": PLUGIN_DIR}
+            "isGit": False, "path": PLUGIN_DIR, "rootPath": root}
     try:
         from .. import __version__ as v
         info["version"] = v

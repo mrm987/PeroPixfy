@@ -74,8 +74,8 @@ export function OptionsModal({ onClose }: { onClose: () => void }) {
               {checking ? t('Checking…') : t('Check for updates')}
             </button>
             {ver && (
-              <button type="button" title={t('Open the folder')}
-                onClick={() => void openOutputFolder(ver.path)}>{t('📂 Open')}</button>
+              <button type="button" title={t('Open the folder with the update bat')}
+                onClick={() => void openOutputFolder(ver.rootPath)}>{t('📂 Open')}</button>
             )}
           </div>
         </label>
@@ -84,7 +84,7 @@ export function OptionsModal({ onClose }: { onClose: () => void }) {
             {!upd.ok
               ? t('Update check failed: {error}', { error: upd.error ?? '' })
               : upd.hasUpdate
-                ? t('Update available — {n} commit(s) behind. Run update_peropixfy.bat in the plugin folder, then restart ComfyUI.', { n: String(upd.behind ?? 0) })
+                ? t('Update available — {n} commit(s) behind. Run peropixfy_update.bat in the ComfyUI portable root, then restart ComfyUI.', { n: String(upd.behind ?? 0) })
                 : t('You are up to date.')}
           </p>
         )}
