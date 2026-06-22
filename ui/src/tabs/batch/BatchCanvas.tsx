@@ -130,6 +130,19 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
     commitViewport()
   }, [])
 
+  // 줌 앵커 — 첫 슬롯 이미지(카드) 좌상단의 현재 화면 좌표. 줌 시 이 점을 고정한다.
+  // (카드가 없으면 콘텐츠 좌상단으로 폴백.)
+  const zoomAnchor = useCallback(() => {
+    const rows = layoutRef.current
+    const cur = vp.current
+    const n0 = rows[0]?.nodes?.[0]
+    let ax = 0
+    let ay = 0
+    if (n0) { ax = n0.x; ay = n0.y }
+    else { const b = contentBounds(rows); if (b) { ax = b.minX; ay = b.minY } }
+    return { cx: cur.x + ax * cur.scale, cy: cur.y + ay * cur.scale }
+  }, [])
+
   // 레이아웃 재계산 — 첫 진입(저장된 뷰포트 없음) 시 한 번 좌상단 정렬.
   useEffect(() => {
     layoutRef.current = computeLayout(slots, results, cardW, slotStart)
@@ -201,10 +214,8 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
     if (!canvas) return
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
-      const rect = canvas.getBoundingClientRect()
-      // 커서가 아니라 화면 중심 기준으로 줌 — 중심 좌표는 드래그(팬)로만 이동한다.
-      const cx = rect.width / 2
-      const cy = rect.height / 2
+      // 앵커: 첫 슬롯 이미지 좌상단(화면 좌표) — 줌해도 그 점 고정. 중심 이동은 드래그(팬)로만.
+      const { cx, cy } = zoomAnchor()
       const cur = vp.current
       // 부드러운 줌: 지수식(틱당 변화량 작게, deltaY가 커도 음수 배율 없이 안전).
       const ns = clamp(cur.scale * Math.exp(-e.deltaY * 0.0007), MIN, MAX)
@@ -217,7 +228,7 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
     }
     canvas.addEventListener('wheel', onWheel, { passive: false })
     return () => canvas.removeEventListener('wheel', onWheel)
-  }, [])
+  }, [zoomAnchor])
 
   const canvasPos = (e: React.MouseEvent) => {
     const rect = canvasRef.current!.getBoundingClientRect()
@@ -324,9 +335,7 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
   const zoomBy = (f: number) => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const rect = canvas.getBoundingClientRect()
-    const cx = rect.width / 2
-    const cy = rect.height / 2
+    const { cx, cy } = zoomAnchor()
     const cur = vp.current
     const ns = clamp(cur.scale * f, MIN, MAX)
     const k = ns / cur.scale
