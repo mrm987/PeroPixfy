@@ -1098,6 +1098,7 @@ function openMediaLightbox(url, opts) {
     if (opts && opts.alt) el.alt = opts.alt;
   }
   el.className = "lm-lightbox-img";
+  el.draggable = false; // 라이브러리 이미지 드래그 금지 — 스타일 드롭존에 실수로 떨어지는 것 방지
   lb.appendChild(el);
   const close = () => {
     lb.remove();
@@ -1330,6 +1331,7 @@ function makeStyleCard(s) {
     const img = document.createElement("img");
     img.className = "lm-style-thumb";
     img.decoding = "async";
+    img.draggable = false; // 썸네일 드래그 금지 — 스타일 드롭존 오발동 방지
     wrap.appendChild(img);
     if (s.image_missing) {
       // Backend already checked the file doesn't exist on disk — skip the
@@ -1876,6 +1878,7 @@ function makeThumb(l) {
       el.src = thumbSrc(url); el.loading = "lazy"; el.decoding = "async";
     }
     el.className = "lm-thumb";
+    el.draggable = false; // 썸네일 드래그 금지 — 스타일 드롭존 오발동 방지
     wrap.appendChild(el);
     // Initial blur applied via setWrapBlur so the global toggle path and the
     // first-render path stay in sync.

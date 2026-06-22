@@ -1,4 +1,5 @@
-import { openOutputFolder, pickFolder } from '../api/comfy'
+import { useEffect, useState } from 'react'
+import { checkUpdate, getVersion, openOutputFolder, pickFolder, type UpdateInfo, type VersionInfo } from '../api/comfy'
 import { useT } from '../i18n'
 import { useBatch } from '../stores/batch'
 import { useUi, type Lang } from '../stores/ui'
@@ -13,6 +14,23 @@ export function OptionsModal({ onClose }: { onClose: () => void }) {
   const setSingleOutput = useWorkbench((s) => s.setSingleOutput)
   const multiOutput = useBatch((s) => s.outputFolder)
   const setSetting = useBatch((s) => s.setSetting)
+
+  // 버전 표시 + 업데이트 확인(읽기 전용). 적용은 update_peropixfy.bat이 담당.
+  const [ver, setVer] = useState<VersionInfo | null>(null)
+  const [upd, setUpd] = useState<UpdateInfo | null>(null)
+  const [checking, setChecking] = useState(false)
+  useEffect(() => { void getVersion().then(setVer).catch(() => {}) }, [])
+  const check = async () => {
+    setChecking(true)
+    setUpd(null)
+    try { setUpd(await checkUpdate()) }
+    catch (e) { setUpd({ ok: false, error: String(e) }) }
+    finally { setChecking(false) }
+  }
+  const verText = !ver ? '…' : [
+    ver.version ? `v${ver.version}` : '',
+    ver.commit ? `${ver.commit}${ver.date ? ` (${ver.date})` : ''}` : (ver.isGit ? '' : t('not a git checkout')),
+  ].filter(Boolean).join('  ·  ')
 
   const folderRow = (label: string, value: string, set: (v: string) => void, fallback: string, def: string) => (
     <label className="field">{label}
@@ -48,6 +66,28 @@ export function OptionsModal({ onClose }: { onClose: () => void }) {
         <p className="notice">
           {t("A relative path saves inside ComfyUI's output folder; pick any folder to save elsewhere. Single adds date/mode subfolders, Multi adds character/slot — automatically.")}
         </p>
+
+        <label className="field">{t('Version')}
+          <div className="folder-row">
+            <input value={verText} readOnly />
+            <button type="button" onClick={() => void check()} disabled={checking}>
+              {checking ? t('Checking…') : t('Check for updates')}
+            </button>
+            {ver && (
+              <button type="button" title={t('Open the folder')}
+                onClick={() => void openOutputFolder(ver.path)}>{t('📂 Open')}</button>
+            )}
+          </div>
+        </label>
+        {upd && (
+          <p className="notice">
+            {!upd.ok
+              ? t('Update check failed: {error}', { error: upd.error ?? '' })
+              : upd.hasUpdate
+                ? t('Update available — {n} commit(s) behind. Run update_peropixfy.bat in the plugin folder, then restart ComfyUI.', { n: String(upd.behind ?? 0) })
+                : t('You are up to date.')}
+          </p>
+        )}
       </div>
     </div>
   )

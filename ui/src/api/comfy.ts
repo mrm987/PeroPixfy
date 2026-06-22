@@ -109,6 +109,33 @@ export async function pickFolder(): Promise<string | null> {
   return (await res.json()).path ?? null
 }
 
+export interface VersionInfo {
+  version: string | null
+  commit: string | null
+  date: string | null
+  branch: string | null
+  isGit: boolean
+  path: string
+}
+/** 현재 버전 정보 (선언 버전 + git 커밋/날짜 + 플러그인 경로). */
+export async function getVersion(): Promise<VersionInfo> {
+  return (await fetch('/peropix/api/version')).json()
+}
+
+export interface UpdateInfo {
+  ok: boolean
+  behind?: number
+  hasUpdate?: boolean
+  current?: string
+  latest?: string
+  branch?: string
+  error?: string
+}
+/** origin과 비교해 업데이트 존재 여부 확인 (읽기 전용 — 적용은 update_peropixfy.bat). */
+export async function checkUpdate(): Promise<UpdateInfo> {
+  return (await fetch('/peropix/api/check-update', { method: 'POST' })).json()
+}
+
 /** 파일 참조들이 실제로 존재하는지 일괄 확인(인덱스 대응 bool 배열). */
 export async function checkFilesExist(files: OutputImage[]): Promise<boolean[]> {
   const res = await fetch('/peropix/api/exists', {

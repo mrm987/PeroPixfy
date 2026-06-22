@@ -225,6 +225,14 @@ export const ko: Record<string, string> = {
   'Reset to default': '기본값으로 초기화',
   "A relative path saves inside ComfyUI's output folder; pick any folder to save elsewhere. Single adds date/mode subfolders, Multi adds character/slot — automatically.":
     '상대 경로는 ComfyUI 출력 폴더 안에 저장됩니다. 다른 위치에 저장하려면 폴더를 직접 선택하세요. 싱글은 날짜/모드, 멀티는 캐릭터/슬롯 하위폴더를 자동으로 만듭니다.',
+  'Version': '버전',
+  'Check for updates': '업데이트 확인',
+  'Checking…': '확인 중…',
+  'not a git checkout': 'git 설치 아님',
+  'You are up to date.': '최신 버전입니다.',
+  'Update available — {n} commit(s) behind. Run update_peropixfy.bat in the plugin folder, then restart ComfyUI.':
+    '업데이트 있음 — {n}개 커밋 뒤처짐. 플러그인 폴더의 update_peropixfy.bat을 실행한 뒤 ComfyUI를 재시작하세요.',
+  'Update check failed: {error}': '업데이트 확인 실패: {error}',
 
   // 다이얼로그 (confirm/prompt)
   'New preset name': '새 프리셋 이름',

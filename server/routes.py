@@ -29,6 +29,17 @@ presets.init(os.path.join(PLUGIN_DIR, "data", "presets"))
 
 routes = PromptServer.instance.routes
 
+# git 기반 버전/업데이트 — 플러그인은 custom_nodes에 git clone으로 설치되므로 현재 커밋과
+# origin의 차이로 업데이트 존재를 판단한다(읽기 전용). 실제 적용은 update_peropixfy.bat.
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # Windows 콘솔 창 깜빡임 방지
+
+
+def _git(*args, timeout=15):
+    return subprocess.run(
+        ["git", "-C", PLUGIN_DIR, *args],
+        capture_output=True, text=True, timeout=timeout, creationflags=_NO_WINDOW,
+    )
+
 
 @routes.get("/peropix")
 async def index(request):
@@ -434,6 +445,57 @@ async def gallery_star(request):
     data = await request.json()
     gallery.set_starred(data["prompt_id"], bool(data.get("starred")))
     return web.json_response({"ok": True})
+
+
+@routes.get("/peropix/api/version")
+async def peropix_version(request):
+    """현재 버전 — 선언 버전(__version__) + git 커밋/날짜/브랜치 + 플러그인 경로."""
+    info = {"version": None, "commit": None, "date": None, "branch": None,
+            "isGit": False, "path": PLUGIN_DIR}
+    try:
+        from .. import __version__ as v
+        info["version"] = v
+    except Exception:
+        pass
+    try:
+        head = _git("rev-parse", "--short", "HEAD")
+        if head.returncode == 0:
+            info["isGit"] = True
+            info["commit"] = head.stdout.strip()
+            d = _git("log", "-1", "--format=%cs")
+            if d.returncode == 0:
+                info["date"] = d.stdout.strip()
+            b = _git("rev-parse", "--abbrev-ref", "HEAD")
+            if b.returncode == 0:
+                info["branch"] = b.stdout.strip()
+    except Exception as e:
+        info["error"] = str(e)
+    return web.json_response(info)
+
+
+@routes.post("/peropix/api/check-update")
+async def peropix_check_update(request):
+    """origin에서 fetch 후 HEAD가 몇 커밋 뒤처졌는지 계산(읽기 전용). 적용은 안 한다."""
+    try:
+        if _git("rev-parse", "--is-inside-work-tree").returncode != 0:
+            return web.json_response({"ok": False, "error": "not a git checkout"})
+        branch = (_git("rev-parse", "--abbrev-ref", "HEAD").stdout or "").strip() or "main"
+        # fetch는 네트워크 호출 — 이벤트 루프를 막지 않도록 executor로 뺀다.
+        fetch = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: _git("fetch", "--quiet", "origin", branch, timeout=40))
+        if fetch.returncode != 0:
+            return web.json_response({"ok": False, "error": (fetch.stderr or "git fetch failed").strip()})
+        upstream = "origin/" + branch
+        behind = int((_git("rev-list", "--count", "HEAD.." + upstream).stdout or "0").strip() or "0")
+        return web.json_response({
+            "ok": True, "behind": behind, "hasUpdate": behind > 0, "branch": branch,
+            "current": (_git("rev-parse", "--short", "HEAD").stdout or "").strip(),
+            "latest": (_git("rev-parse", "--short", upstream).stdout or "").strip(),
+        })
+    except subprocess.TimeoutExpired:
+        return web.json_response({"ok": False, "error": "git fetch timed out"})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
 
 
 def _delete_output_files(files, keep=None):
