@@ -4,7 +4,7 @@ import { useT } from '../../i18n'
 import { MaskEditor } from '../../components/MaskEditor'
 import { NumberField, SelectField } from '../../components/controls'
 import { Section } from '../../components/Section'
-import { activeCharOf, useBatch } from '../../stores/batch'
+import { activeCharOf, useBatch, type ImageFormat } from '../../stores/batch'
 import { useUi } from '../../stores/ui'
 import { useWorkbench } from '../../stores/workbench'
 import { TagAutocompleteTextarea } from '../../tags/TagAutocompleteTextarea'
@@ -81,6 +81,9 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
   const progress = useWorkbench((s) => s.progress)
   const error = useWorkbench((s) => s.error)
   const notice = useWorkbench((s) => s.notice)
+  const format = useWorkbench((s) => s.format)
+  const quality = useWorkbench((s) => s.quality)
+  const setSave = useWorkbench((s) => s.setSave)
   const promptH = useUi((s) => s.promptH)
   const negativeH = useUi((s) => s.negativeH)
   const setPref = useUi((s) => s.setPref)
@@ -362,6 +365,23 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
           )}
 
         </Section>
+
+        {/* 저장 포맷 — Single 전용(Multi는 Slot 패널의 'Save settings'에서 따로 설정). 세션 지속. */}
+        {!embedded && (
+          <Section id="save" title={t('Save format')} summary={format.toUpperCase()}>
+            <div className="grid-2">
+              <SelectField label={t('format')} value={format} options={['png', 'jpg', 'webp']}
+                onChange={(v) => setSave({ format: v as ImageFormat })} />
+              {format !== 'png' && (
+                <NumberField label={t('quality')} value={quality} min={1} max={100} step={1}
+                  onChange={(v) => setSave({ quality: v })} />
+              )}
+            </div>
+            {format !== 'png' && (
+              <p className="notice">{t("jpg/webp don't save the generation info inside the image (png only).")}</p>
+            )}
+          </Section>
+        )}
       </div>
 
       {!embedded && (

@@ -32,6 +32,8 @@ interface WorkbenchState {
   availableUnets: string[] // ComfyUI에 실제 설치된 UNet/체크포인트 목록 (스타일 적용 검증용)
   notice: string | null
   singleOutput: string // Single 저장 폴더(상대=output 하위 / 절대=자유). 옵션 모달에서 설정.
+  format: 'png' | 'jpg' | 'webp' // Single 저장 포맷 (Multi 배치 설정과 동일, 세션 지속).
+  quality: number // jpg/webp 품질(1–100). png은 무시.
 
   init: () => Promise<void>
   set: (patch: Partial<GenerationParams>) => void
@@ -42,6 +44,7 @@ interface WorkbenchState {
   setAvailableUnets: (unets: string[]) => void
   setNotice: (notice: string | null) => void
   setSingleOutput: (v: string) => void
+  setSave: (patch: Partial<Pick<WorkbenchState, 'format' | 'quality'>>) => void
   restore: (params: GenerationParams) => void
   select: (promptId: string) => void
   star: (promptId: string) => Promise<void>
@@ -82,6 +85,8 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
   availableUnets: [],
   notice: null,
   singleOutput: '',
+  format: 'png',
+  quality: 95,
 
   // 앱 시작 시: 기록 복원 + pending 상태 복구 (/history → /queue 순서로 확인).
   // 서버 저장 기본값은 마지막 작업 상태(localStorage)가 없을 때만 적용.
@@ -123,6 +128,7 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
   setAvailableUnets: (availableUnets) => set({ availableUnets }),
   setNotice: (notice) => set({ notice }),
   setSingleOutput: (singleOutput) => set({ singleOutput }),
+  setSave: (patch) => set(patch),
   restore: (params) => set({ params }),
   select: (promptId) => set({ selectedId: promptId }),
 
@@ -162,14 +168,14 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
   },
 
   generate: async () => {
-    const { params, randomizeSeed, availableLoras, singleOutput } = get()
+    const { params, randomizeSeed, availableLoras, singleOutput, format, quality } = get()
     // 현재 표시된 시드로 생성한다 (WYSIWYG). randomize 모드면 생성을 제출한 '뒤'에
     // 다음 회차용 시드를 새로 뽑는다 (ComfyUI control_after_generate=randomize와 동일).
     // save 설정을 넣어 PeroPixSaveImage로 저장 → 절대경로(자유 폴더)도 지원.
     const finalParams = {
       ...params,
       filenamePrefix: defaultFilenamePrefix(params.mode, singleOutput),
-      save: { format: 'png' as const, quality: 95 },
+      save: { format, quality },
     }
     // 설치돼 있지 않은 LoRA는 그래프에서 제외해 ComfyUI 검증 오류(400)를 막는다.
     // UI 스택(params)은 그대로 두고, 실제 제출/기록 그래프(graphParams)에서만 뺀다.
@@ -281,7 +287,7 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
   },
 }), {
   name: PERSIST_KEY,
-  partialize: (s) => ({ params: s.params, randomizeSeed: s.randomizeSeed, singleOutput: s.singleOutput }),
+  partialize: (s) => ({ params: s.params, randomizeSeed: s.randomizeSeed, singleOutput: s.singleOutput, format: s.format, quality: s.quality }),
   // 앱 업데이트로 params에 새 필드가 생겨도 기본값으로 채워지도록 병합
   merge: (persisted, current) => {
     const p = (persisted ?? {}) as Partial<WorkbenchState>

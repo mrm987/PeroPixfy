@@ -143,6 +143,7 @@ export const ko: Record<string, string> = {
   '+ Add slot': '+ 슬롯 추가',
   // 저장 설정
   'Save settings': '저장 설정',
+  'Save format': '저장 포맷',
   'format': '포맷',
   'quality': '품질',
   'images per slot': '슬롯당 이미지 수',
