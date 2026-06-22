@@ -122,9 +122,11 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
       maxX = Math.max(maxX, n.x + n.w); maxY = Math.max(maxY, n.y + n.h)
     }
     const scale = clamp(2.8, MIN, MAX)
-    const ccx = (minX + maxX) / 2
+    // 이미지는 오른쪽으로 늘어나므로 첫 이미지(카드) 좌측을 화면 좌측 18% 지점에 둔다 —
+    // 가운데 정렬 시 왼쪽에 생기는 낭비 공간을 줄이고 오른쪽으로 펼쳐 보이게. 세로는 슬롯 중앙.
+    const fx = row.nodes[0] ? row.nodes[0].x : minX
     const ccy = (minY + maxY) / 2
-    vp.current = { scale, x: rect.width / 2 - ccx * scale, y: rect.height / 2 - ccy * scale }
+    vp.current = { scale, x: rect.width * 0.18 - fx * scale, y: rect.height / 2 - ccy * scale }
     kickLowRes()
     commitViewport()
   }, [])
