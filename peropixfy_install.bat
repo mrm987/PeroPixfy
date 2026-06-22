@@ -16,14 +16,17 @@ echo === PeroPixfy install / update ===
 echo Root: %CD%
 echo.
 
-REM --- sanity: are we in the ComfyUI portable root? ---
-if not exist "ComfyUI\custom_nodes\" (
-  echo [ERROR] "ComfyUI\custom_nodes" not found here.
-  echo Put this .bat in the ComfyUI portable root ^(the folder with ComfyUI\ and python_embeded\^) and run again.
-  echo.
-  pause
-  exit /b 1
-)
+REM --- sanity: must run from the ComfyUI portable ROOT (the folder that
+REM     contains both ComfyUI\ and python_embeded\ — one level ABOVE ComfyUI) ---
+if exist "ComfyUI\" if exist "python_embeded\" goto :rootok
+echo [ERROR] Wrong location: %CD%
+echo This .bat must run from the ComfyUI portable ROOT — the folder that
+echo contains both "ComfyUI\" and "python_embeded\" ^(one level ABOVE the
+echo ComfyUI folder^). Move this .bat there and double-click it again.
+echo.
+pause
+exit /b 1
+:rootok
 
 REM --- need git ---
 where git >nul 2>nul

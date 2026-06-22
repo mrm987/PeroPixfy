@@ -15,6 +15,18 @@ echo === PeroPixfy update ===
 echo Root: %CD%
 echo.
 
+REM --- sanity: must run from the ComfyUI portable ROOT (the folder that
+REM     contains both ComfyUI\ and python_embeded\ — one level ABOVE ComfyUI) ---
+if exist "ComfyUI\" if exist "python_embeded\" goto :rootok
+echo [ERROR] Wrong location: %CD%
+echo This .bat must run from the ComfyUI portable ROOT — the folder that
+echo contains both "ComfyUI\" and "python_embeded\" ^(one level ABOVE the
+echo ComfyUI folder^). Move this .bat there and double-click it again.
+echo.
+pause
+exit /b 1
+:rootok
+
 REM --- must already be installed (git checkout) ---
 if not exist "%TARGET%\.git" (
   echo [ERROR] "%TARGET%" is not a git checkout.
