@@ -184,18 +184,6 @@ export function render(
             const dw = img.naturalWidth * sc
             const dh = img.naturalHeight * sc
             ctx.drawImage(img, node.x + (node.w - dw) / 2, node.y + (node.h - dh) / 2, dw, dh)
-            // 실제 해상도 표기 — 카드가 화면에서 충분히 클 때만(줌아웃 시 클러터 방지).
-            if (screenSize > 90) {
-              ctx.font = `${11 / s}px sans-serif`
-              ctx.textAlign = 'left'
-              ctx.textBaseline = 'bottom'
-              ctx.shadowColor = 'rgba(0,0,0,0.9)'
-              ctx.shadowBlur = 3 / s
-              ctx.fillStyle = '#e2e8f0'
-              ctx.fillText(`${img.naturalWidth}×${img.naturalHeight}`, node.x + 6, node.y + node.h - 5)
-              ctx.shadowColor = 'transparent'
-              ctx.shadowBlur = 0
-            }
           } else {
             // 로딩 중 자리표시 — 다음 RAF 프레임에서 캐시가 채워지면 자동으로 그려진다.
             ctx.fillStyle = '#2a2a35'

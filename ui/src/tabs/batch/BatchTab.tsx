@@ -182,6 +182,8 @@ export function BatchTab() {
           </div>
         </div>
 
+        {/* 캔버스 영역(relative) — '선택됨' 바를 오버레이로 띄워 캔버스가 안 밀리게 한다. */}
+        <div className="batch-canvas-area">
         {sel.size > 0 && (
           <div className="multi-bar">
             <span>{t('{n} selected', { n: sel.size })}</span>
@@ -217,6 +219,7 @@ export function BatchTab() {
             }}
           />
         )}
+        </div>
       </div>
 
       {curateSlot && <CurationModal slotId={curateSlot} aspect={aspect} onClose={() => setCurateSlot(null)} />}

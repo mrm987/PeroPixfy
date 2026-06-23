@@ -916,6 +916,12 @@ button.danger:hover { background: #7f1d1d; color: #fff; border-color: #7f1d1d; }
 
 .multi-bar { display: flex; gap: 8px; align-items: center; font-size: 12px; color: #fbbf24; }
 .multi-bar button { padding: 2px 10px; }
+/* 멀티 캔버스 영역 — '선택됨' 바를 캔버스 위에 떠 있게(absolute) 해서 캔버스가 안 밀린다. */
+.batch-canvas-area { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+.batch-canvas-area > .multi-bar {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 6;
+  background: rgba(20, 20, 28, 0.92); padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border);
+}
 
 .star-filter.active { border-color: #ffd34d; color: #ffd34d; }
 .strip-empty { color: var(--muted); font-size: 12px; padding: 8px 2px; }
