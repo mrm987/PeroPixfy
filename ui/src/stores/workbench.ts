@@ -247,29 +247,10 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
     if (!get().history.some((h) => h.promptId === promptId)) return
     const outputs = await fetchOutputs(promptId)
     const urls = (outputs ?? []).map(viewUrl)
-    // 동일 그래프를 다시 제출하면 ComfyUI 캐시가 새 파일을 쓰지 않고 직전과 같은 파일을
-    // 돌려준다. '직전' 결과와 출력 파일이 같으면(쌍둥이) 중복 프리뷰를 만들지 않고 이
-    // 기록을 지운 뒤 기존 결과를 선택한다. history는 최신순이라 idx+1이 직전 기록이다.
-    const hist = get().history
-    const idx = hist.findIndex((h) => h.promptId === promptId)
-    const prev = idx >= 0 ? hist[idx + 1] : undefined
-    const twin =
-      urls.length &&
-      prev &&
-      prev.status === 'done' &&
-      prev.imageUrls.length === urls.length &&
-      prev.imageUrls.every((u, i) => u === urls[i])
-        ? prev
-        : undefined
-    if (twin) {
-      set((s) => ({
-        progress: s.progress?.promptId === promptId ? null : s.progress,
-        history: s.history.filter((h) => h.promptId !== promptId),
-        selectedId: s.selectedId === promptId ? twin.promptId : s.selectedId,
-      }))
-      await deleteGeneration(promptId)
-      return
-    }
+    // PeroPixSaveImage가 매 제출마다 새 파일을 쓰므로(IS_CHANGED) 동일 그래프를 다시
+    // 제출해도 항상 새 결과 파일이 생긴다. (이전엔 '직전과 같은 파일이면 쌍둥이로 보고
+    // 취소'했는데, 직전 생성을 삭제하고 재생성하면 캐시된 옛 파일명을 그대로 받아
+    // 결과가 안 뜨던 문제가 있어 제거했다.)
     if (outputs && outputs.length > 0) await completeGeneration(promptId, outputs)
     set((s) => ({
       progress: s.progress?.promptId === promptId ? null : s.progress,

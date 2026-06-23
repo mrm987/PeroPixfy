@@ -21,6 +21,8 @@ interface UiState {
   // 스타일 저장 등으로 라이브러리 내용이 바뀌면 증가 → 열려 있는 도크가 styles를 다시 불러온다.
   styleRev: number
   bumpStyleRev: () => void
+  focusStyleId: number | null // 방금 저장한 스타일 — 라이브러리가 스타일 탭 전환 + flash로 강조할 대상
+  setFocusStyle: (id: number | null) => void
   // 레이아웃 사용자 설정 (영속): 패널 너비(px), 프롬프트/네거티브 textarea 높이(px)
   singleW: number // Single 탭 좌측 컨트롤 패널 너비
   multiW: number // Multi 탭 좌측 패널 너비
@@ -48,6 +50,8 @@ export const useUi = create<UiState>()(
       toggleLib: () => set((s) => ({ libOpen: !s.libOpen })),
       styleRev: 0,
       bumpStyleRev: () => set((s) => ({ styleRev: s.styleRev + 1 })),
+      focusStyleId: null,
+      setFocusStyle: (focusStyleId) => set({ focusStyleId }),
       singleW: 400,
       multiW: 360,
       dockW: 460,

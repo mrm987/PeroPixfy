@@ -37,7 +37,10 @@ export function SaveStyleModal({ item, onClose }: { item: HistoryItem; onClose: 
         image: item.imageUrls[0] ? parseViewUrl(item.imageUrls[0]) : undefined,
       })
       if (!res.ok) throw new Error(String(res.error ?? 'Save failed'))
-      // 저장 성공 → 라이브러리 도크를 열고(이미 열려 있으면 styles 새로고침해) 방금 만든 스타일을 보여준다
+      // 저장 성공 → 라이브러리 도크를 열고, styles를 새로고침하며 방금 만든 스타일을
+      // 강조(로라 탭이면 스타일 탭으로 전환 + 카드 flash)한다.
+      const newId = (res as { style?: { id?: number } }).style?.id ?? null
+      useUi.getState().setFocusStyle(newId)
       useUi.getState().openLib()
       useUi.getState().bumpStyleRev()
       onClose()

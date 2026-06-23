@@ -48,7 +48,9 @@ export function LibraryView({ initialMode }: { initialMode?: DrawerMode }) {
     const unsubUi = useUi.subscribe((s) => {
       if (s.styleRev !== prevRev) {
         prevRev = s.styleRev
-        handle.refreshStyles?.()
+        const fid = useUi.getState().focusStyleId
+        handle.refreshStyles?.(fid)   // fid 있으면 스타일 탭 전환 + 해당 카드 강조
+        if (fid != null) useUi.getState().setFocusStyle(null)
       }
     })
 

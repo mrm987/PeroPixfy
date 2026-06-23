@@ -1160,7 +1160,7 @@ async function loadStyleThumb(imgEl, file) {
   markThumbMissing(imgEl, file);
 }
 
-async function refreshStyles() {
+async function refreshStyles(flashId) {
   try {
     const data = await api.styleList();
     styles = data.styles || [];
@@ -1168,6 +1168,15 @@ async function refreshStyles() {
     styles = [];
   }
   renderStylesGrid();
+  // 방금 저장한 스타일 강조: 로라 탭이면 스타일 탭으로 전환하고 그 카드를 flash.
+  if (flashId != null) {
+    if (currentMode === "loras") setMode("styles");
+    const card = stylesGridEl && stylesGridEl.querySelector(`.lm-card[data-style-id="${CSS.escape(String(flashId))}"]`);
+    if (card) requestAnimationFrame(() => {
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+      flashCard(card);
+    });
+  }
 }
 
 function styleMatches(s) {
@@ -1327,6 +1336,7 @@ function renderStyleLoraChips(wrap, loras, expanded, styleId) {
 function makeStyleCard(s) {
   const card = document.createElement("div");
   card.className = "lm-card";
+  card.dataset.styleId = String(s.id);   // 저장 후 새 스타일 강조(flash)용 식별자
 
   // Thumbnail — clicking opens a full-size lightbox view. The "Load workflow"
   // action lives in the card's action row instead, since loading replaces

@@ -54,6 +54,13 @@ class PeroPixSaveImage:
     OUTPUT_NODE = True
     CATEGORY = "PeroPixfy"
 
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        # 매 제출마다 저장 노드를 다시 실행 → 동일 그래프를 재제출해도 ComfyUI 캐시가
+        # (지워졌을 수 있는) 옛 출력 파일명을 그대로 돌려주지 않고 실제로 새 파일을 쓴다.
+        # (직전 생성을 삭제 후 같은 설정으로 재생성하면 결과가 안 뜨던 문제 방지.)
+        return float("NaN")
+
     def save(self, images, filename_prefix="PeroPixfy", format="png", quality=95,
              prompt=None, extra_pnginfo=None):
         fmt = (format or "png").lower()
