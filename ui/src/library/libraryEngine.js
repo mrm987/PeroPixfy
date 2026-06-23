@@ -525,8 +525,11 @@ function updateInWorkflow() {
   const sets = getLorasInWorkflow();
   const key = [...sets.present].sort().join("|") + "##" + [...sets.active].sort().join("|");
   if (key === wfKey) return;          // nothing changed, skip the rerender
+  const wasIn = new Set(loras.filter((l) => l.inWorkflow).map((l) => l.rel_path));
   applyWorkflow(sets);
-  renderGrid(true);                   // 스택 변경 → 재정렬을 FLIP으로 부드럽게
+  // 방금 추가/해제된 로라 — FLIP에서 항상 맨 위 레이어로 그리도록 넘긴다.
+  const changed = loras.filter((l) => l.inWorkflow !== wasIn.has(l.rel_path)).map((l) => l.rel_path);
+  renderGrid(true, changed);          // 스택 변경 → 재정렬을 FLIP으로 부드럽게
 }
 
 // --- module state ----------------------------------------------------------
@@ -2281,7 +2284,7 @@ function sortLoras(list) {
 
 // FLIP 재정렬 애니메이션 — 카드를 옛 위치로 순간이동시켰다가 원위치로 트랜지션해 슬라이드시킨다.
 // (rel_path로 매칭하므로 innerHTML 재생성 후에도 같은 카드를 추적해 움직임을 연출.)
-function _flipFrom(oldRects) {
+function _flipFrom(oldRects, focus) {
   const moves = [];
   for (const card of scrollEl.querySelectorAll(".lm-card[data-rel-path]")) {
     const old = oldRects.get(card.dataset.relPath);
@@ -2294,10 +2297,10 @@ function _flipFrom(oldRects) {
   for (const [card, dx, dy] of moves) {
     card.style.transition = "none";
     card.style.transform = `translate(${dx}px, ${dy}px)`;
-    // 위로 올라가는 카드(dy가 클수록 더 많이 상승)를 위 레이어로 올려, 내려오는 카드에
-    // 가려지지 않게 한다. (z-index는 position이 있어야 적용되므로 relative 부여.)
+    // 방금 추가/해제한 로라(focus)는 항상 맨 위 레이어 — 다른 카드에 안 가려지게.
+    // (z-index는 position이 있어야 적용되므로 relative 부여.)
     card.style.position = "relative";
-    card.style.zIndex = String(Math.max(1, Math.round(dy)));
+    card.style.zIndex = focus && focus.has(card.dataset.relPath) ? "9999" : "1";
   }
   void scrollEl.offsetWidth;       // 강제 리플로우로 역변환을 먼저 커밋
   for (const [card] of moves) {
@@ -2311,12 +2314,13 @@ function _flipFrom(oldRects) {
   }
 }
 
-function renderGrid(animate = false) {
+function renderGrid(animate = false, focus = null) {
   if (!scrollEl) return;
   // 스택 추가 등 재정렬 시 부드럽게: 지우기 전 카드 위치를 rel_path별로 캡처.
   const oldRects = animate
     ? new Map([...scrollEl.querySelectorAll(".lm-card[data-rel-path]")].map((c) => [c.dataset.relPath, c.getBoundingClientRect()]))
     : null;
+  const focusSet = focus && focus.length ? new Set(focus) : null;
   scrollEl.innerHTML = "";
   const visible = loras.filter(matches);
   const favs = sortLoras(visible.filter(l => l.favorite));
@@ -2329,7 +2333,7 @@ function renderGrid(animate = false) {
     if (favs.length) scrollEl.appendChild(sectionHeader(`All ${rest.length}`, "rest"));
     scrollEl.appendChild(makeGrid(rest));
   }
-  if (oldRects) _flipFrom(oldRects);
+  if (oldRects) _flipFrom(oldRects, focusSet);
   if (metaEl) {
     const scanned = loras.filter(l => l.source === "civitai").length;
     const updates = loras.filter(hasUpdate).length;
