@@ -1427,7 +1427,7 @@ function makeStyleCard(s) {
 
   const actions = document.createElement("div");
   actions.className = "lm-actions";
-  actions.appendChild(iconBtn("pi pi-arrow-right", "Apply this style to the current settings",
+  actions.appendChild(iconBtn("pi pi-arrow-left", "Apply this style to the current settings",
     () => { lmOpts.onApplyStyle(s); toast("Applied: " + (s.name || "style")); }));
   actions.appendChild(iconBtn("pi pi-pencil", "Edit",
     () => openStyleEdit(s)));
