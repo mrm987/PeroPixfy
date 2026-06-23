@@ -191,7 +191,7 @@ export function WorkbenchTab() {
         </div>
         {selected && (
           <div className="result-meta">
-            <span>{t('seed {n}', { n: selected.params.seed })}</span>
+            <span className="seed">{t('seed {n}', { n: selected.params.seed })}</span>
             <span className="res-tag">{dims?.w ?? selected.params.width} × {dims?.h ?? selected.params.height}</span>
             <button onClick={() => restore(selected.params)} title={t("Load this result's settings back into the panel")}>
               {t('Reuse settings')}
