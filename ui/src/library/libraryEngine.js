@@ -2294,12 +2294,20 @@ function _flipFrom(oldRects) {
   for (const [card, dx, dy] of moves) {
     card.style.transition = "none";
     card.style.transform = `translate(${dx}px, ${dy}px)`;
+    // 위로 올라가는 카드(dy가 클수록 더 많이 상승)를 위 레이어로 올려, 내려오는 카드에
+    // 가려지지 않게 한다. (z-index는 position이 있어야 적용되므로 relative 부여.)
+    card.style.position = "relative";
+    card.style.zIndex = String(Math.max(1, Math.round(dy)));
   }
   void scrollEl.offsetWidth;       // 강제 리플로우로 역변환을 먼저 커밋
   for (const [card] of moves) {
-    card.style.transition = "transform 0.22s ease";
+    card.style.transition = "transform 0.5s ease";  // 동작이 보이도록 충분히 느리게
     card.style.transform = "";
-    setTimeout(() => { card.style.transition = ""; }, 260);
+    setTimeout(() => {
+      card.style.transition = "";
+      card.style.position = "";
+      card.style.zIndex = "";
+    }, 560);
   }
 }
 
