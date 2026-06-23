@@ -526,7 +526,7 @@ function updateInWorkflow() {
   const key = [...sets.present].sort().join("|") + "##" + [...sets.active].sort().join("|");
   if (key === wfKey) return;          // nothing changed, skip the rerender
   applyWorkflow(sets);
-  renderGrid();
+  renderGrid(true);                   // 스택 변경 → 재정렬을 FLIP으로 부드럽게
 }
 
 // --- module state ----------------------------------------------------------
@@ -552,6 +552,9 @@ function saveLibPrefs() {
   try { localStorage.setItem(LM_PREFS_KEY, JSON.stringify({ nsfwBlur, sortMode })); } catch (e) { /* ignore */ }
 }
 let nsfwBlur = _libPrefs.nsfwBlur !== undefined ? !!_libPrefs.nsfwBlur : true;
+// 사용자가 개별로 블러 해제한 카드(rel_path) 기억 — 재정렬/재렌더(스택 추가 등) 후에도
+// 다시 블러되지 않게 한다. 세션 한정(persist 안 함). 블러를 다시 ON 하면 비운다.
+const _revealedNsfw = new Set();
 let pollTimer = null;
 let sortMode = _libPrefs.sortMode || "default";   // "default" | "name" | "date"
 // Three modes: "both" (split view), "loras", "styles".
@@ -822,6 +825,8 @@ function setWrapBlur(wrap, blurred, innerSel) {
         e.stopPropagation();
         el.classList.remove("blur");
         rev.remove();
+        const card = wrap.closest("[data-rel-path]");
+        if (card) _revealedNsfw.add(card.dataset.relPath);
       };
       wrap.appendChild(rev);
     }
@@ -936,6 +941,7 @@ function setViewMode(tab, mode) {
 
 function toggleNsfwBlur() {
   nsfwBlur = !nsfwBlur;
+  if (nsfwBlur) _revealedNsfw.clear(); // 다시 블러 ON 하면 개별 해제 기억을 비운다.
   saveLibPrefs();
   for (const btn of document.querySelectorAll(".lm-blur-btn")) {
     btn.className = "lm-btn lm-blur-btn" + (nsfwBlur ? " active" : "");
@@ -1882,7 +1888,7 @@ function makeThumb(l) {
     wrap.appendChild(el);
     // Initial blur applied via setWrapBlur so the global toggle path and the
     // first-render path stay in sync.
-    if (nsfwBlur && l.nsfw) setWrapBlur(wrap, true, ".lm-thumb");
+    if (nsfwBlur && l.nsfw && !_revealedNsfw.has(l.rel_path)) setWrapBlur(wrap, true, ".lm-thumb");
     // Click-to-lightbox — full-resolution view, mirrors the Style card UX.
     // NSFW reveal overlay stops propagation when blur is on, so a blurred
     // thumb still requires the explicit reveal click first. For images we
@@ -2273,8 +2279,36 @@ function sortLoras(list) {
   });
 }
 
-function renderGrid() {
+// FLIP 재정렬 애니메이션 — 카드를 옛 위치로 순간이동시켰다가 원위치로 트랜지션해 슬라이드시킨다.
+// (rel_path로 매칭하므로 innerHTML 재생성 후에도 같은 카드를 추적해 움직임을 연출.)
+function _flipFrom(oldRects) {
+  const moves = [];
+  for (const card of scrollEl.querySelectorAll(".lm-card[data-rel-path]")) {
+    const old = oldRects.get(card.dataset.relPath);
+    if (!old) continue;            // 이전에 없던(새로 들어온) 카드는 슬라이드 없이 표시
+    const now = card.getBoundingClientRect();
+    const dx = old.left - now.left, dy = old.top - now.top;
+    if (dx || dy) moves.push([card, dx, dy]);
+  }
+  if (!moves.length) return;
+  for (const [card, dx, dy] of moves) {
+    card.style.transition = "none";
+    card.style.transform = `translate(${dx}px, ${dy}px)`;
+  }
+  void scrollEl.offsetWidth;       // 강제 리플로우로 역변환을 먼저 커밋
+  for (const [card] of moves) {
+    card.style.transition = "transform 0.22s ease";
+    card.style.transform = "";
+    setTimeout(() => { card.style.transition = ""; }, 260);
+  }
+}
+
+function renderGrid(animate = false) {
   if (!scrollEl) return;
+  // 스택 추가 등 재정렬 시 부드럽게: 지우기 전 카드 위치를 rel_path별로 캡처.
+  const oldRects = animate
+    ? new Map([...scrollEl.querySelectorAll(".lm-card[data-rel-path]")].map((c) => [c.dataset.relPath, c.getBoundingClientRect()]))
+    : null;
   scrollEl.innerHTML = "";
   const visible = loras.filter(matches);
   const favs = sortLoras(visible.filter(l => l.favorite));
@@ -2287,6 +2321,7 @@ function renderGrid() {
     if (favs.length) scrollEl.appendChild(sectionHeader(`All ${rest.length}`, "rest"));
     scrollEl.appendChild(makeGrid(rest));
   }
+  if (oldRects) _flipFrom(oldRects);
   if (metaEl) {
     const scanned = loras.filter(l => l.source === "civitai").length;
     const updates = loras.filter(hasUpdate).length;
