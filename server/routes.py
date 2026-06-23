@@ -390,7 +390,9 @@ async def open_folder(request):
         if not (target == out_dir or target.startswith(out_dir + os.sep)):
             return web.json_response({"ok": False, "error": "invalid path"}, status=400)
     if rel and os.path.isfile(target):
-        folder, select_file = os.path.dirname(target), target
+        # 멀티와 동일하게 '파일 선택' 없이 그 파일의 폴더만 연다. explorer /select는 셸에
+        # 위임돼 창이 뒤늦게 떠 브라우저 앞으로 오지 못했다 → dirname 폴더를 그냥 연다.
+        folder, select_file = os.path.dirname(target), None
     else:
         # 대상 폴더가 아직 없으면(한 번도 생성 안 함) 만들어서 연다.
         folder = target
