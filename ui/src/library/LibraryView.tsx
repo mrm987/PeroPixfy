@@ -26,6 +26,7 @@ export function LibraryView({ initialMode }: { initialMode?: DrawerMode }) {
       initialMode,
       onApplyStyle: (style: unknown) => useLibrary.getState().applyStyle(style as never),
       onAddLora: (relPath: string) => useLibrary.getState().addLoraToWorkbench(relPath),
+      onRemoveLora: (relPath: string) => useLibrary.getState().removeLoraFromWorkbench(relPath),
       // 엔진이 로라 목록을 새로 받을 때마다 React 스토어도 같은 데이터로 갱신 —
       // 드롭다운 썸네일이 Style-Manager 탭과 항상 일치하도록(소스 통일).
       onLorasRefreshed: (loras: unknown) => useLibrary.setState({ loras: loras as never }),

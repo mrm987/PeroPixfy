@@ -4,7 +4,8 @@
 // callbacks injected by mountLibrary():
 //   onApplyStyle(style) — apply a style's settings to the Workbench params
 //   onAddLora(relPath)  — add a LoRA to the Workbench stack
-let lmOpts = { onApplyStyle: () => {}, onAddLora: () => {} };
+//   onRemoveLora(relPath) — remove a LoRA already in the stack
+let lmOpts = { onApplyStyle: () => {}, onAddLora: () => {}, onRemoveLora: () => {} };
 
 // ---------------------------------------------------------------------------
 // Styling: reuse ComfyUI's own theme variables so the panel matches the native
@@ -2197,10 +2198,19 @@ function makeCard(l) {
   const actions = document.createElement("div");
   actions.className = "lm-actions";
   const allTriggers = triggers.join(", ");
-  actions.appendChild(iconBtn("pi pi-plus", "Add to the Workbench LoRA stack",
+  const _inStack = !!l.inWorkflow;
+  const _loraLabel = (l.file_name || l.rel_path || "").replace(/\.(safetensors|ckpt|pt)$/i, "");
+  actions.appendChild(iconBtn(
+    _inStack ? "pi pi-minus" : "pi pi-plus",
+    _inStack ? "Remove from the Workbench LoRA stack" : "Add to the Workbench LoRA stack",
     () => {
-      lmOpts.onAddLora(l.rel_path);
-      toast("Added to stack: " + (l.file_name || l.rel_path || "").replace(/\.(safetensors|ckpt|pt)$/i, ""));
+      if (_inStack) {
+        lmOpts.onRemoveLora(l.rel_path);
+        toast("Removed from stack: " + _loraLabel);
+      } else {
+        lmOpts.onAddLora(l.rel_path);
+        toast("Added to stack: " + _loraLabel);
+      }
     }));
   actions.appendChild(iconBtn("pi pi-copy", "Copy all triggers", () => copy(allTriggers), !allTriggers));
   actions.appendChild(iconBtn("pi pi-external-link", "Open on CivitAI",
@@ -2851,7 +2861,7 @@ function buildPanel(el) {
 // state is safe — and is intentionally preserved across mounts so filters,
 // search text, sort, and view mode survive opening/closing the drawer.
 export function mountLibrary(container, opts = {}) {
-  lmOpts = { onApplyStyle: () => {}, onAddLora: () => {}, onLorasRefreshed: () => {}, ...opts };
+  lmOpts = { onApplyStyle: () => {}, onAddLora: () => {}, onRemoveLora: () => {}, onLorasRefreshed: () => {}, ...opts };
   if (opts.initialMode) currentMode = opts.initialMode;
   destroyLibrary();              // tear down any previous instance first
   buildPanel(container);

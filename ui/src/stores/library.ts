@@ -57,6 +57,7 @@ interface LibraryState {
   checkUpdates: () => Promise<void>
   applyStyle: (style: StyleRecord) => void
   addLoraToWorkbench: (relPath: string) => void
+  removeLoraFromWorkbench: (relPath: string) => void
 }
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -225,6 +226,16 @@ export const useLibrary = create<LibraryState>()(persist((set, get) => {
       }
       // 새로 추가됐든 이미 있든, 해당 로라 행을 flash로 강조해 위치를 보여준다.
       wb.setFlashLora(relPath)
+    },
+    removeLoraFromWorkbench: (relPath) => {
+      // Multi 탭이면 현재 캐릭터 base에서, 아니면 작업대 스택에서 제거한다.
+      if (useUi.getState().tab === 'batch') {
+        const char = activeCharOf(useBatch.getState())
+        if (char) useBatch.getState().setCharBase({ loras: char.base.loras.filter((l) => l.relPath !== relPath) })
+      } else {
+        const wb = useWorkbench.getState()
+        wb.setLoras(wb.params.loras.filter((l) => l.relPath !== relPath))
+      }
     },
   }
 }, {
