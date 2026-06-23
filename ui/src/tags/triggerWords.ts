@@ -14,7 +14,9 @@ export function addTriggerWords(prompt: string, triggers: string[]): string {
 
   const tokens = prompt.split(',')
   let lastAt = -1
-  tokens.forEach((t, i) => { if (t.trim().startsWith('@')) lastAt = i })
+  // 가중치/강조로 감싼 @태그도 인식: 앞쪽 '(' '[' 공백을 벗겨낸 뒤 '@'인지 본다.
+  // (예: "(@name:0.3)", "( @name )" → 못 찾고 맨 앞에 넣던 버그 수정.)
+  tokens.forEach((t, i) => { if (t.trim().replace(/^[([\s]+/, '').startsWith('@')) lastAt = i })
 
   if (lastAt === -1) {
     // @태그가 없으면 맨 위에 추가 (원문은 그대로 보존).
