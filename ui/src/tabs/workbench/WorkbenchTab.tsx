@@ -191,8 +191,6 @@ export function WorkbenchTab() {
         </div>
         {selected && (
           <div className="result-meta">
-            <span className="seed">{t('seed {n}', { n: selected.params.seed })}</span>
-            <span className="res-tag">{dims?.w ?? selected.params.width} × {dims?.h ?? selected.params.height}</span>
             <button onClick={() => restore(selected.params)} title={t("Load this result's settings back into the panel")}>
               {t('Reuse settings')}
             </button>
@@ -243,6 +241,9 @@ export function WorkbenchTab() {
               }}>
               {starredOnly ? t('★ Starred') : t('☆ All')}
             </button>
+            {/* 길이가 변하는 시드·해상도는 맨 뒤로 — 뒤에 밀릴 게 없어 버튼들이 고정된다. */}
+            <span className="seed">{t('seed {n}', { n: selected.params.seed })}</span>
+            <span className="res-tag">{dims?.w ?? selected.params.width} × {dims?.h ?? selected.params.height}</span>
           </div>
         )}
         {multiSel.size > 0 && (
