@@ -248,7 +248,15 @@ async def pick_folder(request):
 
 
 def _force_foreground_window(hwnd):
-    """Windows의 SetForegroundWindow 제한을 AttachThreadInput으로 우회해 창을 앞으로."""
+    """탐색기 창을 브라우저 앞으로 가져온다.
+
+    PeroPixfy는 ComfyUI(=백그라운드 프로세스)에서 호출하므로 단순 SetForegroundWindow가
+    Windows 포그라운드 제한에 막힌다(브라우저가 포그라운드라 권한 없음). 그래서:
+      1) 포그라운드 잠금 타임아웃을 0으로 (백그라운드 전환 허용),
+      2) 호출 스레드 + 대상 스레드를 현재 포그라운드 스레드에 attach (권한 빌림),
+      3) topmost 토글(HWND_TOPMOST→NOTOPMOST)로 z-order 최상단에 올린다 — SetWindowPos는
+         포그라운드 권한이 없어도 되므로, SetForegroundWindow가 막혀도 창이 앞으로 온다.
+    (단일 프로세스 앱이던 PeroPix는 1~3 없이 SetForegroundWindow만으로도 됐다.)"""
     try:
         import ctypes
 
@@ -259,17 +267,31 @@ def _force_foreground_window(hwnd):
             win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
         if win32gui.GetForegroundWindow() == hwnd:
             return
+        try:
+            ctypes.windll.user32.SystemParametersInfoW(0x2001, 0, 0, 0)  # SPI_SETFOREGROUNDLOCKTIMEOUT=0
+        except Exception:
+            pass
         fg = win32gui.GetForegroundWindow()
-        ft = win32process.GetWindowThreadProcessId(fg)[0]
+        ft = win32process.GetWindowThreadProcessId(fg)[0] if fg else 0
         tt = win32process.GetWindowThreadProcessId(hwnd)[0]
-        if ft != tt:
-            ctypes.windll.user32.AttachThreadInput(tt, ft, True)
+        cur = ctypes.windll.kernel32.GetCurrentThreadId()
+        attached = []
+        for th in {cur, tt}:
+            if th and ft and th != ft and ctypes.windll.user32.AttachThreadInput(th, ft, True):
+                attached.append(th)
+        try:
             win32gui.BringWindowToTop(hwnd)
-            win32gui.SetForegroundWindow(hwnd)
-            ctypes.windll.user32.AttachThreadInput(tt, ft, False)
-        else:
-            win32gui.BringWindowToTop(hwnd)
-            win32gui.SetForegroundWindow(hwnd)
+            try:
+                win32gui.SetForegroundWindow(hwnd)
+            except Exception:
+                pass
+            # z-order 최상단으로 (포그라운드 권한 불필요) → 막혀도 브라우저 앞에 보이게.
+            flags = win32con.SWP_NOMOVE | win32con.SWP_NOSIZE
+            win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0, flags)
+            win32gui.SetWindowPos(hwnd, win32con.HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+        finally:
+            for th in attached:
+                ctypes.windll.user32.AttachThreadInput(th, ft, False)
     except Exception:
         pass
 
