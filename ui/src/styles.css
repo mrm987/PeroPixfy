@@ -229,7 +229,9 @@ button:disabled { opacity: 0.4; cursor: default; }
 .placeholder { color: var(--muted); }
 .placeholder.error { color: var(--error); }
 
-.result-meta { display: flex; gap: 12px; align-items: center; color: var(--muted); }
+.result-meta { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; color: var(--muted); }
+/* 좁은 창에서 버튼이 잘려 사라지지 않게: 텍스트는 한 줄 유지하고, 줄이 차면 다음 줄로 감긴다. */
+.result-meta button, .result-meta select { white-space: nowrap; flex-shrink: 0; }
 /* 시드·해상도는 맨 뒤로 보내고 우측 정렬 — 길이가 바뀌어도 앞 버튼들이 안 밀린다. */
 .result-meta .seed { margin-left: auto; flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .result-meta .res-tag { flex-shrink: 0; font-variant-numeric: tabular-nums; }
