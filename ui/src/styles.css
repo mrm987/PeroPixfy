@@ -230,6 +230,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .placeholder.error { color: var(--error); }
 
 .result-meta { display: flex; gap: 12px; align-items: center; color: var(--muted); }
+.result-meta .res-tag { font-variant-numeric: tabular-nums; }
 
 /* ===== 라이브러리 — Style-Manager(loraManager.js) 디자인 이식 ===== */
 .library { height: 100%; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; position: relative; }

@@ -24,6 +24,7 @@ export function WorkbenchTab() {
   const [saveTarget, setSaveTarget] = useState<HistoryItem | null>(null)
   const [multiSel, setMultiSel] = useState<Set<string>>(new Set())
   const [starredOnly, setStarredOnly] = useState(false)
+  const [dims, setDims] = useState<{ w: number; h: number } | null>(null) // 현재 본 이미지의 실제 해상도
   const stripRef = useRef<HTMLDivElement>(null)
   const history = useWorkbench((s) => s.history)
   const selectedId = useWorkbench((s) => s.selectedId)
@@ -120,6 +121,7 @@ export function WorkbenchTab() {
   // 선택 이미지가 바뀌면 그 썸네일이 보이도록 리스트를 가로로 스마트 스크롤한다.
   // 이미 보이면 nearest라 움직이지 않고, 벗어났을 때만 최소한으로 스크롤한다.
   useEffect(() => {
+    setDims(null) // 선택이 바뀌면 해상도 초기화 — 새 이미지 onLoad에서 다시 채움
     const el = stripRef.current?.querySelector('.history-thumb.active') as HTMLElement | null
     el?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' })
   }, [selected?.promptId])
@@ -177,7 +179,8 @@ export function WorkbenchTab() {
       <div className="result-area">
         <div className="result-main" onWheel={onPreviewWheel}>
           {selected?.status === 'done' && selected.imageUrls.length > 0 ? (
-            <img src={bust(selected.imageUrls[0], selected.promptId)} alt="result" />
+            <img src={bust(selected.imageUrls[0], selected.promptId)} alt="result"
+              onLoad={(e) => setDims({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })} />
           ) : selected?.status === 'pending' ? (
             <div className="placeholder">{t('Generating…')}</div>
           ) : selected?.status === 'error' ? (
@@ -189,6 +192,7 @@ export function WorkbenchTab() {
         {selected && (
           <div className="result-meta">
             <span>{t('seed {n}', { n: selected.params.seed })}</span>
+            <span className="res-tag">{dims?.w ?? selected.params.width} × {dims?.h ?? selected.params.height}</span>
             <button onClick={() => restore(selected.params)} title={t("Load this result's settings back into the panel")}>
               {t('Reuse settings')}
             </button>
