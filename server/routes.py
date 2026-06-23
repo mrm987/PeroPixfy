@@ -337,11 +337,20 @@ def _open_and_focus(folder, select_file=None):
             return
         else:
             os.startfile(folder)
-        # 새 창이 뜰 시간을 준 뒤 찾아서 foreground로.
-        time.sleep(0.35)
-        w = find_window()
+        # 창이 실제로 뜰 때까지 폴링한 뒤 foreground로. 특히 /select(파일 선택)는 우리가
+        # 띄운 explorer.exe가 기존 셸 프로세스에 위임하고 종료 → 창은 포그라운드 권한이 없는
+        # 셸이 늦게 만들기 때문에, 고정 시간 한 번만으로는 놓쳐 브라우저 뒤에 남는다.
+        w = None
+        deadline = time.monotonic() + 2.0
+        while w is None and time.monotonic() < deadline:
+            time.sleep(0.1)
+            w = find_window()
         if w is not None:
             _force_foreground_window(w.HWND)
+            if select_file:
+                # explorer가 파일을 선택하며 창을 늦게 재정렬하므로, 정착을 기다렸다 한 번 더.
+                time.sleep(0.3)
+                _force_foreground_window(w.HWND)
     except Exception:
         try:
             if select_file:
