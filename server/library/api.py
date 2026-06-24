@@ -539,10 +539,19 @@ async def api_style_upload(request):
     fpath = os.path.join(styles.styles_dir(), fname)
     width, height = styles.get_image_size(fpath)
 
-    lora_refs = styles.parse_loras_from_workflow(workflow)
-    checkpoint = styles.parse_checkpoint_from_workflow(workflow)
-    positive_prompt, negative_prompt = styles.parse_prompts_from_workflow(workflow)
-    samp = styles.parse_sampler_from_workflow(workflow)
+    if styles.is_api_prompt(workflow):
+        # PeroPixfy(및 ComfyUI)가 저장한 PNG는 UI 워크플로우(nodes[])가 아니라 API 프롬프트
+        # 형식이라 UI 파서로는 전부 빈 값 → 전용 파서로 모델/로라/프롬프트/샘플러를 뽑는다.
+        parsed = styles.parse_api_prompt(workflow)
+        lora_refs = parsed["loras"]
+        checkpoint = parsed["checkpoint"]
+        positive_prompt, negative_prompt = parsed["positive"], parsed["negative"]
+        samp = parsed["sampler"]
+    else:
+        lora_refs = styles.parse_loras_from_workflow(workflow)
+        checkpoint = styles.parse_checkpoint_from_workflow(workflow)
+        positive_prompt, negative_prompt = styles.parse_prompts_from_workflow(workflow)
+        samp = styles.parse_sampler_from_workflow(workflow)
 
     known = {l["rel_path"] for l in db.get_all()}
     for lref in lora_refs:

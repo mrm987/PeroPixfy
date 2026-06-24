@@ -67,6 +67,101 @@ def _norm(s):
     return str(s).replace("\\", "/")
 
 
+def is_api_prompt(workflow):
+    """ComfyUI(및 PeroPixfy)가 PNG에 임베드하는 'prompt'는 UI 워크플로우(nodes[] 배열)가
+    아니라 API 형식 {node_id: {class_type, inputs}} 다. 그 형식인지 판별."""
+    if not isinstance(workflow, dict) or "nodes" in workflow:
+        return False
+    return any(isinstance(v, dict) and "class_type" in v for v in workflow.values())
+
+
+def parse_api_prompt(workflow):
+    """API 프롬프트 형식에서 checkpoint/loras/positive/negative/sampler를 추출한다.
+    PeroPixfy 이미지는 UNETLoader + LoraLoaderModelOnly + CLIPTextEncode + (Spectrum)KSampler
+    구성이라 UI 형식 파서로는 전부 빈 값이 나온다 — 이 경로가 그걸 메운다.
+    반환 형태는 parse_*_from_workflow들과 호환(loras 리스트 / checkpoint 문자열 / (pos,neg) / samp dict)."""
+    nodes = {k: v for k, v in workflow.items() if isinstance(v, dict) and "class_type" in v}
+
+    def inp(n):
+        return n.get("inputs") or {}
+
+    def _num(x, cast, default):
+        try:
+            return cast(x)
+        except (TypeError, ValueError):
+            return default
+
+    # checkpoint: 분리형(UNETLoader.unet_name) 우선, 없으면 통합형(Checkpoint*.ckpt_name)
+    checkpoint = ""
+    for n in nodes.values():
+        if n.get("class_type") in UNET_NODE_TYPES:
+            v = inp(n).get("unet_name") or inp(n).get("model_name")
+            if isinstance(v, str):
+                checkpoint = _norm(v)
+                break
+    if not checkpoint:
+        for n in nodes.values():
+            if n.get("class_type") in CKPT_NODE_TYPES:
+                v = inp(n).get("ckpt_name")
+                if isinstance(v, str):
+                    checkpoint = _norm(v)
+                    break
+
+    # loras: class_type에 'lora' 포함 + lora_name이 safetensors. (API 그래프엔 bypass된
+    # 로라가 아예 없으므로 그래프에 있는 건 전부 enabled.)
+    loras = []
+    for n in nodes.values():
+        if "lora" in (n.get("class_type") or "").lower():
+            i = inp(n)
+            name = i.get("lora_name")
+            if isinstance(name, str) and name.lower().endswith(LORA_EXTS):
+                loras.append({
+                    "display_name": _norm(name),
+                    "strength": _num(i.get("strength_model", i.get("strength", 1.0)), float, 1.0),
+                    "enabled": True,
+                })
+
+    # sampler + prompts: class_type에 'sampler' 포함 노드의 positive/negative 링크를 따라
+    # CLIPTextEncode.text를 읽는다(conditioning 체인을 거슬러 올라감).
+    sampler = {"sampler": "", "scheduler": "", "seed": 0, "steps": 0, "cfg": 0.0}
+    positive = negative = ""
+    samp = next((n for n in nodes.values() if "sampler" in (n.get("class_type") or "").lower()), None)
+    if samp:
+        i = inp(samp)
+        sampler = {
+            "sampler": i.get("sampler_name") or "",
+            "scheduler": i.get("scheduler") or "",
+            "seed": _num(i.get("seed", i.get("noise_seed", 0)), int, 0),
+            "steps": _num(i.get("steps", 0), int, 0),
+            "cfg": _num(i.get("cfg", 0), float, 0.0),
+        }
+
+        def text_of(ref):
+            seen = set()
+            stack = [ref[0]] if isinstance(ref, list) and ref else []
+            while stack:
+                nid = str(stack.pop())
+                if nid in seen:
+                    continue
+                seen.add(nid)
+                node = nodes.get(nid)
+                if not node:
+                    continue
+                ni = inp(node)
+                if isinstance(ni.get("text"), str):
+                    return ni["text"]
+                for v in ni.values():        # text가 링크면 입력을 거슬러 올라간다
+                    if isinstance(v, list) and v:
+                        stack.append(v[0])
+            return ""
+
+        positive = text_of(i.get("positive"))
+        negative = text_of(i.get("negative"))
+
+    return {"checkpoint": checkpoint, "loras": loras,
+            "positive": positive, "negative": negative, "sampler": sampler}
+
+
 def parse_loras_from_workflow(workflow):
     """Walk workflow.nodes, return [{display_name, strength, enabled}, ...].
     Handles built-in LoraLoader and rgthree Power Lora Loader.
