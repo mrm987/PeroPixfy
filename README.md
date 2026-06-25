@@ -78,11 +78,16 @@ ui/           React + TS + Vite source → npm run build → web/
 web/          build output (served statically by routes.py)
 data/         loras.db, thumbs/, styles/, settings.json (git-ignored)
 scripts/      run_peropix.bat (lean launcher)
+vendor/       third-party code vendored verbatim (see Credits)
 ```
 
 ### Core design
 
 The single source of truth for generation parameters is `GenerationParams` (`ui/src/workflow/types.ts`). The graph is always rebuilt via `buildGraph()` (`ui/src/workflow/builder.ts`); a bypassed LoRA is expressed by omitting the node and linking MODEL through directly. Records and reproduction store the params, not the graph.
+
+### Credits / third-party
+
+- `vendor/spectrum/` — [ComfyUI-Spectrum-KSampler](https://github.com/sorryhyun/ComfyUI-Spectrum-KSampler) by sorryhyun (MIT). Vendored verbatim; the upstream `LICENSE` is kept alongside and re-synced by `scripts/update_spectrum.py`.
 
 ---
 
