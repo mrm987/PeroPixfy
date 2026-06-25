@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { clearQueue as apiClearQueue, deleteQueued, fetchOutputs, fetchQueueIds, interrupt, submitPrompt, viewUrl } from '../api/comfy'
+import { clearQueue as apiClearQueue, deleteQueued, enumValues, fetchNodeInfo, fetchOutputs, fetchQueueIds, interrupt, submitPrompt, viewUrl } from '../api/comfy'
 import {
   completeGeneration, deleteGeneration, failGeneration, listGenerations,
   recordGeneration, starGeneration, type GenerationRecord,
@@ -42,6 +42,7 @@ interface WorkbenchState {
   setFlashLora: (relPath: string | null) => void
   setAvailableLoras: (loras: string[]) => void
   setAvailableUnets: (unets: string[]) => void
+  refreshAvailable: () => Promise<void> // /object_info 재요청 → 새로 추가된 LoRA/모델 반영
   setNotice: (notice: string | null) => void
   setSingleOutput: (v: string) => void
   setSave: (patch: Partial<Pick<WorkbenchState, 'format' | 'quality'>>) => void
@@ -126,6 +127,16 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
   setFlashLora: (flashLora) => set({ flashLora }),
   setAvailableLoras: (availableLoras) => set({ availableLoras }),
   setAvailableUnets: (availableUnets) => set({ availableUnets }),
+  // 실행 중 새 LoRA/모델을 추가하고 스캔하면 ComfyUI의 /object_info도 최신화되므로,
+  // 재요청해 검증용 목록을 갱신한다. (실패 시엔 기존 목록을 덮어쓰지 않음 — 전부 미설치로
+  // 표시되는 사고 방지.)
+  refreshAvailable: async () => {
+    const [lora, unet] = await Promise.all([fetchNodeInfo('LoraLoaderModelOnly'), fetchNodeInfo('UNETLoader')])
+    const patch: Partial<Pick<WorkbenchState, 'availableLoras' | 'availableUnets'>> = {}
+    if (lora) patch.availableLoras = enumValues(lora, 'lora_name')
+    if (unet) patch.availableUnets = enumValues(unet, 'unet_name')
+    if (Object.keys(patch).length) set(patch)
+  },
   setNotice: (notice) => set({ notice }),
   setSingleOutput: (singleOutput) => set({ singleOutput }),
   setSave: (patch) => set(patch),

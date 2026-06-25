@@ -73,6 +73,9 @@ export const useLibrary = create<LibraryState>()(persist((set, get) => {
         clearInterval(pollTimer!)
         pollTimer = null
         get().load()
+        // 스캔으로 새 LoRA가 등록됐을 수 있으니, 워크벤치의 설치목록(검증용)도 갱신해
+        // 스택에 추가한 새 LoRA가 '미설치'로 뜨지 않게 한다.
+        useWorkbench.getState().refreshAvailable()
       }
     }, 1000)
   }
