@@ -20,6 +20,7 @@ export function MaskEditor({
   const imgRef = useRef<HTMLImageElement | null>(null)
   const drawing = useRef(false)
   const lastPos = useRef<{ x: number; y: number } | null>(null)
+  const cursor = useRef<{ x: number; y: number } | null>(null) // 브러시 미리보기 위치
   const [brush, setBrush] = useState(64)
   const [tool, setTool] = useState<'brush' | 'eraser'>('brush')
   const [ready, setReady] = useState(false)
@@ -62,6 +63,10 @@ export function MaskEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageUrl, initialMask])
 
+  // 브러시 크기/도구를 바꾸면 마우스를 안 움직여도 미리보기 링을 갱신.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (ready) redraw() }, [brush, tool])
+
   const redraw = () => {
     const view = viewRef.current
     const img = imgRef.current
@@ -72,14 +77,33 @@ export function MaskEditor({
     ctx.globalAlpha = 0.55
     ctx.drawImage(maskRef.current, 0, 0)
     ctx.globalAlpha = 1
+    // 브러시 미리보기 — 커서 위치에 '칠해질 영역'(반지름 brush/2)을 링으로 표시.
+    const c = cursor.current
+    if (c) {
+      const rect = view.getBoundingClientRect()
+      const px = rect.width ? view.width / rect.width : 1 // 표시 1px → 캔버스 px (선두께 보정)
+      ctx.beginPath()
+      ctx.arc(c.x, c.y, brush / 2, 0, Math.PI * 2)
+      ctx.lineWidth = px
+      ctx.strokeStyle = 'rgba(0,0,0,0.65)'
+      ctx.stroke()
+      ctx.lineWidth = 1.5 * px
+      ctx.strokeStyle = tool === 'eraser' ? 'rgba(255,255,255,0.95)' : 'rgba(255,51,85,0.95)'
+      ctx.stroke()
+    }
   }
 
   const toCanvasPos = (e: React.PointerEvent) => {
     const view = viewRef.current!
     const rect = view.getBoundingClientRect()
+    // object-fit:contain으로 비트맵이 요소 박스 안에서 레터박스될 수 있으므로, 실제 그려진
+    // 영역의 스케일·여백을 반영해 매핑한다(커서 위치와 칠해지는 위치 불일치 방지).
+    const scale = Math.min(rect.width / view.width, rect.height / view.height) || 1
+    const offX = (rect.width - view.width * scale) / 2
+    const offY = (rect.height - view.height * scale) / 2
     return {
-      x: ((e.clientX - rect.left) / rect.width) * view.width,
-      y: ((e.clientY - rect.top) / rect.height) * view.height,
+      x: (e.clientX - rect.left - offX) / scale,
+      y: (e.clientY - rect.top - offY) / scale,
     }
   }
 
@@ -150,10 +174,11 @@ export function MaskEditor({
         </div>
         <canvas
           ref={viewRef}
-          onPointerDown={(e) => { drawing.current = true; lastPos.current = null; paint(e) }}
-          onPointerMove={(e) => { if (drawing.current) paint(e) }}
+          style={{ cursor: 'crosshair' }}
+          onPointerDown={(e) => { drawing.current = true; lastPos.current = null; cursor.current = toCanvasPos(e); paint(e) }}
+          onPointerMove={(e) => { cursor.current = toCanvasPos(e); if (drawing.current) paint(e); else redraw() }}
           onPointerUp={() => { drawing.current = false; lastPos.current = null }}
-          onPointerLeave={() => { drawing.current = false; lastPos.current = null }}
+          onPointerLeave={() => { drawing.current = false; lastPos.current = null; cursor.current = null; redraw() }}
         />
       </div>
     </div>

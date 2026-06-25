@@ -839,6 +839,14 @@ button.danger:hover { background: #7f1d1d; color: #fff; border-color: #7f1d1d; }
 .source-box .placeholder { font-size: 12px; padding: 12px 4px; }
 .source-thumb { position: relative; align-self: flex-start; line-height: 0; }
 .source-thumb img { display: block; }
+/* 소스 이미지 제거(✕) — 썸네일 우상단 오버레이 */
+.source-remove {
+  position: absolute; top: 4px; right: 4px; z-index: 2;
+  width: 22px; height: 22px; padding: 0; line-height: 1;
+  border-radius: 50%; border: 1px solid var(--border);
+  background: rgba(20, 20, 28, 0.82); color: #fff; cursor: pointer;
+}
+.source-remove:hover { background: #c0392b; }
 /* 인페인트 마스크(B/W, 흰색=다시 그릴 영역)를 빨강 틴트로 소스 위에 표시 */
 .mask-overlay {
   position: absolute; inset: 0; pointer-events: none;

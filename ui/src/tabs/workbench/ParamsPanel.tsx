@@ -114,7 +114,7 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
 
   const uploadSource = async (file: File) => {
     const name = await uploadImage(file, `peropix_src_${Date.now()}.png`)
-    set({ sourceImage: name })
+    set({ sourceImage: name, maskImage: undefined }) // 새 소스 → 이전 마스크 제거(다른 이미지의 마스크가 남는 것 방지)
   }
 
   // i2i/inpaint는 출력 해상도가 소스 이미지 크기로 강제된다(VAEEncode). 소스가 바뀌면
@@ -171,6 +171,8 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
                       WebkitMaskImage: `url(${sourcePreviewUrl(params.maskImage)})`,
                     }} />
                   )}
+                  <button className="source-remove" title={t('Remove source image')}
+                    onClick={() => set({ sourceImage: undefined, maskImage: undefined })}>✕</button>
                 </div>
               ) : (
                 <div className="placeholder">

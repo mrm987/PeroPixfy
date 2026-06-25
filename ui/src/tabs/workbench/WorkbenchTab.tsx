@@ -158,7 +158,7 @@ export function WorkbenchTab() {
 
   const sendToI2i = async (imageUrl: string) => {
     const name = await uploadImage(await fetchAsBlob(imageUrl), `peropix_i2i_${Date.now()}.png`)
-    set({ mode: 'i2i', sourceImage: name })
+    set({ mode: 'i2i', sourceImage: name, maskImage: undefined }) // 새 소스 → 이전 마스크 제거
   }
 
   const applyMask = async (blob: Blob) => {

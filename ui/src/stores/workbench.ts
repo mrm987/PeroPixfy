@@ -272,6 +272,10 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
   // 앱 업데이트로 params에 새 필드가 생겨도 기본값으로 채워지도록 병합
   merge: (persisted, current) => {
     const p = (persisted ?? {}) as Partial<WorkbenchState>
-    return { ...current, ...p, params: { ...ANIMA_DEFAULTS, ...(p.params ?? {}) } }
+    // 재실행(앱/ComfyUI 재시작) 시 i2i/인페인트 소스는 업로드 temp가 사라져 깨지므로 t2i로 초기화.
+    return {
+      ...current, ...p,
+      params: { ...ANIMA_DEFAULTS, ...(p.params ?? {}), mode: 't2i', sourceImage: undefined, maskImage: undefined },
+    }
   },
 }))
