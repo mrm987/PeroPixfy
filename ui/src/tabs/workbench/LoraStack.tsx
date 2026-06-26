@@ -42,11 +42,30 @@ export function LoraStack({ available, loras, setLoras, positive, setPositive }:
 
   // 로라의 트리거워드를 프롬프트에 삽입(add)하거나 삭제한다. 라이브러리에 등록된
   // trigger_words 기준. 구독 추가 없이 호출 시점에 getState로 읽는다.
-  const applyTriggers = (relPath: string, add: boolean) => {
-    const rec = useLibrary.getState().loras.find((l) => normPath(l.rel_path) === normPath(relPath))
+  const applyTriggers = async (relPath: string, add: boolean) => {
+    const findRec = (rp: string) =>
+      useLibrary.getState().loras.find((l) => normPath(l.rel_path) === normPath(rp))
+    let rec = findRec(relPath)
+    // 스캔 직후 등 useLibrary 캐시가 아직 없거나 비어 있으면 한 번 새로 불러와 재시도한다
+    // — 새로 추가/스캔한 로라의 트리거워드가 '새로고침해야만' 등록되던 문제 방지.
+    if (!rec || !rec.trigger_words) {
+      await useLibrary.getState().load()
+      rec = findRec(relPath)
+    }
     const triggers = parseTriggerWords(rec?.trigger_words || '')
     if (triggers.length === 0) return
-    setPositive(add ? addTriggerWords(positive, triggers) : removeTriggerWords(positive, triggers))
+    if (add) {
+      setPositive(addTriggerWords(positive, triggers))
+      return
+    }
+    // 끄는 경우: 같은 트리거워드를 쓰는 다른 active 로라가 남아 있으면 유지한다(전부 꺼야 제거).
+    const stillUsed = new Set(
+      useWorkbench.getState().params.loras
+        .filter((l) => l.enabled && normPath(l.relPath) !== normPath(relPath))
+        .flatMap((l) => parseTriggerWords(findRec(l.relPath)?.trigger_words || '').map((w) => w.toLowerCase())),
+    )
+    const toRemove = triggers.filter((w) => !stillUsed.has(w.toLowerCase()))
+    if (toRemove.length) setPositive(removeTriggerWords(positive, toRemove))
   }
 
   // active 토글 시 해당 로라의 트리거워드를 자동 삽입/삭제한다.
