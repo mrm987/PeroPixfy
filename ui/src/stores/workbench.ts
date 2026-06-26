@@ -23,6 +23,7 @@ const randomSeed = () => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
 interface WorkbenchState {
   params: GenerationParams
   randomizeSeed: boolean
+  autoTriggers: boolean // 로라 active 토글 시 트리거워드 자동 추가/제거 on/off
   history: HistoryItem[]
   selectedId: string | null
   progress: { promptId: string; value: number; max: number } | null
@@ -38,6 +39,7 @@ interface WorkbenchState {
   init: () => Promise<void>
   set: (patch: Partial<GenerationParams>) => void
   setRandomize: (v: boolean) => void
+  setAutoTriggers: (v: boolean) => void
   setLoras: (loras: LoraEntry[]) => void
   setFlashLora: (relPath: string | null) => void
   setAvailableLoras: (loras: string[]) => void
@@ -77,6 +79,7 @@ const PERSIST_KEY = 'peropix.workbench'
 export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
   params: ANIMA_DEFAULTS,
   randomizeSeed: true,
+  autoTriggers: true,
   history: [],
   selectedId: null,
   progress: null,
@@ -123,6 +126,7 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
 
   set: (patch) => set((s) => ({ params: { ...s.params, ...patch } })),
   setRandomize: (v) => set({ randomizeSeed: v }),
+  setAutoTriggers: (v) => set({ autoTriggers: v }),
   setLoras: (loras) => set((s) => ({ params: { ...s.params, loras } })),
   setFlashLora: (flashLora) => set({ flashLora }),
   setAvailableLoras: (availableLoras) => set({ availableLoras }),
@@ -279,7 +283,7 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
   },
 }), {
   name: PERSIST_KEY,
-  partialize: (s) => ({ params: s.params, randomizeSeed: s.randomizeSeed, singleOutput: s.singleOutput, format: s.format, quality: s.quality }),
+  partialize: (s) => ({ params: s.params, randomizeSeed: s.randomizeSeed, autoTriggers: s.autoTriggers, singleOutput: s.singleOutput, format: s.format, quality: s.quality }),
   // 앱 업데이트로 params에 새 필드가 생겨도 기본값으로 채워지도록 병합
   merge: (persisted, current) => {
     const p = (persisted ?? {}) as Partial<WorkbenchState>

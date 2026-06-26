@@ -20,6 +20,8 @@ export function LoraStack({ available, loras, setLoras, positive, setPositive }:
   const t = useT()
   const flashLora = useWorkbench((s) => s.flashLora)
   const setFlashLora = useWorkbench((s) => s.setFlashLora)
+  const autoTriggers = useWorkbench((s) => s.autoTriggers)
+  const setAutoTriggers = useWorkbench((s) => s.setAutoTriggers)
   const libLoaded = useLibrary((s) => s.loaded)
   const libLoad = useLibrary((s) => s.load)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
@@ -43,6 +45,7 @@ export function LoraStack({ available, loras, setLoras, positive, setPositive }:
   // 로라의 트리거워드를 프롬프트에 삽입(add)하거나 삭제한다. 라이브러리에 등록된
   // trigger_words 기준. 구독 추가 없이 호출 시점에 getState로 읽는다.
   const applyTriggers = async (relPath: string, add: boolean) => {
+    if (!autoTriggers) return // 자동 트리거워드 off면 추가·제거 모두 하지 않음
     const findRec = (rp: string) =>
       useLibrary.getState().loras.find((l) => normPath(l.rel_path) === normPath(rp))
     let rec = findRec(relPath)
@@ -92,7 +95,13 @@ export function LoraStack({ available, loras, setLoras, positive, setPositive }:
 
   return (
     <div className="lora-stack">
-      <div className="field-label">{t('LoRAs ({n}/{m})', { n: loras.filter((l) => l.enabled).length, m: loras.length })}</div>
+      <div className="lora-stack-head">
+        <span className="field-label">{t('LoRAs ({n}/{m})', { n: loras.filter((l) => l.enabled).length, m: loras.length })}</span>
+        <label className="auto-trig" title={t('Auto-add/remove a LoRA’s trigger words to the prompt when toggling it on/off')}>
+          <input type="checkbox" checked={autoTriggers} onChange={(e) => setAutoTriggers(e.target.checked)} />
+          {t('Auto trigger words')}
+        </label>
+      </div>
       {loras.map((l, i) => (
         <div key={i}
           className={`lora-row${l.enabled ? '' : ' disabled'}${l.relPath === flashLora ? ' flash' : ''}${available.length > 0 && l.relPath && !available.includes(l.relPath) ? ' missing' : ''}${dragIndex === i ? ' dragging' : ''}${overIndex === i && dragIndex !== null && dragIndex !== i ? ' drag-over' : ''}`}

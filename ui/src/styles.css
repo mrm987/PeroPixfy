@@ -141,6 +141,9 @@ button:disabled { opacity: 0.4; cursor: default; }
 .sub-opts { margin: 0 0 8px 6px; padding: 6px 0 2px 10px; border-left: 2px solid var(--border, #3a3a3a); display: flex; flex-direction: column; gap: 2px; }
 
 .lora-stack { display: flex; flex-direction: column; gap: 4px; }
+.lora-stack-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.auto-trig { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.auto-trig input { margin: 0; cursor: pointer; }
 .lora-row {
   display: grid;
   grid-template-columns: auto auto 1fr 64px auto;
