@@ -636,30 +636,34 @@ async def setup_download(request):
 # 선택적 커스텀 노드 원클릭 설치 (현재 USDU = hires 타일 업스케일). 화이트리스트된 레포만
 # git clone하므로 임의 클론 위험 없음. 설치 후 ComfyUI 재시작해야 노드가 로드된다.
 _NODE_REPOS = {
-    "usdu": ("ComfyUI_UltimateSDUpscale", "https://github.com/ssitu/ComfyUI_UltimateSDUpscale"),
+    # (폴더, 레포, 핀 커밋) — 검증된 커밋으로 고정한다. 업스트림이 깨는 변경(예: required 입력 추가)을
+    # 푸시해도 설치는 항상 이 버전을 받는다. 새 버전은 테스트 후 이 해시만 올린다.
+    "usdu": (
+        "ComfyUI_UltimateSDUpscale",
+        "https://github.com/ssitu/ComfyUI_UltimateSDUpscale",
+        "d033884dbcd18bb43cc9ff70a0b13164bff4d333",
+    ),
 }
 _node_install = {"status": "idle", "error": None}  # idle|installing|done|error
 
 
-def _clone_node(name, repo):
+def _git_step(cmd):
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=600, creationflags=_NO_WINDOW)
+    if r.returncode != 0:
+        raise RuntimeError((r.stderr or r.stdout or "git step failed").strip()[:300])
+
+
+def _clone_node(name, repo, ref):
     target = os.path.join(os.path.dirname(PLUGIN_DIR), name)  # custom_nodes/<name>
+    # 핀 커밋을 얕게(fetch-by-sha) 받고 서브모듈까지 초기화한다. USDU는 A1111 ultimate-upscale를
+    # 서브모듈로 가지므로 submodule update 없이는 import가 실패해 노드가 로드되지 않는다.
     if not os.path.isdir(os.path.join(target, ".git")):
-        # 새로 클론 — USDU는 A1111 ultimate-upscale를 서브모듈로 가지므로 --recurse-submodules 필수.
-        # (서브모듈 없으면 nodes.py의 modules/usdu import가 실패해 노드가 로드되지 않는다.)
-        r = subprocess.run(
-            ["git", "clone", "--depth", "1", "--recurse-submodules", "--shallow-submodules", repo, target],
-            capture_output=True, text=True, timeout=600, creationflags=_NO_WINDOW,
-        )
-        if r.returncode != 0:
-            raise RuntimeError((r.stderr or r.stdout or "git clone failed").strip()[:300])
-    else:
-        # 이미 폴더가 있으면(부분 클론 복구) 서브모듈만 보강한다.
-        r = subprocess.run(
-            ["git", "-C", target, "submodule", "update", "--init", "--recursive", "--depth", "1"],
-            capture_output=True, text=True, timeout=600, creationflags=_NO_WINDOW,
-        )
-        if r.returncode != 0:
-            raise RuntimeError((r.stderr or r.stdout or "submodule update failed").strip()[:300])
+        os.makedirs(target, exist_ok=True)
+        _git_step(["git", "init", "-q", target])
+        _git_step(["git", "-C", target, "remote", "add", "origin", repo])
+    _git_step(["git", "-C", target, "fetch", "-q", "--depth", "1", "origin", ref])
+    _git_step(["git", "-C", target, "checkout", "-q", "FETCH_HEAD"])
+    _git_step(["git", "-C", target, "submodule", "update", "-q", "--init", "--recursive", "--depth", "1"])
 
 
 @routes.post("/peropixfy/api/install-node")
@@ -673,12 +677,12 @@ async def install_node(request):
         return web.json_response({"ok": False, "error": "unknown node"}, status=400)
     if _node_install["status"] == "installing":
         return web.json_response({"ok": False, "error": "already installing"}, status=409)
-    name, repo = _NODE_REPOS[key]
+    name, repo, ref = _NODE_REPOS[key]
     _node_install.update(status="installing", error=None)
 
     async def run():
         try:
-            await asyncio.get_event_loop().run_in_executor(None, _clone_node, name, repo)
+            await asyncio.get_event_loop().run_in_executor(None, _clone_node, name, repo, ref)
             _node_install.update(status="done", error=None)
         except Exception as e:
             _node_install.update(status="error", error=str(e))
