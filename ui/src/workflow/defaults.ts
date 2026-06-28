@@ -41,10 +41,9 @@ export function defaultFilenamePrefix(mode: string, base = 'PeroPixfy/Single'): 
 }
 
 export const HIRES_DEFAULTS: HiresParams = {
-  // 기본 usdu(타일 재확산) — Anima는 기본 선명도가 높아 전체 1패스 resample은 디테일 체감이
-  // 약하다. usdu는 각 타일을 모델 native 해상도에서 다시 그려 실제 디테일을 넣는다.
+  // method 미지정 — USDU 노드가 있으면 usdu(타일 재확산, 디테일↑), 없으면 resample로 자동 결정한다
+  // (불필요한 노드 설치 안내 방지). Anima는 기본 선명도가 높아 1패스 resample은 디테일 체감이 약함.
   enabled: false,
-  method: 'usdu',
   scale: 1.5,
   useTargetScale: false, // 기본 off — 모델 고유 배율로 바로 2패스
   denoise: 0.4,

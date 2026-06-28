@@ -84,6 +84,18 @@ export async function openOutputFolder(file?: string): Promise<void> {
   })
 }
 
+/** 선택적 커스텀 노드(예: 'usdu')를 서버에서 원클릭 설치(git clone). 설치 후 ComfyUI 재시작 필요. */
+export async function installNode(key: string): Promise<void> {
+  await fetch('/peropixfy/api/install-node', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key }),
+  })
+}
+export async function nodeInstallStatus(): Promise<{ status: string; error?: string }> {
+  return (await fetch('/peropixfy/api/install-node/status')).json()
+}
+
 /** 대기 큐 전체 비우기 (실행 중인 작업은 별도 interrupt 필요). */
 export async function clearQueue(): Promise<void> {
   await fetch('/queue', {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { enumValues, fetchNodeInfo, uploadImage } from '../../api/comfy'
+import { enumValues, fetchNodeInfo, installNode, nodeInstallStatus, uploadImage } from '../../api/comfy'
 import { useT } from '../../i18n'
 import { MaskEditor } from '../../components/MaskEditor'
 import { NumberField, SelectField } from '../../components/controls'
@@ -90,6 +90,26 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
   const setPref = useUi((s) => s.setPref)
   const [meta, setMeta] = useState<Meta | null>(null)
   const [editMask, setEditMask] = useState(false)
+  // USDU 노드 원클릭 설치 상태
+  const [usduInstall, setUsduInstall] = useState<'idle' | 'installing' | 'done' | 'error'>('idle')
+  const [usduInstallErr, setUsduInstallErr] = useState('')
+
+  const installUsdu = async () => {
+    setUsduInstall('installing')
+    setUsduInstallErr('')
+    try {
+      await installNode('usdu')
+    } catch {
+      setUsduInstall('error'); setUsduInstallErr('request failed'); return
+    }
+    const poll = setInterval(async () => {
+      try {
+        const s = await nodeInstallStatus()
+        if (s.status === 'done') { clearInterval(poll); setUsduInstall('done') }
+        else if (s.status === 'error') { clearInterval(poll); setUsduInstall('error'); setUsduInstallErr(s.error || 'install failed') }
+      } catch { /* keep polling */ }
+    }, 1500)
+  }
 
   useEffect(() => {
     Promise.all(
@@ -134,7 +154,7 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
   }, [params.sourceImage, params.mode])
   const hires = params.hires ?? HIRES_DEFAULTS
   const setHires = (patch: Partial<typeof hires>) => set({ hires: { ...hires, ...patch } })
-  const hiresMethod = hires.method ?? 'usdu'
+  const hiresMethod = hires.method ?? (meta?.usduAvailable === false ? 'resample' : 'usdu')
   // USDU인데 업스케일 모델이 안 골라졌으면 자동 선택 (생성 시 오류 방지). Anima는 애니
   // 계열이라 anime/ultrasharp 모델을 우선, 없으면 설치된 첫 모델.
   useEffect(() => {
@@ -144,11 +164,11 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hires.enabled, hires.upscaleModel, meta])
-  // hires 방식 보정: method 미지정(기존 설정)은 usdu로 마이그레이션, USDU 노드가 없으면 resample로.
+  // hires 방식 자동결정: method 미지정 설정만 노드 유무로 채운다(usdu 없으면 resample → 불필요한
+  // 설치 안내 방지). 사용자가 명시적으로 USDU를 고른 건 건드리지 않는다(노드 없으면 설치 안내 표시).
   useEffect(() => {
-    if (!hires.enabled || !meta) return
-    if (hires.method == null) setHires({ method: meta.usduAvailable ? 'usdu' : 'resample' })
-    else if (hires.method === 'usdu' && !meta.usduAvailable) setHires({ method: 'resample' })
+    if (!hires.enabled || !meta || hires.method != null) return
+    setHires({ method: meta.usduAvailable ? 'usdu' : 'resample' })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hires.enabled, hires.method, meta])
   const spectrum = { ...SPECTRUM_DEFAULTS, ...params.spectrum }
@@ -343,8 +363,7 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
             <div className="sub-opts">
               <div className="preset-row">
                 <button type="button" className={hiresMethod === 'usdu' ? 'active' : ''}
-                  disabled={meta?.usduAvailable === false}
-                  title={meta?.usduAvailable === false ? t('Ultimate SD Upscale node is not loaded') : t('Tiled re-diffusion — adds real detail (slower)')}
+                  title={meta?.usduAvailable === false ? t('Needs the Ultimate SD Upscale node — click to install') : t('Tiled re-diffusion — adds real detail (slower)')}
                   onClick={() => setHires({ method: 'usdu' })}>
                   {t('USDU (tiled)')}{meta?.usduAvailable === false ? t(' (node missing)') : ''}
                 </button>
@@ -354,6 +373,20 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
                   {t('2-pass resample')}
                 </button>
               </div>
+              {hiresMethod === 'usdu' && meta?.usduAvailable === false && (
+                <div className="install-hint">
+                  <div>{t('USDU needs the "Ultimate SD Upscale" node.')}</div>
+                  {usduInstall === 'done' ? (
+                    <div className="ok">{t('✓ Installed — restart ComfyUI to enable it.')}</div>
+                  ) : (
+                    <button type="button" className="generate" disabled={usduInstall === 'installing'}
+                      onClick={installUsdu}>
+                      {usduInstall === 'installing' ? t('Installing…') : t('Install node (one click)')}
+                    </button>
+                  )}
+                  {usduInstall === 'error' && <div className="error">{t('Install failed:')} {usduInstallErr}</div>}
+                </div>
+              )}
               <SelectField label={t('upscale model')} value={hires.upscaleModel ?? ''}
                 options={meta?.upscaleModels ?? []}
                 onChange={(v) => setHires({ upscaleModel: v })} />

@@ -110,6 +110,7 @@ export function buildGraph(p: GenerationParams): ApiGraph {
           mask_blur: 8, tile_padding: 32,
           seam_fix_mode: 'Half Tile', seam_fix_denoise: 1, seam_fix_width: 64, seam_fix_mask_blur: 8, seam_fix_padding: 16,
           force_uniform_tiles: true, tiled_decode: false,
+          batch_size: 1, // 최신 USDU 필수 입력 — 한 번에 처리할 타일 묶음 수(1=저VRAM/안전)
         },
       }
       image = ['usdu', 0]

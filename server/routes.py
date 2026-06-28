@@ -633,6 +633,65 @@ async def setup_download(request):
     return web.json_response({"started": _setup.start_download(keys)})
 
 
+# 선택적 커스텀 노드 원클릭 설치 (현재 USDU = hires 타일 업스케일). 화이트리스트된 레포만
+# git clone하므로 임의 클론 위험 없음. 설치 후 ComfyUI 재시작해야 노드가 로드된다.
+_NODE_REPOS = {
+    "usdu": ("ComfyUI_UltimateSDUpscale", "https://github.com/ssitu/ComfyUI_UltimateSDUpscale"),
+}
+_node_install = {"status": "idle", "error": None}  # idle|installing|done|error
+
+
+def _clone_node(name, repo):
+    target = os.path.join(os.path.dirname(PLUGIN_DIR), name)  # custom_nodes/<name>
+    if not os.path.isdir(os.path.join(target, ".git")):
+        # 새로 클론 — USDU는 A1111 ultimate-upscale를 서브모듈로 가지므로 --recurse-submodules 필수.
+        # (서브모듈 없으면 nodes.py의 modules/usdu import가 실패해 노드가 로드되지 않는다.)
+        r = subprocess.run(
+            ["git", "clone", "--depth", "1", "--recurse-submodules", "--shallow-submodules", repo, target],
+            capture_output=True, text=True, timeout=600, creationflags=_NO_WINDOW,
+        )
+        if r.returncode != 0:
+            raise RuntimeError((r.stderr or r.stdout or "git clone failed").strip()[:300])
+    else:
+        # 이미 폴더가 있으면(부분 클론 복구) 서브모듈만 보강한다.
+        r = subprocess.run(
+            ["git", "-C", target, "submodule", "update", "--init", "--recursive", "--depth", "1"],
+            capture_output=True, text=True, timeout=600, creationflags=_NO_WINDOW,
+        )
+        if r.returncode != 0:
+            raise RuntimeError((r.stderr or r.stdout or "submodule update failed").strip()[:300])
+
+
+@routes.post("/peropixfy/api/install-node")
+async def install_node(request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    key = data.get("key") or "usdu"
+    if key not in _NODE_REPOS:
+        return web.json_response({"ok": False, "error": "unknown node"}, status=400)
+    if _node_install["status"] == "installing":
+        return web.json_response({"ok": False, "error": "already installing"}, status=409)
+    name, repo = _NODE_REPOS[key]
+    _node_install.update(status="installing", error=None)
+
+    async def run():
+        try:
+            await asyncio.get_event_loop().run_in_executor(None, _clone_node, name, repo)
+            _node_install.update(status="done", error=None)
+        except Exception as e:
+            _node_install.update(status="error", error=str(e))
+
+    asyncio.create_task(run())
+    return web.json_response({"ok": True, "started": True})
+
+
+@routes.get("/peropixfy/api/install-node/status")
+async def install_node_status(request):
+    return web.json_response(dict(_node_install))
+
+
 SETTINGS_PATH = os.path.join(PLUGIN_DIR, "data", "settings.json")
 
 
