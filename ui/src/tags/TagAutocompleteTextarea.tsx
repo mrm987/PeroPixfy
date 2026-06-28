@@ -32,6 +32,17 @@ function getCurrentWord(value: string, cursorPos: number) {
   return { word: beforeCursor.trim(), start: start + leadingSpaces, end, fullStart: start }
 }
 
+// 스크롤 가능한 조상(패널)을 찾는다 — 드래그 선택 중 패널 고정에 사용.
+function scrollParent(el: HTMLElement | null): HTMLElement | null {
+  let n: HTMLElement | null = el?.parentElement ?? null
+  while (n) {
+    const oy = getComputedStyle(n).overflowY
+    if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight) return n
+    n = n.parentElement
+  }
+  return null
+}
+
 // 워드랩을 고려한 커서의 픽셀 위치 — 동일 스타일의 미러 div로 측정.
 function caretPixel(ta: HTMLTextAreaElement) {
   const cs = window.getComputedStyle(ta)
@@ -176,10 +187,25 @@ export function TagAutocompleteTextarea({ value, onChange, rows, placeholder, st
     } else if (e.key === 'Escape') { e.preventDefault(); close() }
   }
 
+  // 드래그로 텍스트 선택 시 textarea 내부만 스크롤되게 하고, 패널(스크롤 조상)은 고정한다.
+  // (커서가 textarea를 벗어나면 패널이 따라 스크롤돼 textarea가 위로 밀려 사라지던 문제 방지.)
+  const onMouseDown = () => {
+    const sc = scrollParent(ref.current)
+    if (!sc) return
+    const top = sc.scrollTop
+    const pin = () => { if (sc.scrollTop !== top) sc.scrollTop = top }
+    sc.addEventListener('scroll', pin)
+    const up = () => {
+      sc.removeEventListener('scroll', pin)
+      document.removeEventListener('mouseup', up)
+    }
+    document.addEventListener('mouseup', up)
+  }
+
   return (
     <>
       <textarea ref={ref} rows={rows} value={value} placeholder={placeholder} style={style}
-        onChange={handleChange} onKeyDown={handleKeyDown} onMouseUp={onMouseUp}
+        onChange={handleChange} onKeyDown={handleKeyDown} onMouseUp={onMouseUp} onMouseDown={onMouseDown}
         onBlur={() => setTimeout(close, 150)} />
       {open && results.length > 0 && createPortal(
         <div ref={dropdownRef} className="tag-ac-dropdown"
