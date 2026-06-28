@@ -95,33 +95,52 @@ export function buildGraph(p: GenerationParams): ApiGraph {
     if (!p.hires.upscaleModel) throw new Error('hires: no upscale model selected')
     g['decode_base'] = { class_type: 'VAEDecode', inputs: { samples: ['sampler', 0], vae: ['vae', 0] } }
     g['upmodel'] = { class_type: 'UpscaleModelLoader', inputs: { model_name: p.hires.upscaleModel } }
-    g['up_img'] = { class_type: 'ImageUpscaleWithModel', inputs: { upscale_model: ['upmodel', 0], image: ['decode_base', 0] } }
-    // 목표 스케일 on(기본): 모델 업스케일 결과를 목표 배율로 리사이즈 후 재샘플.
-    // off: 리사이즈 없이 모델 고유 배율 그대로 바로 2패스 (예: 2배 모델 → 2배에서 재샘플).
-    let upscaled: [string, number] = ['up_img', 0]
-    if (p.hires.useTargetScale === true) {
-      g['up_resized'] = {
-        class_type: 'ImageScale',
+    if (p.hires.method === 'usdu') {
+      // Ultimate SD Upscale: 업스케일 모델로 키운 뒤 타일 단위로 재확산(각 타일을 모델 native
+      // 해상도에서 다시 그림) → 전체 1패스 재샘플보다 실제 디테일이 더 들어간다. upscale_by=목표 배율.
+      g['usdu'] = {
+        class_type: 'UltimateSDUpscale',
         inputs: {
-          image: ['up_img', 0],
-          upscale_method: 'lanczos',
-          width: round8(p.width * p.hires.scale),
-          height: round8(p.height * p.hires.scale),
-          crop: 'disabled',
+          image: ['decode_base', 0], model, positive: ['pos', 0], negative: ['neg', 0], vae: ['vae', 0],
+          upscale_by: p.hires.scale,
+          seed: p.seed, steps: p.hires.steps ?? p.steps, cfg: p.cfg,
+          sampler_name: p.sampler, scheduler: p.scheduler, denoise: p.hires.denoise,
+          upscale_model: ['upmodel', 0],
+          mode_type: 'Linear', tile_width: 1024, tile_height: 1024,
+          mask_blur: 8, tile_padding: 32,
+          seam_fix_mode: 'Half Tile', seam_fix_denoise: 1, seam_fix_width: 64, seam_fix_mask_blur: 8, seam_fix_padding: 16,
+          force_uniform_tiles: true, tiled_decode: false,
         },
       }
-      upscaled = ['up_resized', 0]
+      image = ['usdu', 0]
+    } else {
+      // resample: 모델 업스케일 → (목표 스케일 on이면 lanczos 리사이즈) → 전체 재샘플.
+      g['up_img'] = { class_type: 'ImageUpscaleWithModel', inputs: { upscale_model: ['upmodel', 0], image: ['decode_base', 0] } }
+      let upscaled: [string, number] = ['up_img', 0]
+      if (p.hires.useTargetScale === true) {
+        g['up_resized'] = {
+          class_type: 'ImageScale',
+          inputs: {
+            image: ['up_img', 0],
+            upscale_method: 'lanczos',
+            width: round8(p.width * p.hires.scale),
+            height: round8(p.height * p.hires.scale),
+            crop: 'disabled',
+          },
+        }
+        upscaled = ['up_resized', 0]
+      }
+      g['hires_latent'] = { class_type: 'VAEEncode', inputs: { pixels: upscaled, vae: ['vae', 0] } }
+      sample('sampler_hires', ['hires_latent', 0], p.hires.denoise, p.hires.steps ?? p.steps)
+      g['decode'] = { class_type: 'VAEDecode', inputs: { samples: ['sampler_hires', 0], vae: ['vae', 0] } }
+      image = ['decode', 0]
     }
-    g['hires_latent'] = { class_type: 'VAEEncode', inputs: { pixels: upscaled, vae: ['vae', 0] } }
-    sample('sampler_hires', ['hires_latent', 0], p.hires.denoise, p.hires.steps ?? p.steps)
-    g['decode'] = { class_type: 'VAEDecode', inputs: { samples: ['sampler_hires', 0], vae: ['vae', 0] } }
-    image = ['decode', 0]
-    // 하이레스 색감 보정: 1패스 원본(decode_base)의 색 통계로 되돌린다.
+    // 하이레스 색감 보정: 1패스 원본(decode_base)의 색 통계로 되돌린다. (reference 해상도가 달라도 OK)
     if (p.hires.colorMatch !== false) {
       g['hires_cm'] = {
         class_type: 'PeroPixColorMatch',
         inputs: {
-          image: ['decode', 0],
+          image,
           reference: ['decode_base', 0],
           method: p.hires.colorMatchMethod ?? 'reinhard',
           strength: p.hires.colorMatchStrength ?? 0.8,

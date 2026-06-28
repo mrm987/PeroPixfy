@@ -58,6 +58,7 @@ interface Meta {
   schedulers: string[]
   upscaleModels: string[]
   spectrumAvailable: boolean
+  usduAvailable: boolean
   modWProfiles: string[]
 }
 
@@ -92,8 +93,8 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
 
   useEffect(() => {
     Promise.all(
-      ['UNETLoader', 'CLIPLoader', 'VAELoader', 'LoraLoaderModelOnly', 'KSampler', 'UpscaleModelLoader', 'SpectrumKSamplerModGuidance'].map(fetchNodeInfo),
-    ).then(([unet, clip, vae, lora, sampler, upscale, spectrum]) => {
+      ['UNETLoader', 'CLIPLoader', 'VAELoader', 'LoraLoaderModelOnly', 'KSampler', 'UpscaleModelLoader', 'SpectrumKSamplerModGuidance', 'UltimateSDUpscale'].map(fetchNodeInfo),
+    ).then(([unet, clip, vae, lora, sampler, upscale, spectrum, usdu]) => {
       const loraList = enumValues(lora, 'lora_name')
       const unetList = enumValues(unet, 'unet_name')
       useWorkbench.getState().setAvailableLoras(loraList) // 생성 시 미설치 LoRA 검증용
@@ -107,6 +108,7 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
         schedulers: enumValues(sampler, 'scheduler'),
         upscaleModels: enumValues(upscale, 'model_name'),
         spectrumAvailable: spectrum !== null,
+        usduAvailable: usdu !== null,
         modWProfiles: enumValues(spectrum, 'mod_w_profile'),
       })
     })
@@ -132,6 +134,7 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
   }, [params.sourceImage, params.mode])
   const hires = params.hires ?? HIRES_DEFAULTS
   const setHires = (patch: Partial<typeof hires>) => set({ hires: { ...hires, ...patch } })
+  const hiresMethod = hires.method ?? 'usdu'
   // USDU인데 업스케일 모델이 안 골라졌으면 자동 선택 (생성 시 오류 방지). Anima는 애니
   // 계열이라 anime/ultrasharp 모델을 우선, 없으면 설치된 첫 모델.
   useEffect(() => {
@@ -141,6 +144,13 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hires.enabled, hires.upscaleModel, meta])
+  // hires 방식 보정: method 미지정(기존 설정)은 usdu로 마이그레이션, USDU 노드가 없으면 resample로.
+  useEffect(() => {
+    if (!hires.enabled || !meta) return
+    if (hires.method == null) setHires({ method: meta.usduAvailable ? 'usdu' : 'resample' })
+    else if (hires.method === 'usdu' && !meta.usduAvailable) setHires({ method: 'resample' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hires.enabled, hires.method, meta])
   const spectrum = { ...SPECTRUM_DEFAULTS, ...params.spectrum }
   const setSpectrum = (patch: Partial<typeof spectrum>) => set({ spectrum: { ...spectrum, ...patch } })
 
@@ -331,6 +341,19 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
           </label>
           {hires.enabled && (
             <div className="sub-opts">
+              <div className="preset-row">
+                <button type="button" className={hiresMethod === 'usdu' ? 'active' : ''}
+                  disabled={meta?.usduAvailable === false}
+                  title={meta?.usduAvailable === false ? t('Ultimate SD Upscale node is not loaded') : t('Tiled re-diffusion — adds real detail (slower)')}
+                  onClick={() => setHires({ method: 'usdu' })}>
+                  {t('USDU (tiled)')}{meta?.usduAvailable === false ? t(' (node missing)') : ''}
+                </button>
+                <button type="button" className={hiresMethod === 'resample' ? 'active' : ''}
+                  title={t('Upscale then one full resample (faster, less detail)')}
+                  onClick={() => setHires({ method: 'resample' })}>
+                  {t('2-pass resample')}
+                </button>
+              </div>
               <SelectField label={t('upscale model')} value={hires.upscaleModel ?? ''}
                 options={meta?.upscaleModels ?? []}
                 onChange={(v) => setHires({ upscaleModel: v })} />
@@ -340,14 +363,21 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
                 <NumberField label={t('hires steps')} value={hires.steps ?? params.steps} min={1} max={100} step={1}
                   onChange={(v) => setHires({ steps: v })} />
               </div>
-              <label className="checkbox"
-                title={t("Upscale models only enlarge by a fixed factor — turn this on to auto-adjust the result to your exact target size. Off keeps the model's own factor.")}>
-                <input type="checkbox" checked={hires.useTargetScale === true}
-                  onChange={(e) => setHires({ useTargetScale: e.target.checked })} /> {t('Use target scale')}
-              </label>
-              {hires.useTargetScale === true && (
+              {hiresMethod === 'usdu' ? (
                 <NumberField label={t('target scale (× orig)')} value={hires.scale} min={1} max={4} step={0.25}
                   onChange={(v) => setHires({ scale: v })} />
+              ) : (
+                <>
+                  <label className="checkbox"
+                    title={t("Upscale models only enlarge by a fixed factor — turn this on to auto-adjust the result to your exact target size. Off keeps the model's own factor.")}>
+                    <input type="checkbox" checked={hires.useTargetScale === true}
+                      onChange={(e) => setHires({ useTargetScale: e.target.checked })} /> {t('Use target scale')}
+                  </label>
+                  {hires.useTargetScale === true && (
+                    <NumberField label={t('target scale (× orig)')} value={hires.scale} min={1} max={4} step={0.25}
+                      onChange={(v) => setHires({ scale: v })} />
+                  )}
+                </>
               )}
               <label className="checkbox"
                 title={t("Hires can make colors look duller — this restores the original image's vivid colors.")}>

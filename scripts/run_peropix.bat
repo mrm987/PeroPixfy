@@ -10,6 +10,6 @@ if not exist "python_embeded\python.exe" (
 )
 start "" cmd /c "timeout /t 10 /nobreak >nul & start http://127.0.0.1:8188/peropixfy"
 REM Spectrum 노드는 PeroPixfy에 벤더링돼 함께 로드되므로 별도 화이트리스트 불필요.
-REM hires는 코어 노드만 쓰므로 USDU도 불필요.
-.\python_embeded\python.exe -s ComfyUI\main.py --windows-standalone-build --use-sage-attention --disable-dynamic-vram --disable-all-custom-nodes --whitelist-custom-nodes PeroPixfy
+REM hires의 USDU(타일 재확산) 방식은 ComfyUI_UltimateSDUpscale 노드가 필요 → 화이트리스트에 추가.
+.\python_embeded\python.exe -s ComfyUI\main.py --windows-standalone-build --use-sage-attention --disable-dynamic-vram --disable-all-custom-nodes --whitelist-custom-nodes PeroPixfy ComfyUI_UltimateSDUpscale
 pause

@@ -41,8 +41,10 @@ export function defaultFilenamePrefix(mode: string, base = 'PeroPixfy/Single'): 
 }
 
 export const HIRES_DEFAULTS: HiresParams = {
-  // 모델 업스케일 → (목표 스케일 on이면 리사이즈) → 재샘플. 모델은 첫 사용 시 자동 선택.
+  // 기본 usdu(타일 재확산) — Anima는 기본 선명도가 높아 전체 1패스 resample은 디테일 체감이
+  // 약하다. usdu는 각 타일을 모델 native 해상도에서 다시 그려 실제 디테일을 넣는다.
   enabled: false,
+  method: 'usdu',
   scale: 1.5,
   useTargetScale: false, // 기본 off — 모델 고유 배율로 바로 2패스
   denoise: 0.4,

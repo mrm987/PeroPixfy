@@ -8,6 +8,8 @@ export type GenMode = 't2i' | 'i2i' | 'inpaint'
 
 export interface HiresParams {
   enabled: boolean
+  // usdu = Ultimate SD Upscale(타일 단위 재확산, 디테일↑) / resample = 업스케일 후 전체 1패스 재샘플.
+  method?: 'resample' | 'usdu'
   // 2-pass: 업스케일 모델로 키운 뒤 목표 배율로 리사이즈 → 전체 재샘플.
   scale: number // 최종 목표 배율 (× 원본). 모델 배율과 별개로 이 크기로 맞춘다.
   useTargetScale?: boolean // off면 목표 배율 리사이즈 생략, 모델 고유 배율로 바로 2패스

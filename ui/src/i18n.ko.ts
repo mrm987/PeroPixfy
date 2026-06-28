@@ -61,6 +61,11 @@ export const ko: Record<string, string> = {
   'Quality tags (mod guidance)': '퀄리티 태그 (mod guidance)',
   // Hires
   'Hires fix': '하이레스 픽스',
+  'USDU (tiled)': 'USDU (타일)',
+  '2-pass resample': '2패스 재샘플',
+  'Ultimate SD Upscale node is not loaded': 'Ultimate SD Upscale 노드가 로드되지 않음',
+  'Tiled re-diffusion — adds real detail (slower)': '타일 단위 재확산 — 실제 디테일 추가 (느림)',
+  'Upscale then one full resample (faster, less detail)': '업스케일 후 전체 1회 재샘플 (빠름, 디테일 적음)',
   'upscale model': '업스케일 모델',
   'hires denoise': '하이레스 디노이즈',
   'hires steps': '하이레스 스텝',
