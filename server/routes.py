@@ -696,6 +696,17 @@ async def install_node_status(request):
     return web.json_response(dict(_node_install))
 
 
+@routes.get("/peropixfy/api/luts")
+async def list_luts(request):
+    """models/luts의 .cube LUT 목록 (PeroPixApplyLUT용)."""
+    d = os.path.join(folder_paths.models_dir, "luts")
+    try:
+        files = sorted(f for f in os.listdir(d) if f.lower().endswith(".cube"))
+    except OSError:
+        files = []
+    return web.json_response({"luts": files})
+
+
 SETTINGS_PATH = os.path.join(PLUGIN_DIR, "data", "settings.json")
 
 

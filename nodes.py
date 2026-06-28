@@ -155,11 +155,97 @@ class PeroPixColorMatch:
         return (out,)
 
 
+_LUT_DIR = os.path.join(folder_paths.models_dir, "luts")
+_LUT_CACHE = {}
+
+
+def _load_cube(path):
+    """3D .cube LUT을 (lut[b,g,r,3], size)로 읽는다. mtime 캐시. .cube는 R이 가장 빠르게 변한다."""
+    mtime = os.path.getmtime(path)
+    hit = _LUT_CACHE.get(path)
+    if hit and hit[0] == mtime:
+        return hit[1]
+    size = None
+    data = []
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            s = line.strip()
+            if not s or s[0] == "#":
+                continue
+            if s.startswith("LUT_3D_SIZE"):
+                size = int(s.split()[-1])
+                continue
+            if s[0].isalpha():  # TITLE / DOMAIN_* / LUT_1D_SIZE 등 키워드 라인
+                continue
+            p = s.split()
+            if len(p) == 3:
+                try:
+                    data.append((float(p[0]), float(p[1]), float(p[2])))
+                except ValueError:
+                    pass
+    if not size:
+        raise ValueError("not a 3D .cube LUT")
+    arr = np.asarray(data, dtype=np.float32)
+    if arr.shape[0] != size ** 3:
+        raise ValueError(f"LUT size mismatch: {arr.shape[0]} != {size ** 3}")
+    lut = arr.reshape(size, size, size, 3)  # [b, g, r]
+    result = (lut, size)
+    _LUT_CACHE[path] = (mtime, result)
+    return result
+
+
+class PeroPixApplyLUT:
+    """3D .cube LUT을 이미지에 트라이리니어로 적용한다(models/luts의 .cube). strength로 원본↔LUT
+    블렌드. colour 등 외부 라이브러리 의존 없이 numpy+scipy로 처리(표준 도메인 [0,1] 기준)."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "lut_name": ("STRING", {"default": ""}),
+                "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05}),
+            }
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "apply"
+    CATEGORY = "PeroPixfy"
+
+    def apply(self, image, lut_name="", strength=1.0):
+        path = os.path.join(_LUT_DIR, lut_name) if lut_name else ""
+        if not lut_name or not os.path.isfile(path):
+            return (image,)  # LUT 미지정/없음 → 원본 그대로
+        try:
+            from scipy.ndimage import map_coordinates
+            lut, n = _load_cube(path)
+        except Exception as e:
+            print(f"[PeroPix] LUT 로드 실패({lut_name}): {e}")
+            return (image,)
+        arr = image.cpu().numpy()  # (B,H,W,3) 0~1
+        out = np.empty_like(arr)
+        for i in range(arr.shape[0]):
+            px = arr[i]
+            h, w, _ = px.shape
+            r = np.clip(px[..., 0], 0.0, 1.0) * (n - 1)
+            g = np.clip(px[..., 1], 0.0, 1.0) * (n - 1)
+            b = np.clip(px[..., 2], 0.0, 1.0) * (n - 1)
+            coords = np.stack([b.ravel(), g.ravel(), r.ravel()])  # lut[b,g,r] 순서
+            for c in range(3):
+                out[i][..., c] = map_coordinates(lut[..., c], coords, order=1, mode="nearest").reshape(h, w)
+        out = np.clip(out, 0.0, 1.0)
+        if strength < 1.0:
+            out = arr + (out - arr) * float(strength)
+        return (torch.from_numpy(out).to(image.device, image.dtype),)
+
+
 NODE_CLASS_MAPPINGS = {
     "PeroPixSaveImage": PeroPixSaveImage,
     "PeroPixColorMatch": PeroPixColorMatch,
+    "PeroPixApplyLUT": PeroPixApplyLUT,
 }
 NODE_CLASS_DISPLAY_NAME_MAPPINGS = {
     "PeroPixSaveImage": "PeroPix Save Image",
     "PeroPixColorMatch": "PeroPix Color Match",
+    "PeroPixApplyLUT": "PeroPix Apply LUT",
 }

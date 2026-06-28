@@ -154,6 +154,15 @@ export function buildGraph(p: GenerationParams): ApiGraph {
     image = ['decode', 0]
   }
 
+  // 색보정 LUT(.cube) 적용 — 최종 이미지에 (hires/색매치 다음, 저장 직전).
+  if (p.lut?.name) {
+    g['lut'] = {
+      class_type: 'PeroPixApplyLUT',
+      inputs: { image, lut_name: p.lut.name, strength: p.lut.strength ?? 1 },
+    }
+    image = ['lut', 0]
+  }
+
   // save 설정이 있으면(Multi 탭) 포맷 지정 가능한 PeroPixSaveImage로, 없으면(Single)
   // 코어 SaveImage(PNG)로 저장한다. 둘 다 PNG는 워크플로우 메타데이터를 보존한다.
   g['save'] = p.save

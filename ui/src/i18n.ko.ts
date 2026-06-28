@@ -153,6 +153,9 @@ export const ko: Record<string, string> = {
   '+ Add slot': '+ 슬롯 추가',
   // 저장 설정
   'Save settings': '저장 설정',
+  'LUT (color grade)': 'LUT (색보정)',
+  'LUT strength': 'LUT 강도',
+  'None': '없음',
   'Save format': '저장 포맷',
   'format': '포맷',
   'quality': '품질',

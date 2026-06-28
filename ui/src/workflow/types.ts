@@ -45,6 +45,7 @@ export interface GenerationParams {
   maskImage?: string // inpaint: 흑백 마스크 (흰색 = 다시 그릴 영역)
   hires?: HiresParams
   spectrum?: SpectrumParams
+  lut?: { name: string; strength: number } // models/luts의 .cube 색보정 LUT (name 비면 미적용)
   filenamePrefix: string
   // 설정되면 PeroPixSaveImage(포맷 선택)로 저장. 미설정 시 코어 SaveImage(PNG).
   save?: { format: 'png' | 'jpg' | 'webp'; quality: number }

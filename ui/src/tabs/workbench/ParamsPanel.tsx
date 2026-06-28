@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { enumValues, fetchNodeInfo, installNode, nodeInstallStatus, uploadImage } from '../../api/comfy'
+import { enumValues, fetchLuts, fetchNodeInfo, installNode, nodeInstallStatus, uploadImage } from '../../api/comfy'
 import { useT } from '../../i18n'
 import { MaskEditor } from '../../components/MaskEditor'
-import { NumberField, SelectField } from '../../components/controls'
+import { Field, NumberField, SelectField } from '../../components/controls'
 import { Section } from '../../components/Section'
 import { activeCharOf, useBatch, type ImageFormat } from '../../stores/batch'
 import { useUi } from '../../stores/ui'
@@ -89,6 +89,7 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
   const negativeH = useUi((s) => s.negativeH)
   const setPref = useUi((s) => s.setPref)
   const [meta, setMeta] = useState<Meta | null>(null)
+  const [luts, setLuts] = useState<string[]>([])
   const [editMask, setEditMask] = useState(false)
   // USDU 노드 원클릭 설치 상태
   const [usduInstall, setUsduInstall] = useState<'idle' | 'installing' | 'done' | 'error'>('idle')
@@ -110,6 +111,8 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
       } catch { /* keep polling */ }
     }, 1500)
   }
+
+  useEffect(() => { fetchLuts().then(setLuts) }, []) // models/luts의 LUT 목록 1회 로드
 
   useEffect(() => {
     Promise.all(
@@ -430,6 +433,23 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
           )}
 
         </Section>
+
+        {/* 색보정 LUT(.cube) — models/luts에 파일이 있을 때만 노출. 최종 출력에 적용. */}
+        {luts.length > 0 && (
+          <Section id="lut" title={t('LUT (color grade)')} summary={params.lut?.name ?? t('None')}>
+            <Field label={t('LUT')}>
+              <select value={params.lut?.name ?? ''}
+                onChange={(e) => set({ lut: e.target.value ? { name: e.target.value, strength: params.lut?.strength ?? 1 } : undefined })}>
+                <option value="">{t('None')}</option>
+                {luts.map((l) => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </Field>
+            {params.lut?.name && (
+              <NumberField label={t('LUT strength')} value={params.lut.strength} min={0} max={1} step={0.05}
+                onChange={(v) => set({ lut: { name: params.lut!.name, strength: v } })} />
+            )}
+          </Section>
+        )}
 
         {/* 저장 포맷 — Single 전용(Multi는 Slot 패널의 'Save settings'에서 따로 설정). 세션 지속. */}
         {!embedded && (

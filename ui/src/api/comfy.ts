@@ -96,6 +96,11 @@ export async function nodeInstallStatus(): Promise<{ status: string; error?: str
   return (await fetch('/peropixfy/api/install-node/status')).json()
 }
 
+/** models/luts의 .cube LUT 파일명 목록. */
+export async function fetchLuts(): Promise<string[]> {
+  return (await (await fetch('/peropixfy/api/luts')).json()).luts ?? []
+}
+
 /** 대기 큐 전체 비우기 (실행 중인 작업은 별도 interrupt 필요). */
 export async function clearQueue(): Promise<void> {
   await fetch('/queue', {
