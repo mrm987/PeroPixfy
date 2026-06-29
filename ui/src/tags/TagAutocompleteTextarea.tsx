@@ -2,12 +2,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { formatCount, loadTags, searchTags, tagsLoaded, type TagEntry } from './tagData'
 
-const CATEGORY_LABEL: Record<string, string> = {
+export const CATEGORY_LABEL: Record<string, string> = {
   general: 'general', artist: 'artist', character: 'character', copyright: 'copyright', meta: 'meta',
 }
 
 // 삽입 시 언더바를 띄어쓰기로 변환. 단 ^_^ / >_< 같은 이모티콘의 _는 보존한다.
-const underscoresToSpaces = (tag: string) =>
+export const underscoresToSpaces = (tag: string) =>
   tag.replace(/_/g, (_m, i: number, s: string) => {
     const before = s[i - 1]
     const after = s[i + 1]
@@ -17,7 +17,7 @@ const underscoresToSpaces = (tag: string) =>
 
 // 커서 위치의 '현재 단어'를 구한다. 콤마/개행/괄호/콜론이 단어 경계.
 // 검색은 커서 앞부분만 쓰고, 교체 범위는 단어 뒤 공백까지 흡수한다.
-function getCurrentWord(value: string, cursorPos: number) {
+export function getCurrentWord(value: string, cursorPos: number) {
   const isTagChar = (c: string) => /[a-zA-Z0-9_\-\s]/.test(c)
   let start = cursorPos
   while (start > 0) {
@@ -33,7 +33,7 @@ function getCurrentWord(value: string, cursorPos: number) {
 }
 
 // 스크롤 가능한 조상(패널)을 찾는다 — 드래그 선택 중 패널 고정에 사용.
-function scrollParent(el: HTMLElement | null): HTMLElement | null {
+export function scrollParent(el: HTMLElement | null): HTMLElement | null {
   let n: HTMLElement | null = el?.parentElement ?? null
   while (n) {
     const oy = getComputedStyle(n).overflowY

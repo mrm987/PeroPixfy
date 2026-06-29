@@ -1,3 +1,4 @@
+import { insertTriggers } from '../tags/promptTags'
 import { SPECTRUM_DEFAULTS } from './defaults'
 import type { ApiGraph, ApiNode, GenerationParams } from './types'
 
@@ -14,22 +15,31 @@ export function buildGraph(p: GenerationParams): ApiGraph {
   g['clip'] = { class_type: 'CLIPLoader', inputs: { clip_name: p.clip, type: 'stable_diffusion' } }
   g['vae'] = { class_type: 'VAELoader', inputs: { vae_name: p.vae } }
 
+  // LoRA를 모델(UNet)과 CLIP(텍스트 인코더)에 모두 적용하는 풀 LoraLoader 체인 — 사용자의
+  // 실제 워크플로우('LoRA 로드' 노드)와 동일. 모델만 거는 LoraLoaderModelOnly로는 LoRA의
+  // 텍스트 인코더 키(lora_te_*)가 적용 안 돼 "lora key not loaded" 경고 + 결과가 달라진다.
+  // 스택의 단일 strength를 model/clip 양쪽에 동일 적용(노드 기본값처럼 대칭).
   let model: [string, number] = ['unet', 0]
+  let clip: [string, number] = ['clip', 0]
   for (const [i, lora] of p.loras.filter((l) => l.enabled).entries()) {
     const id = `lora_${i}`
     g[id] = {
-      class_type: 'LoraLoaderModelOnly',
-      inputs: { model, lora_name: lora.relPath, strength_model: lora.strength },
+      class_type: 'LoraLoader',
+      inputs: { model, clip, lora_name: lora.relPath, strength_model: lora.strength, strength_clip: lora.strength },
     }
     model = [id, 0]
+    clip = [id, 1]
   }
 
   // Spectrum(가속) + Mod Guidance + adaptive SMC-CFG는 전용 올인원 샘플러
   // SpectrumKSamplerModGuidance가 한 노드에서 처리한다 (아래 sample()). 별도 모델
   // 패치는 넣지 않으며, 이는 사용자의 실제 워크플로우(그 노드)와 동일한 구성이다.
 
-  g['pos'] = { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.positive } }
-  g['neg'] = { class_type: 'CLIPTextEncode', inputs: { clip: ['clip', 0], text: p.negative } }
+  // 트리거워드는 프롬프트와 분리 관리 — positive 안의 @triggers 토큰 자리에 치환 삽입.
+  const trig = (p.triggers ?? []).filter(Boolean).join(', ')
+  const posText = insertTriggers(p.positive, trig)
+  g['pos'] = { class_type: 'CLIPTextEncode', inputs: { clip, text: posText } }
+  g['neg'] = { class_type: 'CLIPTextEncode', inputs: { clip, text: p.negative } }
 
   // latent 소스: t2i는 빈 latent, i2i/inpaint는 업로드 이미지 인코딩.
   // inpaint 마스크는 별도의 흑백 이미지(흰색 = 다시 그릴 영역)로 업로드 —
@@ -76,7 +86,7 @@ export function buildGraph(p: GenerationParams): ApiGraph {
           class_type: 'SpectrumKSamplerModGuidance',
           inputs: {
             ...base,
-            clip: ['clip', 0],
+            clip,
             quality_tags: spec.qualityTags ?? SPECTRUM_DEFAULTS.qualityTags,
             mod_w_profile: spec.modWProfile ?? SPECTRUM_DEFAULTS.modWProfile,
             adaptive_smc_alpha: spec.smcAlpha ?? SPECTRUM_DEFAULTS.smcAlpha,

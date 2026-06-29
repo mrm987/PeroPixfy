@@ -7,6 +7,7 @@ import {
 } from '../api/gallery'
 import { fetchSettings } from '../api/settings'
 import { buildGraph } from '../workflow/builder'
+import { insertTriggers } from '../tags/promptTags'
 import { ANIMA_DEFAULTS, defaultFilenamePrefix } from '../workflow/defaults'
 import type { GenerationParams, LoraEntry } from '../workflow/types'
 
@@ -23,7 +24,8 @@ const randomSeed = () => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
 interface WorkbenchState {
   params: GenerationParams
   randomizeSeed: boolean
-  autoTriggers: boolean // 로라 active 토글 시 트리거워드 자동 추가/제거 on/off
+  triggerBadges: boolean // 트리거워드 뱃지/@triggers 칩 관리 기능 on/off (off면 프롬프트에 직접 입력)
+  triggerOrder: string[] // 트리거 뱃지 순서(소문자 단어) — 프롬프트 삽입 순서를 정함
   history: HistoryItem[]
   selectedId: string | null
   progress: { promptId: string; value: number; max: number } | null
@@ -39,7 +41,8 @@ interface WorkbenchState {
   init: () => Promise<void>
   set: (patch: Partial<GenerationParams>) => void
   setRandomize: (v: boolean) => void
-  setAutoTriggers: (v: boolean) => void
+  setTriggerBadges: (on: boolean) => void
+  setTriggerOrder: (order: string[]) => void
   setLoras: (loras: LoraEntry[]) => void
   setFlashLora: (relPath: string | null) => void
   setAvailableLoras: (loras: string[]) => void
@@ -79,7 +82,8 @@ const PERSIST_KEY = 'peropix.workbench'
 export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
   params: ANIMA_DEFAULTS,
   randomizeSeed: true,
-  autoTriggers: true,
+  triggerBadges: true,
+  triggerOrder: [],
   history: [],
   selectedId: null,
   progress: null,
@@ -126,7 +130,21 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
 
   set: (patch) => set((s) => ({ params: { ...s.params, ...patch } })),
   setRandomize: (v) => set({ randomizeSeed: v }),
-  setAutoTriggers: (v) => set({ autoTriggers: v }),
+  // 트리거워드 관리 on/off. off→포지티브의 @triggers 토큰 제거 + 해석된 triggers 비움(직접 입력
+  // 모드). on→토큰을 끝에 보장(없을 때). 어느 쪽이든 포지티브 텍스트의 일관성을 맞춘다.
+  setTriggerBadges: (on) => set((s) => {
+    let positive = s.params.positive
+    if (on) {
+      if (!/@triggers/i.test(positive)) {
+        const p = positive.replace(/[\s,]+$/, '')
+        positive = p ? p + ', @triggers' : '@triggers'
+      }
+    } else {
+      positive = positive.replace(/@triggers/gi, '').replace(/,\s*,/g, ', ').replace(/^[\s,]+|[\s,]+$/g, '')
+    }
+    return { triggerBadges: on, params: { ...s.params, positive, triggers: on ? s.params.triggers : [] } }
+  }),
+  setTriggerOrder: (triggerOrder) => set({ triggerOrder }),
   setLoras: (loras) => set((s) => ({ params: { ...s.params, loras } })),
   setFlashLora: (flashLora) => set({ flashLora }),
   setAvailableLoras: (availableLoras) => set({ availableLoras }),
@@ -144,7 +162,22 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
   setNotice: (notice) => set({ notice }),
   setSingleOutput: (singleOutput) => set({ singleOutput }),
   setSave: (patch) => set(patch),
-  restore: (params) => set({ params }),
+  // 기록을 패널로 불러오기. 칩(@triggers)으로 생성된 기록(토큰 원형 positiveTemplate 또는 옛
+  // 토큰형 positive)이면 자동 트리거워드를 켜고 칩을 원위치로 복원한다. 토큰 단서가 전혀 없는
+  // 기록(자동 트리거워드 기능 이전의 옛날 이미지 또는 off로 생성)은 기능을 끄고 평문으로 불러온다
+  // — 안 그러면 빈 칩이 붙고 로라 트리거 상태와 어긋나 이상해진다.
+  restore: (params) => {
+    const { positiveTemplate, ...rest } = params
+    const tokenSrc = positiveTemplate && /@triggers/i.test(positiveTemplate)
+      ? positiveTemplate
+      : (/@triggers/i.test(rest.positive) ? rest.positive : null)
+    if (tokenSrc) {
+      set({ triggerBadges: true, params: { ...rest, positive: tokenSrc } })
+    } else {
+      const positive = rest.positive.replace(/@triggers/gi, '').replace(/,\s*,/g, ', ').replace(/^[\s,]+|[\s,]+$/g, '')
+      set({ triggerBadges: false, params: { ...rest, positive, triggers: [] } })
+    }
+  },
   select: (promptId) => set({ selectedId: promptId }),
 
   star: async (promptId) => {
@@ -206,11 +239,20 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
         ? `Generating without ${skipped.length} not-installed LoRA(s): ${skipped.map((l) => l.relPath).join(', ')}`
         : null,
     })
+    // 기록/스타일 참고용: positive의 @triggers를 실제 트리거워드로 치환해 저장하되, 무손실
+    // 복원을 위해 토큰 원형(positiveTemplate)도 함께 보관. (제출 그래프는 graphParams로 그대로.)
+    const trig = (graphParams.triggers ?? []).filter(Boolean).join(', ')
+    const hasToken = /@triggers/i.test(graphParams.positive)
+    const storeParams = {
+      ...graphParams,
+      positive: insertTriggers(graphParams.positive, trig),
+      ...(hasToken ? { positiveTemplate: graphParams.positive } : {}),
+    }
     try {
       const promptId = await submitPrompt(buildGraph(graphParams))
       set((s) => ({
         history: [
-          { promptId, params: graphParams, imageUrls: [], status: 'pending' as const, starred: false },
+          { promptId, params: storeParams, imageUrls: [], status: 'pending' as const, starred: false },
           ...s.history,
         ],
         selectedId: promptId,
@@ -218,7 +260,7 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
         // 위 history/record에 그대로 보존된다.
         ...(randomizeSeed ? { params: { ...s.params, seed: randomSeed() } } : {}),
       }))
-      await recordGeneration(promptId, graphParams)
+      await recordGeneration(promptId, storeParams)
     } catch (e) {
       set({ error: String(e) })
     }
@@ -283,7 +325,7 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
   },
 }), {
   name: PERSIST_KEY,
-  partialize: (s) => ({ params: s.params, randomizeSeed: s.randomizeSeed, autoTriggers: s.autoTriggers, singleOutput: s.singleOutput, format: s.format, quality: s.quality }),
+  partialize: (s) => ({ params: s.params, randomizeSeed: s.randomizeSeed, triggerBadges: s.triggerBadges, triggerOrder: s.triggerOrder, singleOutput: s.singleOutput, format: s.format, quality: s.quality }),
   // 앱 업데이트로 params에 새 필드가 생겨도 기본값으로 채워지도록 병합
   merge: (persisted, current) => {
     const p = (persisted ?? {}) as Partial<WorkbenchState>

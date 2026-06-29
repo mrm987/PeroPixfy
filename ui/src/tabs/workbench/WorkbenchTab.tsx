@@ -75,7 +75,7 @@ export function WorkbenchTab() {
     // 이미지 전환을 시작하면 = 이미지를 관리하려는 것 → 입력란 포커스를 풀어, 이어지는
     // Delete가 프롬프트가 아니라 선택한 이미지에 적용되게 한다.
     const el = document.activeElement as HTMLElement | null
-    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) el.blur()
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) el.blur()
     navigate(e.deltaY > 0 ? 1 : -1)
   }
 
@@ -106,8 +106,8 @@ export function WorkbenchTab() {
   // 프리뷰 보는 중 키보드: ←/→ 전환, Delete 삭제. 입력란/모달에선 무시.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const el = document.activeElement
-      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return
+      const el = document.activeElement as HTMLElement | null
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
       if (maskTarget || saveTarget) return
       if (e.key === 'ArrowLeft') { e.preventDefault(); navigate(-1) }
       else if (e.key === 'ArrowRight') { e.preventDefault(); navigate(1) }

@@ -268,9 +268,14 @@ export const ko: Record<string, string> = {
 
   // LoRA 스택/피커
   'LoRAs ({n}/{m})': '로라 ({n}/{m})',
-  'Auto trigger words': '트리거워드 자동',
-  'Auto-add/remove a LoRA’s trigger words to the prompt when toggling it on/off':
-    '로라를 켜고 끌 때 그 로라의 트리거워드를 프롬프트에 자동 추가/제거',
+  'Trigger words': '트리거워드',
+  'Auto trigger words': '자동 트리거워드',
+  'Off: type trigger words directly in the prompt': 'off: 트리거워드를 프롬프트에 직접 입력',
+  '— inserted at': '— 삽입 위치:',
+  'Click to turn off (saved to the LoRA)': '클릭하면 off (로라에 저장)',
+  'Click to turn on': '클릭하면 on',
+  'Drag to set where trigger words are inserted': '드래그해서 트리거워드 삽입 위치를 정하세요',
+  '@triggers: where trigger words are inserted (drag to move)': '@triggers: 트리거워드가 들어갈 위치 (드래그로 이동)',
   '+ Add LoRA': '+ 로라 추가',
   '{name} — not installed (excluded on generate)': '{name} — 미설치 (생성 시 제외됨)',
   '— select LoRA —': '— 로라 선택 —',

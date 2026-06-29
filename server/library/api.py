@@ -409,6 +409,20 @@ async def api_favorite(request):
     return web.json_response({"ok": True})
 
 
+@routes.post("/peropixfy/api/library/disabled-triggers")
+async def api_disabled_triggers(request):
+    """이 로라에서 기본 off로 둘 트리거워드 목록 저장(쉼표구분). 트리거 뱃지 on/off의 영구 기본값."""
+    data = await request.json()
+    rel = data.get("rel_path")
+    if not rel:
+        return web.json_response({"ok": False, "error": "rel_path required"}, status=400)
+    words = data.get("disabled_triggers") or ""
+    if isinstance(words, list):
+        words = ", ".join(str(w) for w in words)
+    db.set_disabled_triggers(rel, words)
+    return web.json_response({"ok": True})
+
+
 @routes.post("/peropixfy/api/library/upload-thumb")
 async def api_upload_thumb(request):
     reader = await request.multipart()

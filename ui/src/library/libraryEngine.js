@@ -2505,6 +2505,9 @@ function openEdit(l) {
     if (res.ok) {
       Object.assign(l, res.lora);
       renderGrid();
+      // 편집(트리거워드 등)을 React 스토어에도 즉시 반영 — 트리거 뱃지/생성용 params.triggers가
+      // 옛 값을 쓰지 않도록. 새 배열 참조로 넘겨 React가 변경을 감지하게 한다.
+      if (lmOpts.onLorasRefreshed) lmOpts.onLorasRefreshed(loras.slice());
       overlay.remove();
       toast("Saved");
     } else {

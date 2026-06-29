@@ -5,6 +5,7 @@ export interface LoraRecord {
   file_name: string
   name: string
   trigger_words: string
+  disabled_triggers: string // 기본 off로 둘 트리거워드(쉼표구분) — 트리거 뱃지 영구 기본값
   thumb_url: string
   thumb_type: string // 'image' | 'video'
   base_model: string
@@ -102,6 +103,9 @@ export async function fetchStyles(): Promise<StyleRecord[]> {
 
 export const setFavorite = (relPath: string, favorite: boolean) =>
   post('favorite', { rel_path: relPath, favorite: favorite ? 1 : 0 })
+
+export const setDisabledTriggers = (relPath: string, disabled: string) =>
+  post('disabled-triggers', { rel_path: relPath, disabled_triggers: disabled })
 
 export const updateLora = (relPath: string, fields: LoraEditableFields) =>
   post('update', { rel_path: relPath, ...fields })

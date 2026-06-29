@@ -11,6 +11,8 @@ import { TagAutocompleteTextarea } from '../../tags/TagAutocompleteTextarea'
 import { ANIMA_DEFAULTS, HIRES_DEFAULTS, SPECTRUM_DEFAULTS } from '../../workflow/defaults'
 import type { GenMode } from '../../workflow/types'
 import { LoraStack } from './LoraStack'
+import { PromptEditor } from './PromptEditor'
+import { TriggerBadges } from './TriggerBadges'
 
 const MODES: { id: GenMode; label: string }[] = [
   { id: 't2i', label: 'T2I' },
@@ -75,6 +77,10 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
   const set = embedded ? setCharBase : wbSet
   const randomizeSeed = useWorkbench((s) => s.randomizeSeed)
   const setRandomize = useWorkbench((s) => s.setRandomize)
+  const triggerBadges = useWorkbench((s) => s.triggerBadges)
+  const setTriggerBadges = useWorkbench((s) => s.setTriggerBadges)
+  // LoRA 설치목록은 스캔 후 갱신되는 store의 availableLoras를 쓴다(meta.loras는 마운트 시 1회 고정).
+  const availableLoras = useWorkbench((s) => s.availableLoras)
   const generate = useWorkbench((s) => s.generate)
   const stop = useWorkbench((s) => s.stop)
   const clearQueue = useWorkbench((s) => s.clearQueue)
@@ -113,6 +119,21 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
   }
 
   useEffect(() => { fetchLuts().then(setLuts) }, []) // models/luts의 LUT 목록 1회 로드
+
+  // Single에서 트리거 관리 on이면 positive에 @triggers 토큰을 보장(빌더가 그 자리에 삽입),
+  // off면 토큰 제거(직접 입력 모드). 저장된 상태와 텍스트의 일관성을 마운트 시 맞춘다.
+  // embedded(Multi base)는 칩/토큰을 쓰지 않음.
+  useEffect(() => {
+    if (embedded) return
+    const has = /@triggers/i.test(params.positive)
+    if (triggerBadges && !has) {
+      const p = params.positive.replace(/[\s,]+$/, '')
+      set({ positive: p ? p + ', @triggers' : '@triggers' })
+    } else if (!triggerBadges && has) {
+      set({ positive: params.positive.replace(/@triggers/gi, '').replace(/,\s*,/g, ', ').replace(/^[\s,]+|[\s,]+$/g, '') })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     Promise.all(
@@ -246,18 +267,46 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
         </Section>
 
         <Section id="loras" title={t('LoRAs')}>
-          <LoraStack available={meta?.loras ?? []}
+          <LoraStack available={availableLoras}
             loras={params.loras}
-            setLoras={(loras) => set({ loras })}
-            positive={params.positive}
-            setPositive={(positive) => set({ positive })} />
+            setLoras={(loras) => set({ loras })} />
+          {/* 자동 트리거워드 on/off. 체크박스+제목 한 줄, 체크 시 같은 줄에 삽입위치(@triggers 칩)
+              표시 + 아래에 뱃지. off면 체크박스만(최소화) + 프롬프트에 직접 입력. */}
+          {!embedded && (
+            <>
+              <div className="trig-feature">
+                <label className="checkbox trig-feature-toggle"
+                  title={t('Off: type trigger words directly in the prompt')}>
+                  <input type="checkbox" checked={triggerBadges}
+                    onChange={(e) => setTriggerBadges(e.target.checked)} />
+                  {' '}{t('Auto trigger words')}
+                </label>
+                {triggerBadges && (
+                  <span className="trig-feature-hint">
+                    {t('— inserted at')}{' '}
+                    <span className="trig-badge anchor static"
+                      title={t('@triggers: where trigger words are inserted (drag to move)')}>@triggers</span>
+                  </span>
+                )}
+              </div>
+              {triggerBadges && <TriggerBadges />}
+            </>
+          )}
         </Section>
 
-        <Section id="positive" title={t('Positive')} summary={promptSummary(params.positive)}>
-          <TagAutocompleteTextarea rows={8} value={params.positive} placeholder={t('positive')}
-            style={{ height: promptH ?? undefined }}
-            onMouseUp={(e) => { const h = e.currentTarget.offsetHeight; if (h && h !== promptH) setPref({ promptH: h }) }}
-            onChange={(v) => set({ positive: v })} />
+        <Section id="positive" title={t('Positive')} summary={promptSummary(params.positive.replace(/@triggers/gi, '').replace(/,\s*,/g, ', '))}>
+          {/* 트리거 관리 on(Single)이면 @triggers 인라인 칩 에디터, off거나 Multi base면 일반 자동완성 textarea. */}
+          {!embedded && triggerBadges ? (
+            <PromptEditor value={params.positive} placeholder={t('positive')}
+              style={{ height: promptH ?? undefined }}
+              onMouseUp={(e) => { const h = e.currentTarget.offsetHeight; if (h && h !== promptH) setPref({ promptH: h }) }}
+              onChange={(v) => set({ positive: v })} />
+          ) : (
+            <TagAutocompleteTextarea rows={8} value={params.positive} placeholder={t('positive')}
+              style={{ height: promptH ?? undefined }}
+              onMouseUp={(e) => { const h = e.currentTarget.offsetHeight; if (h && h !== promptH) setPref({ promptH: h }) }}
+              onChange={(v) => set({ positive: v })} />
+          )}
         </Section>
         <Section id="negative" title={t('Negative')} summary={promptSummary(params.negative)}>
           <TagAutocompleteTextarea rows={4} value={params.negative} placeholder={t('negative')}

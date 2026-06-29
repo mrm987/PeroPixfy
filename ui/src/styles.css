@@ -143,6 +143,49 @@ button:disabled { opacity: 0.4; cursor: default; }
 .install-hint { font-size: 11px; color: var(--muted); background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; line-height: 1.4; }
 .install-hint code { font-size: 10.5px; background: var(--bg); padding: 3px 6px; border-radius: 4px; word-break: break-all; user-select: all; }
 .lora-stack { display: flex; flex-direction: column; gap: 4px; }
+/* 자동 트리거워드 on/off — 체크박스+제목 한 줄, 체크 시 같은 줄에 삽입위치(@triggers) 인라인 */
+.trig-feature { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-top: 6px; }
+.trig-feature-toggle { font-size: 11px; color: var(--muted); padding-bottom: 0; }
+.trig-feature-hint { font-size: 11px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
+/* 트리거워드 뱃지 — 활성 로라의 트리거를 프롬프트와 분리해 따로 관리 */
+.trigger-badges { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.trigger-badges .muted { color: var(--muted); font-weight: normal; }
+.trig-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.trig-badge {
+  font-size: 11px; padding: 2px 8px; border-radius: 10px; cursor: pointer;
+  background: #2f6df0; color: #fff; border: 1px solid transparent;
+  user-select: none; white-space: nowrap;
+}
+.trig-badge.off { background: var(--bg); color: var(--muted); text-decoration: line-through; border-color: var(--border); }
+.trig-badge.over { outline: 2px dashed #2f6df0; outline-offset: 1px; }
+.trig-badge:hover { filter: brightness(1.12); }
+/* 포지티브 프롬프트 에디터 — 텍스트는 일반 편집, @triggers만 인라인 칩(아래) */
+.prompt-editor {
+  width: 100%; min-height: 120px; margin-bottom: 8px;
+  padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--panel); color: var(--fg);
+  white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
+  overflow-y: auto; resize: vertical; cursor: text; line-height: 1.5;
+}
+.prompt-editor:focus { outline: none; border-color: var(--accent); }
+.prompt-editor:empty::before { content: attr(data-placeholder); color: var(--muted); }
+/* @triggers 인라인 칩 — 텍스트와 같은 비중. 글씨에 딱 맞는 얇은 테두리. */
+.trig-badge.anchor {
+  display: inline-block; vertical-align: baseline;
+  font-size: inherit; line-height: inherit;
+  padding: 0 4px; margin: 0 1px; border-radius: 4px;
+  background: rgba(47, 109, 240, 0.16); border: 1px solid rgba(47, 109, 240, 0.7);
+  color: #9ec5ff; cursor: grab; white-space: nowrap;
+}
+.trig-badge.anchor:active { cursor: grabbing; }
+.trig-badge.anchor.static { cursor: default; } /* 안내용(드래그 불가) */
+/* 활성 트리거워드가 없을 때 — 위치는 유지, 비활성처럼 흐리게 */
+.trig-badge.anchor.empty { background: var(--bg); border-color: var(--border); color: var(--muted); }
+/* 드래그 중 원본 칩은 흐리게, 커서엔 고스트가 따라옴 */
+.prompt-editor.dragging-chip .trig-anchor { opacity: 0.35; }
+.drag-ghost { position: fixed; top: -1000px; left: -1000px; pointer-events: none; opacity: 0.9; }
+/* 드롭하면 @triggers가 놓일 위치 표시 */
+.drop-caret { position: fixed; width: 2px; background: var(--accent); border-radius: 1px; pointer-events: none; z-index: 9999; box-shadow: 0 0 4px var(--accent); }
 .lora-stack-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .auto-trig { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); cursor: pointer; white-space: nowrap; }
 .auto-trig input { margin: 0; cursor: pointer; }

@@ -20,6 +20,7 @@ COLUMNS = [
     "name", "trigger_words", "civitai_url", "thumb_url", "thumb_type",
     "thumb_source_url",
     "local_thumb", "base_model", "base_category", "nsfw", "trigger_candidates",
+    "disabled_triggers",
     "source", "user_edited", "scanned", "favorite",
     "latest_version_id", "latest_version_name", "latest_published_at",
     "updated_at",
@@ -54,6 +55,7 @@ def init(db_path):
                 base_category TEXT DEFAULT '',
                 nsfw INTEGER DEFAULT 0,
                 trigger_candidates TEXT DEFAULT '[]',
+                disabled_triggers TEXT DEFAULT '',
                 source TEXT DEFAULT '',
                 user_edited INTEGER DEFAULT 0,
                 scanned INTEGER DEFAULT 0,
@@ -63,6 +65,8 @@ def init(db_path):
         """)
         # migrate older DBs that predate a column
         cols = [r[1] for r in c.execute("PRAGMA table_info(loras)").fetchall()]
+        if "disabled_triggers" not in cols:
+            c.execute("ALTER TABLE loras ADD COLUMN disabled_triggers TEXT DEFAULT ''")
         if "favorite" not in cols:
             c.execute("ALTER TABLE loras ADD COLUMN favorite INTEGER DEFAULT 0")
         if "base_category" not in cols:
@@ -249,6 +253,14 @@ def set_favorite(rel_path, fav):
     with _LOCK, _conn() as c:
         c.execute("UPDATE loras SET favorite=? WHERE rel_path=?",
                   (1 if fav else 0, rel_path))
+
+
+def set_disabled_triggers(rel_path, value):
+    """이 로라에서 기본 off로 둘 트리거워드(쉼표구분)를 저장. 트리거 뱃지 on/off의 영구
+    기본값. favorite처럼 user_edited를 건드리지 않아 trigger_words 자동 갱신을 막지 않는다."""
+    with _LOCK, _conn() as c:
+        c.execute("UPDATE loras SET disabled_triggers=? WHERE rel_path=?",
+                  (value or "", rel_path))
 
 
 def set_thumb_url(rel_path, url):

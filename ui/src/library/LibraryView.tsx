@@ -27,9 +27,13 @@ export function LibraryView({ initialMode }: { initialMode?: DrawerMode }) {
       onApplyStyle: (style: unknown) => useLibrary.getState().applyStyle(style as never),
       onAddLora: (relPath: string) => useLibrary.getState().addLoraToWorkbench(relPath),
       onRemoveLora: (relPath: string) => useLibrary.getState().removeLoraFromWorkbench(relPath),
-      // 엔진이 로라 목록을 새로 받을 때마다 React 스토어도 같은 데이터로 갱신 —
-      // 드롭다운 썸네일이 Style-Manager 탭과 항상 일치하도록(소스 통일).
-      onLorasRefreshed: (loras: unknown) => useLibrary.setState({ loras: loras as never }),
+      // 엔진이 로라 목록을 새로 받을 때마다(스캔 완료·편집 저장 등) React 스토어도 같은
+      // 데이터로 갱신하고, 설치목록(/object_info 기반 availableLoras)도 다시 받는다 —
+      // 실행 중 추가·스캔한 LoRA를 로라 스택/피커가 즉시 인식하도록.
+      onLorasRefreshed: (loras: unknown) => {
+        useLibrary.setState({ loras: loras as never })
+        useWorkbench.getState().refreshAvailable()
+      },
     })
 
     // 현재 작업대 스택을 뱃지에 반영하고, 이후 스택 변경을 구독해 따라간다.

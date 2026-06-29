@@ -30,6 +30,10 @@ export interface GenerationParams {
   loras: LoraEntry[]
   positive: string
   negative: string
+  triggers?: string[] // 활성·on 트리거워드(순서대로). 빌더가 positive의 @triggers 토큰 자리에 삽입.
+  // 기록 전용: positive를 실제 트리거워드로 치환해 저장할 때(참고/스타일용), 무손실 복원을 위해
+  // @triggers 토큰이 든 원본 positive를 함께 보관. 불러올(restore) 때 칩 버전으로 되돌리는 데 사용.
+  positiveTemplate?: string
   seed: number
   steps: number
   cfg: number

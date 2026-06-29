@@ -2,9 +2,11 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import {
   fetchLoras, fetchScanStatus, fetchStyles, fetchUpdateStatus,
-  setFavorite, startCheckUpdates, startScan, updateLora, updateStyle,
+  setDisabledTriggers, setFavorite, startCheckUpdates, startScan, updateLora, updateStyle,
   type LoraEditableFields, type LoraRecord, type ScanState, type StyleRecord, type UpdateState,
 } from '../api/library'
+import { reTokenize } from '../tags/promptTags'
+import { activeTriggerWords, collectTriggers } from '../tags/triggers'
 import type { LoraEntry } from '../workflow/types'
 import { activeCharOf, useBatch } from './batch'
 import { useUi } from './ui'
@@ -51,6 +53,7 @@ interface LibraryState {
 
   load: () => Promise<void>
   toggleFavorite: (relPath: string) => Promise<void>
+  toggleTriggerDisabled: (relPath: string, word: string, disable: boolean) => Promise<void>
   saveLora: (relPath: string, fields: LoraEditableFields) => Promise<void>
   renameStyle: (id: number, name: string) => Promise<void>
   rescan: (force?: boolean) => Promise<void>
@@ -132,6 +135,21 @@ export const useLibrary = create<LibraryState>()(persist((set, get) => {
       await setFavorite(relPath, !!next)
     },
 
+    // 이 로라에서 해당 트리거워드를 기본 off(disable=true)/on(false)로 저장. 트리거 뱃지의
+    // 영구 기본값 — DB에 disabled_triggers로 기록(어디서 그 로라를 추가하든 기억).
+    toggleTriggerDisabled: async (relPath, word, disable) => {
+      const lora = get().loras.find((l) => l.rel_path === relPath)
+      if (!lora) return
+      const cur = (lora.disabled_triggers || '').split(',').map((s) => s.trim()).filter(Boolean)
+      const lower = word.toLowerCase()
+      const has = cur.some((w) => w.toLowerCase() === lower)
+      if (disable === has) return // 이미 원하는 상태
+      const next = disable ? [...cur, word] : cur.filter((w) => w.toLowerCase() !== lower)
+      const value = next.join(', ')
+      set({ loras: get().loras.map((l) => (l.rel_path === relPath ? { ...l, disabled_triggers: value } : l)) })
+      await setDisabledTriggers(relPath, value)
+    },
+
     saveLora: async (relPath, fields) => {
       await updateLora(relPath, fields)
       set({ loras: get().loras.map((l) => (l.rel_path === relPath ? { ...l, ...fields } : l)) })
@@ -207,8 +225,18 @@ export const useLibrary = create<LibraryState>()(persist((set, get) => {
         ...(style.seed > 0 ? { seed: style.seed } : {}),
       }
       // Multi 탭에 있으면 현재 캐릭터 base에, 아니면 작업대(workbench)에 적용한다.
-      if (useUi.getState().tab === 'batch') useBatch.getState().setCharBase(patch)
-      else wb.set(patch)
+      if (useUi.getState().tab === 'batch') {
+        useBatch.getState().setCharBase(patch) // Multi base는 평문(칩 미사용)
+      } else {
+        // Single에서 자동 트리거워드가 켜져 있으면, 스타일에 박힌 실제 트리거워드 자리를
+        // @triggers 칩으로 되돌린다(적용 로라들로 트리거워드를 계산해 위치 복원). 빌더가 그
+        // 자리에 다시 트리거워드를 넣으므로 중복되지 않는다.
+        if (wb.triggerBadges) {
+          const trig = activeTriggerWords(collectTriggers(loras, get().loras, wb.triggerOrder)).join(', ')
+          patch.positive = reTokenize(style.positive_prompt, trig)
+        }
+        wb.set(patch)
+      }
       wb.setNotice(
         ckptMissing
           ? `Style model '${style.checkpoint}' is not installed — keeping the current model.`
