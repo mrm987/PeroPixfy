@@ -160,7 +160,8 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     setOpen(true)
   }
 
-  // 선택한 태그를 현재 단어 위치에 삽입(뒤에 ', ' 접미사). 칩은 건드리지 않음.
+  // 선택한 태그를 현재 단어 위치에 삽입(뒤에 ', '). 단어 범위를 선택한 뒤 execCommand로 교체해
+  // 네이티브 undo(Ctrl+Z)가 동작하게 한다. 칩은 건드리지 않음. (onInput이 onChange 처리)
   const insertTag = (tagValue: string) => {
     const ctx = caretText()
     if (!ctx) return
@@ -172,27 +173,13 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
       suffix = end + 1 < text.length && text[end + 1] !== ' ' ? ' ' : ''
     }
     const insertText = leading + underscoresToSpaces(tagValue) + suffix
-    ctx.node.textContent = text.slice(0, fullStart) + insertText + text.slice(end)
-    const caret = Math.min(fullStart + insertText.length, ctx.node.textContent.length)
-    const s = window.getSelection()!
-    const r = document.createRange(); r.setStart(ctx.node, caret); r.collapse(true)
-    s.removeAllRanges(); s.addRange(r)
-    setOpen(false)
-    onChange(serialize(true))
-  }
-
-  // Enter/붙여넣기는 항상 평문으로 삽입(블록 요소·서식 생성 차단).
-  const insertTextAtCaret = (text: string) => {
     const s = window.getSelection()
-    if (!s || s.rangeCount === 0) return
-    const range = s.getRangeAt(0)
-    range.deleteContents()
-    const node = document.createTextNode(text)
-    range.insertNode(node)
-    range.setStartAfter(node); range.collapse(true)
-    s.removeAllRanges(); s.addRange(range)
-    ref.current?.normalize()
-    onChange(serialize(true))
+    if (!s) return
+    const r = document.createRange()
+    r.setStart(ctx.node, fullStart); r.setEnd(ctx.node, Math.min(end, text.length))
+    s.removeAllRanges(); s.addRange(r)
+    document.execCommand('insertText', false, insertText)
+    setOpen(false)
   }
 
   const onInput = () => {
@@ -231,31 +218,26 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     return off
   }
 
-  // value offset 위치에 캐럿 복원(칩은 앞/뒤 경계로).
-  const setCaretAtValueOffset = (off: number) => {
-    const el = ref.current
-    const s = window.getSelection()
-    if (!el || !s) return
+  // value offset → DOM 위치(텍스트노드와 offset, 또는 칩 앞/뒤 경계). 셀렉션 지정에 사용.
+  const locateValueOffset = (off: number): { node: Node; offset: number } => {
+    const el = ref.current!
     const kids = Array.from(el.childNodes)
     let acc = 0
     for (let i = 0; i < kids.length; i++) {
       const n = kids[i]
       const len = isChip(n) ? TOKEN.length : (n.textContent?.length ?? 0)
       if (off <= acc + len) {
-        const r = document.createRange()
-        if (isChip(n)) r.setStart(el, off <= acc ? i : i + 1)
-        else r.setStart(n, Math.max(0, Math.min(off - acc, n.textContent?.length ?? 0)))
-        r.collapse(true); s.removeAllRanges(); s.addRange(r)
-        return
+        if (isChip(n)) return { node: el, offset: off <= acc ? i : i + 1 }
+        return { node: n, offset: Math.max(0, Math.min(off - acc, n.textContent?.length ?? 0)) }
       }
       acc += len
     }
-    const r = document.createRange(); r.selectNodeContents(el); r.collapse(false)
-    s.removeAllRanges(); s.addRange(r)
+    return { node: el, offset: kids.length }
   }
 
-  // Backspace/Delete 직접 처리 — 칩(토큰)은 절대 지우지 않고 그 외 한 글자만 지운다. 개행을
-  // 지워 윗줄과 합치는 것도 정상 동작하며, 브라우저가 칩을 통째로 지워버리는 quirk를 막는다.
+  // Backspace/Delete 직접 처리 — 칩(토큰)은 절대 지우지 않고 그 외 한 글자만 지운다. 지울 글자
+  // 하나를 명시적으로 선택한 뒤 execCommand('delete')로 지워서 (a)브라우저가 칩을 통째로 지우는
+  // quirk를 피하고 (b)네이티브 undo(Ctrl+Z)가 동작하게 한다. 개행을 지우면 윗줄과 합쳐진다.
   const manualDelete = (forward: boolean) => {
     const c = caretValueOffset()
     if (c == null) return
@@ -265,10 +247,14 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     const target = forward ? c : c - 1 // 지울 글자 위치
     if (target < 0 || target >= value.length) return // 지울 것 없음
     if (tIdx >= 0 && target >= tIdx && target < tEnd) return // 토큰이면 차단(칩 보존)
-    const next = value.slice(0, target) + value.slice(target + 1)
-    buildDom(next)
-    setCaretAtValueOffset(forward ? c : c - 1)
-    onChange(next)
+    const a = locateValueOffset(target)
+    const b = locateValueOffset(target + 1)
+    const s = window.getSelection()
+    if (!s) return
+    const r = document.createRange()
+    r.setStart(a.node, a.offset); r.setEnd(b.node, b.offset)
+    s.removeAllRanges(); s.addRange(r)
+    document.execCommand('delete')
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -291,7 +277,7 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
       manualDelete(e.key === 'Delete')
       return
     }
-    if (e.key === 'Enter') { e.preventDefault(); insertTextAtCaret('\n') }
+    if (e.key === 'Enter') { e.preventDefault(); document.execCommand('insertText', false, '\n') }
   }
 
   // 칩을 클릭하면 클릭 위치(좌/우 절반)에 따라 칩 앞/뒤에 캐럿을 놓는다 — 칩 경계에서도
@@ -314,7 +300,7 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
 
   const onPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
     e.preventDefault()
-    insertTextAtCaret(e.clipboardData.getData('text/plain'))
+    document.execCommand('insertText', false, e.clipboardData.getData('text/plain'))
   }
 
   // 텍스트 드래그 선택 중 에디터 내부만 스크롤되게 하고, 패널(스크롤 조상)은 고정한다 —
