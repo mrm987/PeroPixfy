@@ -50,6 +50,11 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
   const [pos, setPos] = useState({ left: 0, top: 0, maxWidth: 350 })
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dragging = useRef(false)
+  // 자체 undo/redo 스택 — 붙여넣기·Enter·삭제·자동완성은 직접 DOM을 고쳐 브라우저 네이티브
+  // undo에 안 잡히므로, 값 스냅샷을 직접 쌓아 Ctrl+Z/Ctrl+Y를 제공한다.
+  const hist = useRef<{ stack: { value: string; caret: number }[]; i: number; ts: number; typing: boolean }>({
+    stack: [], i: -1, ts: 0, typing: false,
+  })
   // 드롭하면 @triggers가 놓일 위치를 보여주는 캐럿 마커(뷰포트 좌표).
   const [marker, setMarker] = useState<{ left: number; top: number; height: number } | null>(null)
 
@@ -105,6 +110,7 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     try { el.setAttribute('contenteditable', 'plaintext-only') }
     catch { el.setAttribute('contenteditable', 'true') }
     buildDom(value)
+    pushHistory() // 초기 상태 적립
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -116,8 +122,11 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     // value에 @triggers 토큰이 있는데 DOM에 칩이 없으면(예: 직접입력 모드에서 받은 텍스트가
     // 복원됨) 반드시 재구성해 토큰이 '리터럴 텍스트'로 남지 않게 한다.
     const tokenButNoChip = /@triggers/i.test(value) && !el.querySelector('.trig-anchor')
-    if (serialize(true) !== value || tokenButNoChip) buildDom(value)
-    else {
+    if (serialize(true) !== value || tokenButNoChip) {
+      // 외부 변경(불러오기·스타일·칩 이동 등) → 재구성하고 undo 히스토리를 새 문서로 리셋.
+      buildDom(value)
+      hist.current = { stack: [{ value, caret: value.length }], i: 0, ts: 0, typing: false }
+    } else {
       const chip = el.querySelector('.trig-anchor') as HTMLElement | null
       if (chip) { chip.title = chipTitle(); chip.classList.toggle('empty', !hasTriggers) }
     }
@@ -160,8 +169,65 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     setOpen(true)
   }
 
-  // 선택한 태그를 현재 단어 위치에 삽입(뒤에 ', '). 단어 범위를 선택한 뒤 execCommand로 교체해
-  // 네이티브 undo(Ctrl+Z)가 동작하게 한다. 칩은 건드리지 않음. (onInput이 onChange 처리)
+  // value offset에 캐럿 지정(locateValueOffset은 아래에 정의 — 클로저로 호출 시점엔 준비됨).
+  const setCaret = (off: number) => {
+    const loc = locateValueOffset(off)
+    const s = window.getSelection()
+    if (!s) return
+    const r = document.createRange()
+    try { r.setStart(loc.node, loc.offset) } catch { return }
+    r.collapse(true); s.removeAllRanges(); s.addRange(r)
+  }
+
+  // 현재 값/캐럿을 히스토리에 적립(타이핑은 600ms 내 연속이면 한 단계로 병합).
+  const pushHistory = (coalesceTyping = false) => {
+    const h = hist.current
+    const value = serialize(true)
+    const caret = caretValueOffset() ?? value.length
+    const cur = h.stack[h.i]
+    if (cur && cur.value === value) { cur.caret = caret; return }
+    const now = Date.now()
+    if (coalesceTyping && h.typing && cur && now - h.ts < 600) {
+      h.stack[h.i] = { value, caret }
+    } else {
+      h.stack = h.stack.slice(0, h.i + 1) // redo 가지 버림
+      h.stack.push({ value, caret })
+      h.i = h.stack.length - 1
+      if (h.stack.length > 300) { h.stack.shift(); h.i-- }
+    }
+    h.ts = now
+    h.typing = coalesceTyping
+  }
+
+  // Ctrl+Z(-1)/Ctrl+Y(+1) — 히스토리에서 값/캐럿 복원.
+  const applyHistory = (dir: -1 | 1) => {
+    const h = hist.current
+    const ni = h.i + dir
+    if (ni < 0 || ni >= h.stack.length) return
+    h.i = ni
+    const { value, caret } = h.stack[ni]
+    buildDom(value)
+    setCaret(caret)
+    onChange(value)
+    setOpen(false)
+  }
+
+  // 캐럿 위치에 평문 삽입(붙여넣기·Enter). Range로 직접 삽입 후 onChange + 히스토리 적립.
+  const insertTextAtCaret = (text: string) => {
+    const s = window.getSelection()
+    if (!s || s.rangeCount === 0) return
+    const range = s.getRangeAt(0)
+    range.deleteContents()
+    const node = document.createTextNode(text)
+    range.insertNode(node)
+    range.setStartAfter(node); range.collapse(true)
+    s.removeAllRanges(); s.addRange(range)
+    ref.current?.normalize()
+    onChange(serialize(true))
+    pushHistory()
+  }
+
+  // 선택한 태그를 현재 단어 위치에 삽입(뒤에 ', '). 칩은 건드리지 않음.
   const insertTag = (tagValue: string) => {
     const ctx = caretText()
     if (!ctx) return
@@ -173,23 +239,24 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
       suffix = end + 1 < text.length && text[end + 1] !== ' ' ? ' ' : ''
     }
     const insertText = leading + underscoresToSpaces(tagValue) + suffix
+    ctx.node.textContent = text.slice(0, fullStart) + insertText + text.slice(end)
+    const caret = Math.min(fullStart + insertText.length, ctx.node.textContent.length)
     const s = window.getSelection()
-    if (!s) return
-    const r = document.createRange()
-    r.setStart(ctx.node, fullStart); r.setEnd(ctx.node, Math.min(end, text.length))
-    s.removeAllRanges(); s.addRange(r)
-    document.execCommand('insertText', false, insertText)
+    if (s) { const r = document.createRange(); r.setStart(ctx.node, caret); r.collapse(true); s.removeAllRanges(); s.addRange(r) }
     setOpen(false)
+    onChange(serialize(true))
+    pushHistory()
   }
 
   const onInput = () => {
     const el = ref.current
-    // 안전망: 어떤 경로로든 칩이 사라졌으면(전체선택 후 덮어쓰기 등) 끝에 복원 — 절대 삭제되지 않게.
+    // 안전망: 어떤 경로로든 칩이 사라졌으면 끝에 복원 — 절대 삭제되지 않게.
     if (el && !el.querySelector('.trig-anchor')) {
       const txt = serialize(true)
       buildDom(txt ? txt + ', @triggers' : '@triggers')
     }
     onChange(serialize(true))
+    pushHistory(true) // 타이핑: 시간 기준 병합
     if (debounce.current) clearTimeout(debounce.current)
     debounce.current = setTimeout(runAutocomplete, 50)
   }
@@ -235,9 +302,8 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     return { node: el, offset: kids.length }
   }
 
-  // Backspace/Delete 직접 처리 — 칩(토큰)은 절대 지우지 않고 그 외 한 글자만 지운다. 지울 글자
-  // 하나를 명시적으로 선택한 뒤 execCommand('delete')로 지워서 (a)브라우저가 칩을 통째로 지우는
-  // quirk를 피하고 (b)네이티브 undo(Ctrl+Z)가 동작하게 한다. 개행을 지우면 윗줄과 합쳐진다.
+  // Backspace/Delete 직접 처리 — 칩(토큰)은 절대 지우지 않고 그 외 한 글자만 지운다(개행을
+  // 지우면 윗줄과 합쳐짐). 직접 DOM을 고치고 히스토리를 적립한다(브라우저 칩-삭제 quirk 회피).
   const manualDelete = (forward: boolean) => {
     const c = caretValueOffset()
     if (c == null) return
@@ -247,17 +313,21 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     const target = forward ? c : c - 1 // 지울 글자 위치
     if (target < 0 || target >= value.length) return // 지울 것 없음
     if (tIdx >= 0 && target >= tIdx && target < tEnd) return // 토큰이면 차단(칩 보존)
-    const a = locateValueOffset(target)
-    const b = locateValueOffset(target + 1)
-    const s = window.getSelection()
-    if (!s) return
-    const r = document.createRange()
-    r.setStart(a.node, a.offset); r.setEnd(b.node, b.offset)
-    s.removeAllRanges(); s.addRange(r)
-    document.execCommand('delete')
+    const next = value.slice(0, target) + value.slice(target + 1)
+    buildDom(next)
+    setCaret(forward ? c : c - 1)
+    onChange(next)
+    pushHistory()
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // 자체 undo/redo (Ctrl+Z / Ctrl+Shift+Z·Ctrl+Y) — 직접 DOM 편집이라 네이티브 undo 미동작.
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'z' || e.key === 'Z' || e.key === 'y' || e.key === 'Y')) {
+      e.preventDefault()
+      const redo = (e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y'
+      applyHistory(redo ? 1 : -1)
+      return
+    }
     if (open && results.length) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(s + 1, results.length - 1)); return }
       if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); return }
@@ -277,7 +347,7 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
       manualDelete(e.key === 'Delete')
       return
     }
-    if (e.key === 'Enter') { e.preventDefault(); document.execCommand('insertText', false, '\n') }
+    if (e.key === 'Enter') { e.preventDefault(); insertTextAtCaret('\n') }
   }
 
   // 칩을 클릭하면 클릭 위치(좌/우 절반)에 따라 칩 앞/뒤에 캐럿을 놓는다 — 칩 경계에서도
@@ -300,7 +370,7 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
 
   const onPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
     e.preventDefault()
-    document.execCommand('insertText', false, e.clipboardData.getData('text/plain'))
+    insertTextAtCaret(e.clipboardData.getData('text/plain'))
   }
 
   // 텍스트 드래그 선택 중 에디터 내부만 스크롤되게 하고, 패널(스크롤 조상)은 고정한다 —
