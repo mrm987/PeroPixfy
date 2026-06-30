@@ -501,7 +501,13 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
         onDrop={onDrop}
         onDragEnd={endDrag}
         onDragLeave={() => setMarker(null)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onBlur={() => {
+          setTimeout(() => setOpen(false), 150)
+          // 포커스가 떠나면 프롬프트란의 텍스트 선택 하이라이트를 해제 — 다른 곳(생성 버튼·이미지 등)
+          // 으로 포커스가 넘어간 뒤 Delete가 선택 이미지에 적용될 때 헷갈리지 않도록.
+          const s = window.getSelection()
+          if (s && ref.current && s.anchorNode && ref.current.contains(s.anchorNode)) s.removeAllRanges()
+        }}
       />
       {marker && createPortal(
         <div className="drop-caret" style={{ left: marker.left, top: marker.top, height: marker.height }} />,
@@ -513,7 +519,7 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
           {results.map((tg, i) => (
             <div key={tg.value + i} className={`tag-ac-item${i === sel ? ' selected' : ''}`}
               onMouseDown={(e) => { e.preventDefault(); insertTag(tg.value) }}
-              onMouseEnter={() => setSel(i)}>
+              onMouseMove={() => setSel(i)}>
               <span className="tag-ac-name" title={tg.label}>{tg.label}</span>
               <span className={`tag-ac-badge ${tg.type}`}>{CATEGORY_LABEL[tg.type] ?? tg.type}</span>
               <span className="tag-ac-count">{formatCount(tg.count)}</span>

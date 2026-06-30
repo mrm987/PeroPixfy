@@ -1038,7 +1038,8 @@ textarea { line-height: 1.45; }
   border-bottom: 1px solid var(--border);
 }
 .tag-ac-item:last-child { border-bottom: none; }
-.tag-ac-item:hover, .tag-ac-item.selected { background: var(--bg); }
+/* :hover 제외 — 정지한 커서 위에 리스트가 떠도 배경이 안 바뀌게(실제 이동·방향키로만 .selected). */
+.tag-ac-item.selected { background: var(--bg); }
 .tag-ac-name {
   flex: 1; min-width: 0;
   font-size: 13px; color: var(--fg);

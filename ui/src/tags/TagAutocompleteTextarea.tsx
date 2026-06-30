@@ -213,7 +213,7 @@ export function TagAutocompleteTextarea({ value, onChange, rows, placeholder, st
           {results.map((t, i) => (
             <div key={t.value + i} className={`tag-ac-item${i === sel ? ' selected' : ''}`}
               onMouseDown={(e) => { e.preventDefault(); insertTag(t.value) }}
-              onMouseEnter={() => setSel(i)}>
+              onMouseMove={() => setSel(i)}>
               <span className="tag-ac-name" title={t.label}>{t.label}</span>
               <span className={`tag-ac-badge ${t.type}`}>{CATEGORY_LABEL[t.type] ?? t.type}</span>
               <span className="tag-ac-count">{formatCount(t.count)}</span>
