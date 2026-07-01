@@ -257,15 +257,28 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     pushHistory()
   }
 
-  const onInput = () => {
+  // DOM이 비정상(칩이 1개가 아니거나, 칩 외의 요소가 섞임)이면 캐럿을 보존하며 평탄화 재구성한다.
+  // 외부 드롭·브라우저 quirk로 편집 불가한 조각(예: contenteditable=false 잔재)이 생겨도 다음
+  // 입력/키에서 자가복구된다. 정상 구조면 아무것도 하지 않음(비용 거의 0).
+  const heal = (): boolean => {
     const el = ref.current
-    // 안전망: 어떤 경로로든 칩이 사라졌으면 끝에 복원 — 절대 삭제되지 않게.
-    if (el && !el.querySelector('.trig-anchor')) {
-      const txt = serialize(true)
-      buildDom(txt ? txt + ', @triggers' : '@triggers')
-    }
+    if (!el) return false
+    const chipCount = el.querySelectorAll('.trig-anchor').length
+    const stray = Array.from(el.childNodes).some((n) => n.nodeType === Node.ELEMENT_NODE && !isChip(n))
+    if (chipCount === 1 && !stray) return false
+    const caret = caretValueOffset()
+    buildDom(serialize(true)) // 칩 하나 + 텍스트로 평탄화(다른 요소는 textContent로 흡수)
+    if (caret != null) setCaret(caret)
     onChange(serialize(true))
-    pushHistory(true) // 타이핑: 시간 기준 병합
+    pushHistory()
+    return true
+  }
+
+  const onInput = () => {
+    if (!heal()) { // 비정상이면 heal이 복구+반영, 정상이면 일반 처리
+      onChange(serialize(true))
+      pushHistory(true) // 타이핑: 시간 기준 병합
+    }
     if (debounce.current) clearTimeout(debounce.current)
     debounce.current = setTimeout(runAutocomplete, 50)
   }
@@ -335,6 +348,7 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    heal() // 비정상 구조면 먼저 복구 — 먹통 행에서 Del/방향키/편집이 다시 되게
     // 자체 undo/redo (Ctrl+Z / Ctrl+Shift+Z·Ctrl+Y) — 직접 DOM 편집이라 네이티브 undo 미동작.
     if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'z' || e.key === 'Z' || e.key === 'y' || e.key === 'Y')) {
       e.preventDefault()
@@ -486,8 +500,10 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     ref.current?.classList.remove('dragging-chip')
   }
   const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    if (!dragging.current) return
+    // 항상 네이티브 드롭을 막는다 — 외부 텍스트/이미지 등이 HTML로 삽입돼 편집 불가한 조각이
+    // 생기는 것(오래 쓰다 특정 행이 먹통 되는 원인)을 원천 차단. 칩 이동만 우리가 처리.
     e.preventDefault()
+    if (!dragging.current) return
     const el = ref.current
     const range = el ? caretRangeFromPoint(e.clientX, e.clientY) : null
     if (el && range) onChange(placeTokenAt(serialize(false), offsetFromRange(el, range)))
