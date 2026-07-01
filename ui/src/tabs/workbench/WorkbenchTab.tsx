@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { openOutputFolder, parseViewUrl, uploadImage } from '../../api/comfy'
+import { createPortal } from 'react-dom'
+import { openOutputFolder, parseViewUrl, thumbUrl, uploadImage } from '../../api/comfy'
 import { useT } from '../../i18n'
 import { MaskEditor } from '../../components/MaskEditor'
 import { Resizer } from '../../components/Resizer'
 import { SaveStyleModal } from '../../components/SaveStyleModal'
 import { useBatch } from '../../stores/batch'
+import { useRefBoard } from '../../stores/refboard'
 import { useUi } from '../../stores/ui'
 import { HISTORY_LIMIT, useWorkbench, type HistoryItem } from '../../stores/workbench'
 import { ParamsPanel } from './ParamsPanel'
+import { RefCanvas } from './RefCanvas'
 
 async function fetchAsBlob(url: string): Promise<Blob> {
   return (await fetch(url)).blob()
@@ -17,6 +20,13 @@ async function fetchAsBlob(url: string): Promise<Blob> {
 // 생성별 고유 키(promptId)를 붙여, 브라우저가 옛(삭제된) 이미지를 캐시에서 보여주지
 // 않고 그 생성의 실제 내용을 받아오게 한다. (imageUrls 원본은 그대로 둬 twin 비교 유지.)
 const bust = (url: string, key: string) => `${url}&v=${encodeURIComponent(key)}`
+
+// 하단 스트립·프리뷰 목록용 축소 썸네일 URL — 원본(수 MB) 대신 작은 webp를 받아 빠르고 렉이 없다.
+// (백엔드 /peropixfy/api/thumb가 캐시된 리사이즈본을 서빙. 캔버스에 넣는 건 원본 유지.)
+const thumbSrc = (url: string, key: string, w: number): string => {
+  const p = parseViewUrl(url)
+  return p ? `${thumbUrl(p, w)}&v=${encodeURIComponent(key)}` : bust(url, key)
+}
 
 export function WorkbenchTab() {
   const t = useT()
@@ -40,6 +50,47 @@ export function WorkbenchTab() {
   const addCharacterFromParams = useBatch((s) => s.addCharacterFromParams)
   const singleW = useUi((s) => s.singleW)
   const setPref = useUi((s) => s.setPref)
+  const canvasOn = useRefBoard((s) => s.enabled)
+  const openCanvas = useRefBoard((s) => s.open)
+  const disableCanvas = useRefBoard((s) => s.disable)
+  const [thumbDrag, setThumbDrag] = useState<{ url: string; x: number; y: number } | null>(null)
+
+  // 썸네일 → 레퍼런스 캔버스 추가: HTML5 DnD는 빠른 드롭에서 데이터가 유실돼, pointer 기반
+  // 커스텀 드래그로 처리(타이밍 이슈 없음). 캔버스 위에서 마우스업하면 그 지점(world)에 추가.
+  const startThumbDrag = (e: React.MouseEvent, url: string) => {
+    if (e.button !== 0) return
+    const sx = e.clientX, sy = e.clientY
+    let active = false
+    const canvasEl = () => document.querySelector('.ref-canvas') as HTMLElement | null
+    const insideCanvas = (x: number, y: number) => {
+      const c = canvasEl(); if (!c) return null
+      const r = c.getBoundingClientRect()
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom ? r : null
+    }
+    const prevUS = document.body.style.userSelect
+    const move = (ev: MouseEvent) => {
+      if (!active) {
+        if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 5) return
+        active = true
+        document.body.style.userSelect = 'none'
+      }
+      setThumbDrag({ url, x: ev.clientX, y: ev.clientY })
+      useRefBoard.getState().setDropHint(!!insideCanvas(ev.clientX, ev.clientY))
+    }
+    const up = (ev: MouseEvent) => {
+      window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up)
+      document.body.style.userSelect = prevUS
+      setThumbDrag(null)
+      useRefBoard.getState().setDropHint(false)
+      if (!active) return // 이동 없음 = 클릭 → onClick(선택)에 맡김
+      const r = insideCanvas(ev.clientX, ev.clientY)
+      if (r) {
+        const v = useRefBoard.getState().view
+        useRefBoard.getState().addItem(url, (ev.clientX - r.left - v.x) / v.scale, (ev.clientY - r.top - v.y) / v.scale)
+      }
+    }
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
+  }
 
   // '캐릭터로 지정' 같은 동작 확인 문구는 잠깐만 띄우고 자동으로 거둔다(영구 잔류 방지).
   // 그 사이 다른 문구(예: 생성 시 미설치 LoRA 안내)로 바뀌었으면 건드리지 않도록, 현재
@@ -109,6 +160,7 @@ export function WorkbenchTab() {
       const el = document.activeElement as HTMLElement | null
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
       if (maskTarget || saveTarget) return
+      if (useRefBoard.getState().enabled) return // 캔버스 모드에선 히스토리 이동/삭제 비활성
       if (e.key === 'ArrowLeft') { e.preventDefault(); navigate(-1) }
       else if (e.key === 'ArrowRight') { e.preventDefault(); navigate(1) }
       else if (e.key === 'Delete') { e.preventDefault(); void deleteSelected() }
@@ -177,8 +229,10 @@ export function WorkbenchTab() {
       <ParamsPanel width={singleW} />
       <Resizer value={singleW} onChange={(w) => setPref({ singleW: w })} dir={1} min={300} max={720} />
       <div className="result-area">
-        <div className="result-main" onWheel={onPreviewWheel}>
-          {selected?.status === 'done' && selected.imageUrls.length > 0 ? (
+        <div className="result-main" onWheel={canvasOn ? undefined : onPreviewWheel}>
+          {canvasOn ? (
+            <RefCanvas />
+          ) : selected?.status === 'done' && selected.imageUrls.length > 0 ? (
             <img src={bust(selected.imageUrls[0], selected.promptId)} alt="result"
               onLoad={(e) => setDims({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })} />
           ) : selected?.status === 'pending' ? (
@@ -244,6 +298,12 @@ export function WorkbenchTab() {
             {/* 길이가 변하는 시드·해상도는 맨 뒤로 — 뒤에 밀릴 게 없어 버튼들이 고정된다. */}
             <span className="seed">{t('seed {n}', { n: selected.params.seed })}</span>
             <span className="res-tag">{dims?.w ?? selected.params.width} × {dims?.h ?? selected.params.height}</span>
+            {/* 캔버스 토글은 가장 오른쪽에. */}
+            <button className={`ref-toggle${canvasOn ? ' active' : ''}`}
+              title={t('Reference canvas — gather images on one board to check the mood')}
+              onClick={() => (canvasOn ? disableCanvas() : openCanvas())}>
+              {t('🖼 Canvas')}
+            </button>
           </div>
         )}
         {multiSel.size > 0 && (
@@ -260,9 +320,12 @@ export function WorkbenchTab() {
               <button key={h.promptId}
                 className={`history-thumb${h.promptId === selected?.promptId ? ' active' : ''}${multiSel.has(h.promptId) ? ' multi' : ''}`}
                 onClick={(e) => onThumbClick(e, h.promptId)}
-                title={t('seed {n} · Ctrl+click to multi-select', { n: h.params.seed })}>
+                onMouseDown={(e) => { if (canvasOn && h.status === 'done' && h.imageUrls[0]) startThumbDrag(e, bust(h.imageUrls[0], h.promptId)) }}
+                title={canvasOn ? t('Drag onto the canvas to add') : t('seed {n} · Ctrl+click to multi-select', { n: h.params.seed })}>
                 {h.status === 'done' && h.imageUrls[0] ? (
-                  <img src={bust(h.imageUrls[0], h.promptId)} alt="" />
+                  // 축소 썸네일(작은 webp) 사용 — 원본 대신이라 빠르고 개수 많아도 렉 없음.
+                  // 네이티브 이미지 드래그는 막아 커스텀 pointer 드래그(startThumbDrag)와 충돌 방지.
+                  <img src={thumbSrc(h.imageUrls[0], h.promptId, 150)} alt="" draggable={false} decoding="async" />
                 ) : (
                   <span>{h.status === 'pending' ? '…' : '✕'}</span>
                 )}
@@ -283,6 +346,11 @@ export function WorkbenchTab() {
           <SaveStyleModal item={saveTarget} onClose={() => setSaveTarget(null)} />
         )}
       </div>
+      {thumbDrag && createPortal(
+        <img className="thumb-drag-ghost" src={thumbDrag.url} alt=""
+          style={{ left: thumbDrag.x + 14, top: thumbDrag.y + 14 }} />,
+        document.body,
+      )}
     </div>
   )
 }

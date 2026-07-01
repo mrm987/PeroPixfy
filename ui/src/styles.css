@@ -272,8 +272,31 @@ button:disabled { opacity: 0.4; cursor: default; }
   border-radius: 8px;
   overflow: hidden;
   min-height: 0;
+  position: relative; /* RefCanvas(absolute)가 이 영역을 채우도록 */
 }
 .result-main img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
+
+/* ===== PureRef 스타일 레퍼런스 캔버스 ===== */
+/* 이미지는 transform:scale 없이 실제 화면 픽셀 크기로 렌더(줌해도 선명). 좌드래그=마퀴 선택. */
+.ref-canvas { position: absolute; inset: 0; overflow: hidden; background: #15151a; cursor: default; }
+.ref-canvas.panning { cursor: grabbing; }
+.ref-canvas.drop { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.ref-item { position: absolute; cursor: move; }
+.ref-item img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; box-shadow: 0 3px 12px rgba(0, 0, 0, 0.6); border-radius: 2px; }
+.ref-item.sel { outline: 2px solid var(--accent); }
+.ref-del {
+  position: absolute; top: -11px; right: -11px; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--error); color: #fff; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; cursor: pointer; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5); z-index: 3;
+}
+.ref-resize { position: absolute; right: -7px; bottom: -7px; width: 16px; height: 16px; background: var(--accent); border: 2px solid #fff; border-radius: 3px; cursor: nwse-resize; z-index: 2; }
+.ref-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; pointer-events: none; text-align: center; padding: 0 20px; }
+/* 썸네일 → 캔버스 커스텀 드래그 고스트(커서 따라감) */
+.thumb-drag-ghost { position: fixed; width: 96px; height: auto; max-height: 96px; object-fit: contain; pointer-events: none; z-index: 9999; opacity: 0.85; border-radius: 4px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6); }
+.ref-marquee { position: absolute; border: 1px solid var(--accent); background: rgba(124, 108, 240, 0.15); pointer-events: none; z-index: 5; }
+.ref-toolbar { position: absolute; top: 8px; right: 8px; display: flex; align-items: center; gap: 4px; z-index: 10; }
+.ref-toolbar button { padding: 4px 8px; font-size: 13px; background: rgba(30, 30, 36, 0.9); }
+.ref-hint { color: var(--muted); font-size: 10.5px; margin-right: 6px; background: rgba(21, 21, 26, 0.75); padding: 3px 7px; border-radius: 6px; }
 .placeholder { color: var(--muted); }
 .placeholder.error { color: var(--error); }
 
@@ -755,7 +778,9 @@ button.danger:hover { background: #7f1d1d; color: #fff; border-color: #7f1d1d; }
 .insert-block { font-size: 11px; font-weight: 600; color: #fff; background: var(--accent); padding: 1px 6px; margin: 0 2px; border-radius: 4px; cursor: grab; white-space: nowrap; }
 .insert-block:active { cursor: grabbing; }
 /* 에셋 선별(큐레이션) 모달 */
-.curate { width: 98vw; height: 96vh; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; padding: 12px; gap: 10px; }
+/* 모달 대신 Multi 우측 캔버스 영역(.batch-canvas-area, relative)을 채우는 인라인 패널 — Single
+   프리뷰와 일관되고, iframe 밖의 ComfyUI 상단 바와 겹치지 않는다. */
+.curate { position: absolute; inset: 0; z-index: 7; background: var(--panel); display: flex; flex-direction: column; gap: 10px; padding: 8px; }
 .curate-head { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .curate-title { color: var(--fg); font-weight: 600; }
 .curate-zoom { display: flex; align-items: center; gap: 6px; }

@@ -9,9 +9,10 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), h
 const bust = (url: string, key: string) => `${url}&v=${encodeURIComponent(key)}`
 // 하단 스트립은 다운스케일 thumb 엔드포인트로 로드 — 다수 이미지(슬롯당 최대 64장)일 때
 // 풀해상도 N장 대신 가벼운 썸네일 N장만 받는다. 큰 이미지는 현재 1장만 풀해상도.
+// 폭은 싱글 하단 스트립과 통일(150) — 둘 다 작게 표시되고, 같은 폭이면 캐시도 공유된다.
 const stripSrc = (url: string, key: string) => {
   const p = parseViewUrl(url)
-  return `${p ? thumbUrl(p, 240) : url}&v=${encodeURIComponent(key)}`
+  return `${p ? thumbUrl(p, 150) : url}&v=${encodeURIComponent(key)}`
 }
 
 /**
@@ -112,8 +113,7 @@ export function CurationModal({ slotId, aspect, onClose }: { slotId: string; asp
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="curate" onClick={(e) => e.stopPropagation()}>
+    <div className="curate">
         <div className="curate-head">
           <span className="curate-title">{slotName || t('(untitled)')} · {safeIdx + 1}/{items.length}</span>
           <div className="curate-zoom">
@@ -152,7 +152,6 @@ export function CurationModal({ slotId, aspect, onClose }: { slotId: string; asp
             </div>
           ))}
         </div>
-      </div>
     </div>
   )
 }

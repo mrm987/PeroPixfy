@@ -219,10 +219,10 @@ export function BatchTab() {
             }}
           />
         )}
+        {/* 큐레이션 — 전체화면 모달 대신 우측 캔버스 영역을 채우는 인라인 패널(Single 프리뷰와 일관). */}
+        {curateSlot && <CurationModal slotId={curateSlot} aspect={aspect} onClose={() => setCurateSlot(null)} />}
         </div>
       </div>
-
-      {curateSlot && <CurationModal slotId={curateSlot} aspect={aspect} onClose={() => setCurateSlot(null)} />}
     </div>
   )
 }

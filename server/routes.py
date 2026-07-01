@@ -10,6 +10,7 @@ import json
 import mimetypes
 import os
 import subprocess
+import threading
 
 import folder_paths
 from aiohttp import web
@@ -65,10 +66,69 @@ async def assets(request):
     )
 
 
-# 캔버스 줌아웃 시 풀해상도 대신 쓰는 다운스케일 썸네일 캐시.
-# 플러그인 하위(data/)에 두어 배포 시에도 설치 경로를 따라간다.
+# 캔버스 줌아웃/스트립 썸네일 캐시(다운스케일 webp). 플러그인 하위(data/)에 둔다.
+# 키가 (경로|mtime|폭) 해시라 원본 삭제·재생성·다른 폭 요청으로 고아 파일이 쌓인다 →
+# 용량 상한을 두고 오래된 것부터 프루닝(전체 초기화 X → 최근 썸네일은 남아 초기 로드 빠름).
 _THUMB_DIR = os.path.join(PLUGIN_DIR, "data", "thumbs_out")
 os.makedirs(_THUMB_DIR, exist_ok=True)
+_THUMB_CACHE_MAX_BYTES = 300 * 1024 * 1024  # 300MB 상한
+_THUMB_CACHE_MAX_FILES = 8000
+_thumb_write_count = 0
+
+
+def _prune_thumb_cache():
+    """캐시가 상한(용량·개수)을 넘으면 mtime 오래된 것부터 삭제. 이미지 처리 없이 stat/삭제만
+    하므로 빠르고, 백그라운드 스레드에서 호출해 요청/시작을 막지 않는다."""
+    try:
+        entries = []
+        total = 0
+        with os.scandir(_THUMB_DIR) as it:
+            for e in it:
+                try:
+                    st = e.stat()
+                except OSError:
+                    continue
+                if not e.is_file():
+                    continue
+                entries.append((st.st_mtime, st.st_size, e.path))
+                total += st.st_size
+        if total <= _THUMB_CACHE_MAX_BYTES and len(entries) <= _THUMB_CACHE_MAX_FILES:
+            return
+        entries.sort(key=lambda x: x[0])  # 오래된 것 먼저
+        i = 0
+        while i < len(entries) and (total > _THUMB_CACHE_MAX_BYTES or len(entries) - i > _THUMB_CACHE_MAX_FILES):
+            _, size, path = entries[i]
+            try:
+                os.remove(path)
+                total -= size
+            except OSError:
+                pass
+            i += 1
+    except Exception:
+        pass
+
+
+def _prune_thumb_cache_async():
+    threading.Thread(target=_prune_thumb_cache, daemon=True).start()
+
+
+def _delete_thumbs_for(src_abspath):
+    """해당 원본의 모든 캐시 썸네일(폭·mtime 무관)을 삭제 — 파일명이 sha1(경로)_ 로 시작한다.
+    싱글/멀티에서 이미지를 지울 때 함께 호출해 고아 썸네일이 남지 않게 한다."""
+    try:
+        prefix = hashlib.sha1(src_abspath.encode("utf-8")).hexdigest() + "_"
+        with os.scandir(_THUMB_DIR) as it:
+            for e in it:
+                if e.name.startswith(prefix):
+                    try:
+                        os.remove(e.path)
+                    except OSError:
+                        pass
+    except Exception:
+        pass
+
+
+_prune_thumb_cache_async()  # 시작 시 1회 정리(백그라운드)
 
 
 @routes.get("/peropixfy/api/thumb")
@@ -106,10 +166,12 @@ async def output_thumb(request):
         mtime = int(os.path.getmtime(src))
     except OSError:
         return web.Response(status=404)
-    key = hashlib.sha1(f"{src}|{mtime}|{w}".encode("utf-8")).hexdigest()
-    cache = os.path.join(_THUMB_DIR, f"{key}.webp")
+    # 파일명 = sha1(경로)_mtime_폭.webp — 원본 삭제 시 sha1(경로)_* 만 지우면 폭·mtime
+    # 몰라도 그 원본의 썸네일을 전부 정리할 수 있다.
+    cache = os.path.join(_THUMB_DIR, f"{hashlib.sha1(src.encode('utf-8')).hexdigest()}_{mtime}_{w}.webp")
 
     if not os.path.isfile(cache):
+        global _thumb_write_count
         try:
             with Image.open(src) as img:
                 img = img.convert("RGB")
@@ -120,6 +182,10 @@ async def output_thumb(request):
         except Exception:
             # 썸네일 생성 실패 시 프론트가 풀해상도 /view로 폴백하도록 404.
             return web.Response(status=404)
+        # 새 캐시가 쌓이므로 가끔 상한 프루닝(백그라운드).
+        _thumb_write_count += 1
+        if _thumb_write_count % 300 == 0:
+            _prune_thumb_cache_async()
 
     return web.FileResponse(
         cache,
@@ -561,6 +627,7 @@ def _delete_output_files(files, keep=None):
                     os.remove(path)
                 except OSError:
                     pass
+            _delete_thumbs_for(path)  # 캐시 썸네일도 정리
             continue
         if ftype != "output":
             continue
@@ -571,6 +638,7 @@ def _delete_output_files(files, keep=None):
                 os.remove(path)
             except OSError:
                 pass
+            _delete_thumbs_for(path)  # 캐시 썸네일도 정리
 
 
 @routes.post("/peropixfy/api/gallery/delete")
