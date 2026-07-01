@@ -221,7 +221,7 @@ export const ko: Record<string, string> = {
   '📂 Folder': '📂 폴더',
   '★ Starred': '★ 즐겨찾기',
   '☆ All': '☆ 전체',
-  'seed {n} · Ctrl+click to multi-select': '시드 {n} · Ctrl+클릭으로 다중선택',
+  'seed {n} · Ctrl+click toggle · Shift+click range': '시드 {n} · Ctrl+클릭 토글 · Shift+클릭 범위선택',
   'No starred images': '즐겨찾기한 이미지 없음',
 
   // Library / Style / LoRA

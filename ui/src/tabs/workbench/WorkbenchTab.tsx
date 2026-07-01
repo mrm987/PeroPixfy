@@ -33,6 +33,7 @@ export function WorkbenchTab() {
   const [maskTarget, setMaskTarget] = useState<string | null>(null)
   const [saveTarget, setSaveTarget] = useState<HistoryItem | null>(null)
   const [multiSel, setMultiSel] = useState<Set<string>>(new Set())
+  const anchorRef = useRef<string | null>(null) // Shift 범위 선택 기준(직전 일반/Ctrl 클릭)
   const [starredOnly, setStarredOnly] = useState(false)
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null) // 현재 본 이미지의 실제 해상도
   const stripRef = useRef<HTMLDivElement>(null)
@@ -115,7 +116,10 @@ export function WorkbenchTab() {
     if (visible.length === 0 || steps === 0) return
     const i = visible.findIndex((h) => h.promptId === selected?.promptId)
     const next = i < 0 ? 0 : Math.min(Math.max(i + steps, 0), visible.length - 1)
-    if (visible[next] && visible[next].promptId !== selected?.promptId) select(visible[next].promptId)
+    if (visible[next] && visible[next].promptId !== selected?.promptId) {
+      select(visible[next].promptId)
+      anchorRef.current = visible[next].promptId // 휠/방향키 이동도 Shift 범위선택 기준을 갱신
+    }
   }
 
   // 큰 프리뷰에서 휠로 전/후 이미지 전환. 휠 이벤트 1건 = 1장(델타 크기는 무시하고
@@ -164,6 +168,7 @@ export function WorkbenchTab() {
       if (e.key === 'ArrowLeft') { e.preventDefault(); navigate(-1) }
       else if (e.key === 'ArrowRight') { e.preventDefault(); navigate(1) }
       else if (e.key === 'Delete') { e.preventDefault(); void deleteSelected() }
+      else if (e.key === 'Escape' && multiSel.size) { e.preventDefault(); setMultiSel(new Set()) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -190,6 +195,18 @@ export function WorkbenchTab() {
 
   // 프리뷰 리스트 클릭: Ctrl/⌘+클릭은 다중선택 토글, 일반 클릭은 보기 전환.
   const onThumbClick = (e: React.MouseEvent, promptId: string) => {
+    // Shift+클릭: 기준(앵커, 없으면 현재 보던 것)부터 클릭한 것까지 범위를 선택. 앵커는 유지.
+    if (e.shiftKey) {
+      const anchor = anchorRef.current ?? selected?.promptId ?? null
+      const ai = anchor ? visible.findIndex((h) => h.promptId === anchor) : -1
+      const bi = visible.findIndex((h) => h.promptId === promptId)
+      if (ai >= 0 && bi >= 0) {
+        const [lo, hi] = ai <= bi ? [ai, bi] : [bi, ai]
+        setMultiSel(new Set(visible.slice(lo, hi + 1).map((h) => h.promptId)))
+        select(promptId)
+        return
+      }
+    }
     if (e.ctrlKey || e.metaKey) {
       setMultiSel((prev) => {
         const next = new Set(prev)
@@ -206,6 +223,7 @@ export function WorkbenchTab() {
       setMultiSel(new Set())
       select(promptId)
     }
+    anchorRef.current = promptId // 다음 Shift 범위 선택의 기준
   }
 
   const sendToI2i = async (imageUrl: string) => {
@@ -229,7 +247,8 @@ export function WorkbenchTab() {
       <ParamsPanel width={singleW} />
       <Resizer value={singleW} onChange={(w) => setPref({ singleW: w })} dir={1} min={300} max={720} />
       <div className="result-area">
-        <div className="result-main" onWheel={canvasOn ? undefined : onPreviewWheel}>
+        <div className="result-main" onWheel={canvasOn ? undefined : onPreviewWheel}
+          onClick={canvasOn ? undefined : () => { if (multiSel.size) setMultiSel(new Set()) }}>
           {canvasOn ? (
             <RefCanvas />
           ) : selected?.status === 'done' && selected.imageUrls.length > 0 ? (
@@ -321,7 +340,7 @@ export function WorkbenchTab() {
                 className={`history-thumb${h.promptId === selected?.promptId ? ' active' : ''}${multiSel.has(h.promptId) ? ' multi' : ''}`}
                 onClick={(e) => onThumbClick(e, h.promptId)}
                 onMouseDown={(e) => { if (canvasOn && h.status === 'done' && h.imageUrls[0]) startThumbDrag(e, bust(h.imageUrls[0], h.promptId)) }}
-                title={canvasOn ? t('Drag onto the canvas to add') : t('seed {n} · Ctrl+click to multi-select', { n: h.params.seed })}>
+                title={canvasOn ? t('Drag onto the canvas to add') : t('seed {n} · Ctrl+click toggle · Shift+click range', { n: h.params.seed })}>
                 {h.status === 'done' && h.imageUrls[0] ? (
                   // 축소 썸네일(작은 webp) 사용 — 원본 대신이라 빠르고 개수 많아도 렉 없음.
                   // 네이티브 이미지 드래그는 막아 커스텀 pointer 드래그(startThumbDrag)와 충돌 방지.

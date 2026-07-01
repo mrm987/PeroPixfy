@@ -212,18 +212,27 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     setOpen(false)
   }
 
-  // 캐럿 위치에 평문 삽입(붙여넣기·Enter). Range로 직접 삽입 후 onChange + 히스토리 적립.
-  const insertTextAtCaret = (text: string) => {
+  // 캐럿/선택 위치에 평문 삽입(붙여넣기·Enter·선택삭제). value(문자열) 공간에서 처리해 칩(토큰)을
+  // 원자적으로 다룬다: 붙여넣기 텍스트의 @triggers 리터럴은 제거(칩 중복 방지)하고, 선택이 칩을
+  // 포함해도 칩을 정확히 하나 보존한다. DOM은 buildDom으로 재구성.
+  const insertTextAtCaret = (raw: string) => {
+    const el = ref.current
     const s = window.getSelection()
-    if (!s || s.rangeCount === 0) return
+    if (!el || !s || s.rangeCount === 0) return
+    const text = raw.replace(/@triggers/gi, '')
     const range = s.getRangeAt(0)
-    range.deleteContents()
-    const node = document.createTextNode(text)
-    range.insertNode(node)
-    range.setStartAfter(node); range.collapse(true)
-    s.removeAllRanges(); s.addRange(range)
-    ref.current?.normalize()
-    onChange(serialize(true))
+    const a = valueOffsetOf(range.startContainer, range.startOffset)
+    const b = range.collapsed ? a : valueOffsetOf(range.endContainer, range.endOffset)
+    const [lo, hi] = a <= b ? [a, b] : [b, a]
+    const value = serialize(true)
+    const tIdx = value.search(/@triggers/i)
+    const tokenInSel = tIdx >= 0 && tIdx < hi && tIdx + TOKEN.length > lo // 선택이 칩을 포함?
+    const next = tokenInSel
+      ? value.slice(0, lo) + text + TOKEN + value.slice(hi) // 칩 보존 — 삽입 텍스트 뒤에 유지
+      : value.slice(0, lo) + text + value.slice(hi)
+    buildDom(next)
+    setCaret(lo + text.length)
+    onChange(next)
     pushHistory()
   }
 
@@ -261,28 +270,33 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     debounce.current = setTimeout(runAutocomplete, 50)
   }
 
-  // 캐럿의 value(@triggers=TOKEN.length 문자) 기준 offset. 칩 내부엔 캐럿이 못 들어가므로
-  // 토큰은 원자적. collapsed가 아니거나 에디터 밖이면 null.
-  const caretValueOffset = (): number | null => {
+  // (container, offset) → value(@triggers=TOKEN.length 문자) 기준 offset. 칩은 원자적으로 셈.
+  const valueOffsetOf = (container: Node, offset: number): number => {
     const el = ref.current
-    const s = window.getSelection()
-    if (!el || !s || s.rangeCount === 0) return null
-    const range = s.getRangeAt(0)
-    if (!range.collapsed || !el.contains(range.startContainer)) return null
-    const target = range.startContainer
+    if (!el) return 0
     let off = 0
-    if (target === el) {
-      for (let i = 0; i < range.startOffset; i++) {
+    if (container === el) {
+      for (let i = 0; i < offset; i++) {
         const n = el.childNodes[i]
         off += isChip(n) ? TOKEN.length : (n?.textContent?.length ?? 0)
       }
       return off
     }
     for (const n of Array.from(el.childNodes)) {
-      if (n === target || n.contains(target)) return off + range.startOffset
+      if (n === container || n.contains(container)) return off + offset
       off += isChip(n) ? TOKEN.length : (n.textContent?.length ?? 0)
     }
     return off
+  }
+
+  // 현재 collapsed 캐럿의 value 기준 offset. collapsed가 아니거나 에디터 밖이면 null.
+  const caretValueOffset = (): number | null => {
+    const el = ref.current
+    const s = window.getSelection()
+    if (!el || !s || s.rangeCount === 0) return null
+    const range = s.getRangeAt(0)
+    if (!range.collapsed || !el.contains(range.startContainer)) return null
+    return valueOffsetOf(range.startContainer, range.startOffset)
   }
 
   // value offset → DOM 위치(텍스트노드와 offset, 또는 칩 앞/뒤 경계). 셀렉션 지정에 사용.
@@ -335,16 +349,14 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
       if (e.key === 'Escape') { e.preventDefault(); setOpen(false); return }
     }
     if (e.key === 'Backspace' || e.key === 'Delete') {
+      e.preventDefault(); setOpen(false)
       const s = window.getSelection()
       const range = s && s.rangeCount ? s.getRangeAt(0) : null
-      const chip = ref.current?.querySelector('.trig-anchor')
       if (range && !range.collapsed) {
-        // 선택 삭제: 칩을 포함하면 차단, 아니면 브라우저 기본 동작.
-        if (chip && range.intersectsNode(chip)) e.preventDefault()
-        return
+        insertTextAtCaret('') // 선택 삭제(칩은 value 공간에서 보존)
+      } else {
+        manualDelete(e.key === 'Delete')
       }
-      e.preventDefault(); setOpen(false)
-      manualDelete(e.key === 'Delete')
       return
     }
     if (e.key === 'Enter') { e.preventDefault(); insertTextAtCaret('\n') }

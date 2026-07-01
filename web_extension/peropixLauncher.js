@@ -13,8 +13,8 @@ function lang() {
   return (navigator.language || "").toLowerCase().startsWith("ko") ? "ko" : "en";
 }
 const STR = {
-  en: { title: "PeroPixfy (ESC to return)", tooltip: "PeroPixfy fullscreen", open: "Open PeroPixfy fullscreen" },
-  ko: { title: "PeroPixfy (ESC로 복귀)", tooltip: "PeroPixfy 전체화면", open: "PeroPixfy 전체화면 열기" },
+  en: { title: "PeroPixfy", tooltip: "PeroPixfy fullscreen", open: "Open PeroPixfy fullscreen" },
+  ko: { title: "PeroPixfy", tooltip: "PeroPixfy 전체화면", open: "PeroPixfy 전체화면 열기" },
 };
 const t = () => STR[lang()];
 
