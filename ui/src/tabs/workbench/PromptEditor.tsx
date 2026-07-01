@@ -7,8 +7,18 @@ import { CATEGORY_LABEL, getCurrentWord, scrollParent, underscoresToSpaces } fro
 import { formatCount, loadTags, searchTags, tagsLoaded, type TagEntry } from '../../tags/tagData'
 
 const TOKEN = '@triggers'
+
+// 붙여넣기: 웹/윈도우 줄바꿈(CRLF/CR)을 LF로 정규화 — CR가 줄 끝에 안 보이게 남아 Del을 두 번 눌러야 하던 문제 방지. 그 외 문자는 건드리지 않음.
+const sanitizePaste = (s: string): string => s.replace(/\r\n?/g, '\n')
+
 const isChip = (n: Node | null | undefined): n is HTMLElement =>
   !!n && n.nodeType === Node.ELEMENT_NODE && (n as HTMLElement).classList?.contains('trig-anchor')
+
+// value(문자열) 기준 자식 노드 길이: 칩=TOKEN 길이, <br>=개행 1글자, 텍스트=글자수.
+// 줄바꿈은 텍스트의 '\n'이 아니라 <br>로 표현한다 — contenteditable에서 '\n'으로 만든 빈 줄은
+// 캐럿이 들어가지 않기 때문(빈 줄 편집 불가 문제의 원인).
+const nodeLen = (n: Node | null | undefined): number =>
+  !n ? 0 : isChip(n) ? TOKEN.length : n.nodeName === 'BR' ? 1 : (n.textContent?.length ?? 0)
 
 // 드롭 지점(좌표) → 캐럿 Range. 브라우저별 API 차이를 흡수.
 function caretRangeFromPoint(x: number, y: number): Range | null {
@@ -90,7 +100,16 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     return chip
   }
 
-  // value 문자열로부터 DOM 재구성(텍스트 노드 + 칩 하나, 플랫 구조).
+  // 텍스트를 el에 붙이되 '\n'은 <br>로 — 빈 줄에도 캐럿이 들어가게.
+  const appendText = (el: HTMLElement, text: string) => {
+    const parts = text.split('\n')
+    parts.forEach((part, i) => {
+      if (i > 0) el.appendChild(document.createElement('br'))
+      if (part) el.appendChild(document.createTextNode(part))
+    })
+  }
+
+  // value 문자열로부터 DOM 재구성(텍스트 노드 + <br> + 칩 하나, 플랫 구조).
   const buildDom = (str: string) => {
     const el = ref.current
     if (!el) return
@@ -98,9 +117,9 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     const before = idx >= 0 ? str.slice(0, idx) : str
     const after = idx >= 0 ? str.slice(idx + TOKEN.length) : ''
     el.textContent = ''
-    if (before) el.appendChild(document.createTextNode(before))
+    appendText(el, before)
     el.appendChild(makeChip()) // 토큰이 없어도 칩은 항상 하나 표시(끝)
-    if (after) el.appendChild(document.createTextNode(after))
+    appendText(el, after)
   }
 
   // 마운트: plaintext-only로 설정(서식 붙여넣기·리치 편집 차단) + 최초 렌더.
@@ -264,7 +283,7 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     const el = ref.current
     if (!el) return false
     const chipCount = el.querySelectorAll('.trig-anchor').length
-    const stray = Array.from(el.childNodes).some((n) => n.nodeType === Node.ELEMENT_NODE && !isChip(n))
+    const stray = Array.from(el.childNodes).some((n) => n.nodeType === Node.ELEMENT_NODE && !isChip(n) && n.nodeName !== 'BR')
     if (chipCount === 1 && !stray) return false
     const caret = caretValueOffset()
     buildDom(serialize(true)) // 칩 하나 + 텍스트로 평탄화(다른 요소는 textContent로 흡수)
@@ -289,15 +308,12 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     if (!el) return 0
     let off = 0
     if (container === el) {
-      for (let i = 0; i < offset; i++) {
-        const n = el.childNodes[i]
-        off += isChip(n) ? TOKEN.length : (n?.textContent?.length ?? 0)
-      }
+      for (let i = 0; i < offset; i++) off += nodeLen(el.childNodes[i])
       return off
     }
     for (const n of Array.from(el.childNodes)) {
       if (n === container || n.contains(container)) return off + offset
-      off += isChip(n) ? TOKEN.length : (n.textContent?.length ?? 0)
+      off += nodeLen(n)
     }
     return off
   }
@@ -312,17 +328,17 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     return valueOffsetOf(range.startContainer, range.startOffset)
   }
 
-  // value offset → DOM 위치(텍스트노드와 offset, 또는 칩 앞/뒤 경계). 셀렉션 지정에 사용.
+  // value offset → DOM 위치. 텍스트노드는 그 안 offset, <br>/칩은 el 레벨의 앞/뒤 경계.
   const locateValueOffset = (off: number): { node: Node; offset: number } => {
     const el = ref.current!
     const kids = Array.from(el.childNodes)
     let acc = 0
     for (let i = 0; i < kids.length; i++) {
       const n = kids[i]
-      const len = isChip(n) ? TOKEN.length : (n.textContent?.length ?? 0)
+      const len = nodeLen(n)
       if (off <= acc + len) {
-        if (isChip(n)) return { node: el, offset: off <= acc ? i : i + 1 }
-        return { node: n, offset: Math.max(0, Math.min(off - acc, n.textContent?.length ?? 0)) }
+        if (n.nodeType === Node.TEXT_NODE) return { node: n, offset: Math.max(0, Math.min(off - acc, n.textContent?.length ?? 0)) }
+        return { node: el, offset: off <= acc ? i : i + 1 } // <br> 또는 칩 경계
       }
       acc += len
     }
@@ -396,7 +412,7 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
 
   const onPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
     e.preventDefault()
-    insertTextAtCaret(e.clipboardData.getData('text/plain'))
+    insertTextAtCaret(sanitizePaste(e.clipboardData.getData('text/plain')))
   }
 
   // 텍스트 드래그 선택 중 에디터 내부만 스크롤되게 하고, 패널(스크롤 조상)은 고정한다 —
@@ -418,17 +434,18 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
 
   // ── @triggers 칩 드래그 → 텍스트 사이로 이동 ──────────────────────
   // 드롭 지점 Range → '칩 제외 텍스트' 내 문자 offset.
+  const plainLen = (n: Node) => (n.nodeName === 'BR' ? 1 : (n.textContent ?? '').length)
   const offsetFromRange = (el: HTMLElement, range: Range) => {
     let k = 0
     if (range.startContainer === el) {
       for (let i = 0; i < range.startOffset; i++) {
         const n = el.childNodes[i]
-        if (n && !isChip(n)) k += (n.textContent ?? '').length
+        if (n && !isChip(n)) k += plainLen(n)
       }
     } else {
       for (const n of Array.from(el.childNodes)) {
         if (n === range.startContainer || n.contains(range.startContainer)) { k += range.startOffset; break }
-        if (!isChip(n)) k += (n.textContent ?? '').length
+        if (!isChip(n)) k += plainLen(n)
       }
     }
     return k
@@ -453,17 +470,22 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     return rect
   }
 
-  // plain 텍스트 내 문자 offset → DOM 위치(텍스트노드, offset). 칩은 건너뜀.
+  // plain 텍스트 내 문자 offset → DOM 위치. 칩은 건너뛰고, <br>는 el 레벨 경계로.
   const locate = (el: HTMLElement, pos: number): { node: Node; offset: number } | null => {
+    const kids = Array.from(el.childNodes)
     let acc = 0
-    for (const n of Array.from(el.childNodes)) {
+    for (const n of kids) {
       if (isChip(n)) continue
-      const len = (n.textContent ?? '').length
-      if (acc + len >= pos) return { node: n, offset: pos - acc }
+      const len = plainLen(n)
+      if (acc + len >= pos) {
+        if (n.nodeType === Node.TEXT_NODE) return { node: n, offset: pos - acc }
+        const idx = kids.indexOf(n)
+        return { node: el, offset: pos <= acc ? idx : idx + 1 } // <br> 경계
+      }
       acc += len
     }
-    const last = [...el.childNodes].reverse().find((n) => !isChip(n))
-    return last ? { node: last, offset: (last.textContent ?? '').length } : null
+    const last = [...kids].reverse().find((n) => !isChip(n) && n.nodeType === Node.TEXT_NODE)
+    return last ? { node: last, offset: (last.textContent ?? '').length } : { node: el, offset: kids.length }
   }
 
   const onDragStart = (e: React.DragEvent<HTMLDivElement>) => {
