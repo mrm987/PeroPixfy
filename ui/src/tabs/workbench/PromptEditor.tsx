@@ -189,6 +189,7 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
   }
 
   // value offset에 캐럿 지정(locateValueOffset은 아래에 정의 — 클로저로 호출 시점엔 준비됨).
+  // 프로그램적 배치(Enter·삭제·붙여넣기·undo)는 브라우저 자동 스크롤이 안 걸리므로 직접 스크롤.
   const setCaret = (off: number) => {
     const loc = locateValueOffset(off)
     const s = window.getSelection()
@@ -196,6 +197,33 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }:
     const r = document.createRange()
     try { r.setStart(loc.node, loc.offset) } catch { return }
     r.collapse(true); s.removeAllRanges(); s.addRange(r)
+    scrollCaretIntoView(off)
+  }
+
+  // 캐럿이 에디터 밖(아래/위)으로 나가면 보이도록 스크롤. 빈 줄 등에서 range 사각형이 비면
+  // 임시 마커로 위치를 측정하고 캐럿을 복원한다.
+  const scrollCaretIntoView = (off: number) => {
+    const el = ref.current
+    const s = window.getSelection()
+    if (!el || !s || s.rangeCount === 0) return
+    let rect = s.getRangeAt(0).getBoundingClientRect()
+    if (rect.height === 0 && rect.top === 0 && rect.left === 0) {
+      const loc = locateValueOffset(off)
+      const probe = document.createRange()
+      try { probe.setStart(loc.node, loc.offset) } catch { return }
+      probe.collapse(true)
+      const span = document.createElement('span')
+      span.textContent = '​'
+      probe.insertNode(span)
+      rect = span.getBoundingClientRect()
+      span.remove(); el.normalize()
+      const l2 = locateValueOffset(off) // 캐럿 복원
+      const r2 = document.createRange()
+      try { r2.setStart(l2.node, l2.offset); r2.collapse(true); s.removeAllRanges(); s.addRange(r2) } catch { /* */ }
+    }
+    const box = el.getBoundingClientRect()
+    if (rect.bottom > box.bottom - 2) el.scrollTop += rect.bottom - box.bottom + 6
+    else if (rect.top < box.top + 2) el.scrollTop -= box.top - rect.top + 6
   }
 
   // 현재 값/캐럿을 히스토리에 적립(타이핑은 600ms 내 연속이면 한 단계로 병합).
