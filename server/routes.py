@@ -10,6 +10,7 @@ import json
 import mimetypes
 import os
 import subprocess
+import sys
 import threading
 
 import folder_paths
@@ -363,8 +364,17 @@ def _force_foreground_window(hwnd):
 
 
 def _open_and_focus(folder, select_file=None):
-    """폴더(또는 파일 위치)를 탐색기로 열고, 그 탐색기 창을 foreground로 가져온다.
+    """폴더(또는 파일 위치)를 파일 탐색기로 연다. Windows에선 그 창을 브라우저 앞으로 끌어온다.
     블로킹 호출 — 이벤트 루프를 막지 않도록 스레드 풀에서 실행한다."""
+    if sys.platform == "darwin":
+        # macOS Finder: -R 은 파일을 선택해 연다. 폴더면 그냥 연다.
+        subprocess.Popen(["open", "-R", select_file] if select_file else ["open", folder])
+        return
+    if sys.platform.startswith("linux"):
+        # Linux: 파일 선택 표준이 없어 폴더만 연다.
+        subprocess.Popen(["xdg-open", folder])
+        return
+    # --- 이하 Windows 전용: 탐색기로 열고 그 창을 foreground로 ---
     import time
     import urllib.parse
     try:

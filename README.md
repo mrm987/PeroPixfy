@@ -10,12 +10,13 @@
 
 A simple, clean way to generate images with the **Anima** model in ComfyUI — without touching node graphs. Write a prompt, hit **Generate**.
 
-### Install (Windows portable)
+### Install
 
-1. Download **[`peropixfy_install.bat`](https://github.com/mrm987/PeroPixfy/releases/latest/download/peropixfy_install.bat)** (from the [latest release](https://github.com/mrm987/PeroPixfy/releases/latest)).
-2. Put it in your ComfyUI folder — the one that contains `ComfyUI` and `python_embeded`.
-3. Double-click it and wait; it installs everything for you. *(Needs [Git for Windows](https://git-scm.com/download/win).)*
-4. Restart ComfyUI.
+**Easiest — ComfyUI-Manager (any OS, any install):** open the Manager, search **PeroPixfy**, click **Install**, then restart ComfyUI. It uses whatever Python your ComfyUI runs, so it works the same on Windows portable, venv, Linux, macOS, and the Desktop app.
+
+**Windows portable — one-click .bat:** download **[`peropixfy_install.bat`](https://github.com/mrm987/PeroPixfy/releases/latest/download/peropixfy_install.bat)** (from the [latest release](https://github.com/mrm987/PeroPixfy/releases/latest)), put it in your ComfyUI folder (the one that contains `ComfyUI` and `python_embeded`), and double-click it. *(Needs [Git for Windows](https://git-scm.com/download/win).)* Then restart ComfyUI.
+
+**Manual (any OS):** see [Manual install](#manual-install) below.
 
 ### First run
 
@@ -31,7 +32,7 @@ Open the **PeroPixfy** tab in the ComfyUI sidebar — it switches to fullscreen 
 
 ### Updating
 
-Put **[`peropixfy_update.bat`](https://github.com/mrm987/PeroPixfy/releases/latest/download/peropixfy_update.bat)** in the same folder, double-click it, then restart ComfyUI. *(Re-running the installer also updates.)*
+Via ComfyUI-Manager: **Update** the node and restart. On Windows portable you can instead put **[`peropixfy_update.bat`](https://github.com/mrm987/PeroPixfy/releases/latest/download/peropixfy_update.bat)** in the same folder, double-click it, then restart. *(Re-running the installer also updates.)*
 
 *Building from source, project layout, and internals → [Development](#development) below.*
 
@@ -44,10 +45,14 @@ PeroPixfy runs on the ComfyUI engine itself. Instead of the node graph you work 
 ```
 cd ComfyUI/custom_nodes
 git clone https://github.com/mrm987/PeroPixfy.git
-<ComfyUI>/python_embeded/python.exe -m pip install -r PeroPixfy/requirements.txt   # color-matcher
 ```
 
-The built `web/` is bundled, so it runs without a build step. `data/` (presets, gallery, settings) is created on first run.
+Then install the one dependency (`color-matcher`) into **the same Python your ComfyUI runs**:
+
+- Windows portable: `python_embeded\python.exe -m pip install -r custom_nodes\PeroPixfy\requirements.txt`
+- venv / Linux / macOS: activate your ComfyUI venv, then `pip install -r custom_nodes/PeroPixfy/requirements.txt`
+
+(ComfyUI-Manager does this step for you.) The built `web/` is bundled, so it runs without a build step. `data/` (presets, gallery, settings) is created on first run.
 
 > For development you can link a working folder into `custom_nodes` with a junction: `mklink /J ...\custom_nodes\PeroPixfy <work folder>`.
 
@@ -95,12 +100,13 @@ The single source of truth for generation parameters is `GenerationParams` (`ui/
 
 ComfyUI에서 **Anima** 모델로 이미지를 만드는 가장 간단한 방법 — 복잡한 노드 그래프 없이, 프롬프트 쓰고 **생성**만 누르면 됩니다.
 
-### 설치 (Windows 포터블)
+### 설치
 
-1. **[`peropixfy_install.bat`](https://github.com/mrm987/PeroPixfy/releases/latest/download/peropixfy_install.bat)** 를 받습니다 ([최신 릴리즈](https://github.com/mrm987/PeroPixfy/releases/latest)).
-2. ComfyUI 폴더(`ComfyUI`와 `python_embeded`가 들어있는 폴더)에 둡니다.
-3. 더블클릭하고 기다리면 알아서 설치됩니다. *([Git for Windows](https://git-scm.com/download/win) 필요)*
-4. ComfyUI를 재시작합니다.
+**가장 쉬움 — ComfyUI-Manager (모든 OS·모든 설치):** Manager에서 **PeroPixfy** 검색 → **Install** → ComfyUI 재시작. 유저의 ComfyUI가 쓰는 파이썬을 그대로 쓰므로 Windows 포터블·venv·Linux·macOS·Desktop 앱에서 동일하게 동작합니다.
+
+**Windows 포터블 — 원클릭 .bat:** **[`peropixfy_install.bat`](https://github.com/mrm987/PeroPixfy/releases/latest/download/peropixfy_install.bat)** 를 받아 ([최신 릴리즈](https://github.com/mrm987/PeroPixfy/releases/latest)) ComfyUI 폴더(`ComfyUI`와 `python_embeded`가 든 폴더)에 두고 더블클릭. *([Git for Windows](https://git-scm.com/download/win) 필요)* 그다음 ComfyUI 재시작.
+
+**수동 (모든 OS):** 위 [Manual install](#manual-install)(영문) 참고.
 
 ### 첫 실행
 
@@ -116,6 +122,6 @@ ComfyUI 사이드바의 **PeroPixfy 탭**을 엽니다 — 전체화면으로 �
 
 ### 업데이트
 
-같은 폴더에 **[`peropixfy_update.bat`](https://github.com/mrm987/PeroPixfy/releases/latest/download/peropixfy_update.bat)** 을 두고 더블클릭한 뒤 ComfyUI를 재시작하면 됩니다. *(설치 bat을 재실행해도 업데이트됩니다.)*
+ComfyUI-Manager에서 **Update** 후 재시작. Windows 포터블이면 같은 폴더에 **[`peropixfy_update.bat`](https://github.com/mrm987/PeroPixfy/releases/latest/download/peropixfy_update.bat)** 을 두고 더블클릭한 뒤 재시작해도 됩니다. *(설치 bat 재실행도 업데이트됨.)*
 
 *소스 빌드·프로젝트 구조·내부 동작 등 기술 내용은 위 [Development](#development) 섹션(영문) 참고.*

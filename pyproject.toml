@@ -1,0 +1,22 @@
+# ComfyUI Registry manifest — enables one-click install via ComfyUI-Manager on
+# every platform (Windows portable/venv, Linux, macOS, Desktop app).
+# Publish with:  comfy node publish   (see https://docs.comfy.org/registry/publishing)
+# Keep `version` in sync with __init__.py __version__.
+
+[project]
+name = "peropixfy"
+version = "1.0.0"
+description = "A simple, no-node-graph way to generate images with the Anima model in ComfyUI."
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+dependencies = ["color-matcher>=0.6.0"]
+classifiers = ["Operating System :: OS Independent"]
+
+[project.urls]
+Repository = "https://github.com/mrm987/PeroPixfy"
+
+[tool.comfy]
+# PublisherId must match the publisher you create at registry.comfy.org
+# (typically your GitHub username). Change this if yours differs.
+PublisherId = "mrm987"
+DisplayName = "PeroPixfy"
