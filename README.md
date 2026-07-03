@@ -1,6 +1,6 @@
 # PeroPixfy
 
-> A simple, no-node-graph way to make images with the **Anima** model in ComfyUI.
+> A simple, no-node-graph way to make images with the **Anima** model in ComfyUI — with built-in LoRA & style management.
 
 **[English](#english)** · **[한국어](#한국어)**
 
@@ -8,7 +8,7 @@
 
 ## English
 
-A simple, clean way to generate images with the **Anima** model in ComfyUI — without touching node graphs. Write a prompt, hit **Generate**.
+A simple, clean way to generate images with the **Anima** model in ComfyUI — without touching node graphs. Write a prompt, hit **Generate**. It also includes a built-in library for managing your LoRAs and styles.
 
 ### Install
 
@@ -98,7 +98,7 @@ The single source of truth for generation parameters is `GenerationParams` (`ui/
 
 ## 한국어
 
-ComfyUI에서 **Anima** 모델로 이미지를 만드는 가장 간단한 방법 — 복잡한 노드 그래프 없이, 프롬프트 쓰고 **생성**만 누르면 됩니다.
+ComfyUI에서 **Anima** 모델로 이미지를 만드는 가장 간단한 방법 — 복잡한 노드 그래프 없이, 프롬프트 쓰고 **생성**만 누르면 됩니다. 로라·스타일을 관리하는 라이브러리도 내장돼 있습니다.
 
 ### 설치
 
