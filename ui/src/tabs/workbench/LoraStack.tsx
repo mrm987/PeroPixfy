@@ -48,7 +48,7 @@ export function LoraStack({ available, loras, setLoras }: Props) {
     setLoras(next)
   }
   const add = () =>
-    setLoras([...loras, { relPath: available[0] ?? '', strength: 0.8, enabled: false }])
+    setLoras([...loras, { relPath: available[0] ?? '', strength: 1.0, enabled: false }])
 
   return (
     <div className="lora-stack">

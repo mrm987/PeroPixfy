@@ -11,7 +11,7 @@ const detectLang = (): Lang =>
 interface UiState {
   tab: Tab
   setTab: (tab: Tab) => void
-  lang: Lang // UI 언어 (영속). 기본 = 시스템 언어. 옵션에서 변경.
+  lang: Lang // UI 언어. ComfyUI 설정(Comfy.Locale)을 따름 — App 마운트 시 도출해 세팅. 비영속.
   // 라이브러리(스타일/로라) 도크 — 모달이 아니라 우측에 도킹되는 패널이라,
   // 펼친 채로도 메인 작업 패널을 계속 조작할 수 있다. 두 탭이 공유한다.
   libOpen: boolean
@@ -67,7 +67,6 @@ export const useUi = create<UiState>()(
       name: 'peropix.ui',
       partialize: (s) => ({
         tab: s.tab,
-        lang: s.lang,
         singleW: s.singleW,
         multiW: s.multiW,
         dockW: s.dockW,

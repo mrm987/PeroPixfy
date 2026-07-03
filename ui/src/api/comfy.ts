@@ -9,6 +9,21 @@ export function clientId(): string {
   return id
 }
 
+/** ComfyUI의 현재 UI 언어(Comfy.Locale)를 읽어 PeroPixfy 지원 언어로 매핑.
+ * 같은 오리진의 /settings/{id}가 값("ko"/"en"/"zh"… 또는 null)을 반환.
+ * ko면 ko, 그 외 언어는 en(graceful fallback), 미설정이면 시스템 언어. */
+export async function fetchComfyLang(): Promise<'en' | 'ko'> {
+  const isKo = (s: string) => s.toLowerCase().startsWith('ko')
+  try {
+    const res = await fetch('/settings/Comfy.Locale')
+    if (res.ok) {
+      const v: unknown = await res.json()
+      if (typeof v === 'string' && v) return isKo(v) ? 'ko' : 'en'
+    }
+  } catch { /* 서버 응답 없으면 시스템 언어로 폴백 */ }
+  return isKo(navigator.language || '') ? 'ko' : 'en'
+}
+
 export async function submitPrompt(graph: ApiGraph): Promise<string> {
   const res = await fetch('/prompt', {
     method: 'POST',

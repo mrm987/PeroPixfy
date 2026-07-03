@@ -250,10 +250,10 @@ export const useLibrary = create<LibraryState>()(persist((set, get) => {
       if (useUi.getState().tab === 'batch') {
         const char = activeCharOf(useBatch.getState())
         if (char && !char.base.loras.some((l) => l.relPath === relPath)) {
-          useBatch.getState().setCharBase({ loras: [...char.base.loras, { relPath, strength: 0.8, enabled: false }] })
+          useBatch.getState().setCharBase({ loras: [...char.base.loras, { relPath, strength: 1.0, enabled: false }] })
         }
       } else if (!wb.params.loras.some((l) => l.relPath === relPath)) {
-        wb.setLoras([...wb.params.loras, { relPath, strength: 0.8, enabled: false }])
+        wb.setLoras([...wb.params.loras, { relPath, strength: 1.0, enabled: false }])
       }
       // 새로 추가됐든 이미 있든, 해당 로라 행을 flash로 강조해 위치를 보여준다.
       wb.setFlashLora(relPath)

@@ -3,12 +3,13 @@
 // 런처가 깨져도 /peropixfy 직접 접속은 항상 동작한다.
 import { app } from "../../scripts/app.js";
 
-// 언어: SPA(같은 오리진)가 옵션에서 저장한 peropix.ui state.lang을 우선, 없으면 시스템 언어.
+// 언어: ComfyUI 현재 설정(Comfy.Locale)을 따른다 — ko면 ko, 그 외 언어/미설정은 시스템 언어.
+// 툴팁·제목은 사이드바 탭 등록(페이지 로드) 시점의 언어로 고정된다(탭 API가 정적이라
+// 세션 중 갱신 불가). ComfyUI 언어를 바꾼 뒤 새로고침하면 반영된다.
 function lang() {
   try {
-    const ui = JSON.parse(localStorage.getItem("peropix.ui") || "{}");
-    const l = ui && ui.state && ui.state.lang;
-    if (l === "ko" || l === "en") return l;
+    const l = app?.extensionManager?.setting?.get("Comfy.Locale");
+    if (typeof l === "string" && l) return l.toLowerCase().startsWith("ko") ? "ko" : "en";
   } catch {}
   return (navigator.language || "").toLowerCase().startsWith("ko") ? "ko" : "en";
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { openSocket } from './api/comfy'
+import { fetchComfyLang, openSocket } from './api/comfy'
 import { useT } from './i18n'
 import { LibraryDock } from './components/LibraryDock'
 import { OptionsModal } from './components/OptionsModal'
@@ -52,6 +52,9 @@ export default function App() {
   useEffect(() => {
     if (TABS.some((t) => t.id === initialHash)) setTab(initialHash)
     if (wantLibOpen) useUi.getState().openLib()
+
+    // UI 언어는 ComfyUI 설정(Comfy.Locale)을 따른다 — 자체 선택 없이 일원화.
+    void fetchComfyLang().then((lang) => useUi.setState({ lang }))
 
     useWorkbench.getState().init()
 
