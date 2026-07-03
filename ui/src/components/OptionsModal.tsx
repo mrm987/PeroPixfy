@@ -15,10 +15,8 @@ export function OptionsModal({ onClose }: { onClose: () => void }) {
   // 버전 표시(읽기 전용). 업데이트 확인/적용은 이제 ComfyUI-Manager가 담당.
   const [ver, setVer] = useState<VersionInfo | null>(null)
   useEffect(() => { void getVersion().then(setVer).catch(() => {}) }, [])
-  const verText = !ver ? '…' : [
-    ver.version ? `v${ver.version}` : '',
-    ver.commit ? `${ver.commit}${ver.date ? ` (${ver.date})` : ''}` : (ver.isGit ? '' : t('not a git checkout')),
-  ].filter(Boolean).join('  ·  ')
+  // 레지스트리 게시 버전(pyproject.toml)을 표시 — git 커밋/날짜는 노출하지 않는다.
+  const verText = !ver ? '…' : (ver.version ? `v${ver.version}` : '—')
 
   const folderRow = (label: string, value: string, set: (v: string) => void, fallback: string, def: string) => (
     <label className="field">{label}
