@@ -47,12 +47,7 @@ cd ComfyUI/custom_nodes
 git clone https://github.com/mrm987/PeroPixfy.git
 ```
 
-Then install the one dependency (`color-matcher`) into **the same Python your ComfyUI runs**:
-
-- Windows portable: `python_embeded\python.exe -m pip install -r custom_nodes\PeroPixfy\requirements.txt`
-- venv / Linux / macOS: activate your ComfyUI venv, then `pip install -r custom_nodes/PeroPixfy/requirements.txt`
-
-(ComfyUI-Manager does this step for you.) The built `web/` is bundled, so it runs without a build step. `data/` (presets, gallery, settings) is created on first run.
+No third-party Python dependencies to install. The built `web/` is bundled, so it runs without a build step. `data/` (presets, gallery, settings) is created on first run.
 
 > For development you can link a working folder into `custom_nodes` with a junction: `mklink /J ...\custom_nodes\PeroPixfy <work folder>`.
 

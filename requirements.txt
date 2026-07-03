@@ -1,1 +1,2 @@
-color-matcher>=0.6.0
+# PeroPixfy has no third-party Python dependencies.
+# (LoRA/hires works on ComfyUI's own packages; the LUT feature uses numpy/scipy already present.)

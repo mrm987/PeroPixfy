@@ -59,8 +59,10 @@ export const ko: Record<string, string> = {
   'Spectrum (+ Mod Guidance)': 'Spectrum (+ Mod Guidance)',
   'Spectrum (+ Mod Guidance) (node missing)': 'Spectrum (+ Mod Guidance) (노드 없음)',
   'Quality tags (mod guidance)': '퀄리티 태그 (mod guidance)',
-  // Hires
-  'Hires fix': '하이레스 픽스',
+  // Upscale
+  'Upscale': '업스케일',
+  'Upscale only': '순수 업스케일',
+  'Just enlarge — no resampling (fastest, keeps the image as-is)': '재샘플 없이 확대만 (가장 빠름, 이미지 그대로 유지)',
   'USDU (tiled)': 'USDU (타일)',
   '2-pass resample': '2패스 재샘플',
   'Needs the Ultimate SD Upscale node — click to install': '클릭하면 Ultimate SD Upscale 노드를 설치합니다',
@@ -74,17 +76,9 @@ export const ko: Record<string, string> = {
   'upscale model': '업스케일 모델',
   'hires denoise': '하이레스 디노이즈',
   'hires steps': '하이레스 스텝',
-  'Use target scale': '목표 스케일 사용',
   'target scale (× orig)': '목표 배율 (× 원본)',
-  'Color match (restore original colors)': '컬러 매치 (원본 색 복원)',
-  'color method': '컬러 방식',
-  'color strength': '컬러 강도',
-  'Generate the image, then redraw it larger for more detail. Slower.':
-    '이미지를 생성한 뒤 더 크게 다시 그려 디테일을 높입니다. 더 느립니다.',
-  "Upscale models only enlarge by a fixed factor — turn this on to auto-adjust the result to your exact target size. Off keeps the model's own factor.":
-    '업스케일 모델은 고정 배율로만 키우기 때문에, 켜면 정확히 목표 크기가 되도록 자동 조정합니다. 끄면 모델 고유 배율을 그대로 씁니다.',
-  "Hires can make colors look duller — this restores the original image's vivid colors.":
-    '하이레스를 거치면 색이 칙칙해질 수 있는데, 원본의 생생한 색감으로 되돌립니다.',
+  'Enlarge the finished image — optionally resampling it for more detail.':
+    '완성된 이미지를 확대합니다 — 필요하면 재샘플로 디테일을 보강합니다.',
   // 생성 / 큐
   'Generate': '생성',
   'Add to queue': '큐에 추가',

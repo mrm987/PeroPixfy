@@ -36,13 +36,6 @@ routes = PromptServer.instance.routes
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # Windows 콘솔 창 깜빡임 방지
 
 
-def _git(*args, timeout=15):
-    return subprocess.run(
-        ["git", "-C", PLUGIN_DIR, *args],
-        capture_output=True, text=True, timeout=timeout, creationflags=_NO_WINDOW,
-    )
-
-
 @routes.get("/peropixfy")
 async def index(request):
     # index.html은 매 빌드마다 새 에셋 해시를 참조하므로 절대 캐시하면 안 된다.
@@ -554,80 +547,6 @@ async def gallery_star(request):
     data = await request.json()
     gallery.set_starred(data["prompt_id"], bool(data.get("starred")))
     return web.json_response({"ok": True})
-
-
-def _manifest_version():
-    """레지스트리에 게시되는 버전의 단일 진실 소스 = pyproject.toml [project].version.
-    tomllib(3.11+) 우선, 없으면 간단 파싱. 실패 시 None(__version__으로 폴백)."""
-    try:
-        with open(os.path.join(PLUGIN_DIR, "pyproject.toml"), "rb") as f:
-            raw = f.read().decode("utf-8", "ignore")
-    except OSError:
-        return None
-    try:
-        import tomllib
-        return tomllib.loads(raw).get("project", {}).get("version")
-    except Exception:
-        import re
-        m = re.search(r'(?m)^\s*version\s*=\s*["\']([^"\']+)["\']', raw)
-        return m.group(1) if m else None
-
-
-@routes.get("/peropixfy/api/version")
-async def peropix_version(request):
-    """현재 버전 — 레지스트리 매니페스트(pyproject.toml) 버전 + git 커밋/날짜/브랜치 + 경로."""
-    try:
-        root = os.path.dirname(folder_paths.base_path)  # ComfyUI 폴더의 부모 = 포터블 루트(bat 위치)
-    except Exception:
-        root = os.path.dirname(os.path.dirname(os.path.dirname(PLUGIN_DIR)))
-    info = {"version": None, "commit": None, "date": None, "branch": None,
-            "isGit": False, "path": PLUGIN_DIR, "rootPath": root}
-    info["version"] = _manifest_version()  # 레지스트리 매니페스트(pyproject.toml) 기준
-    if not info["version"]:
-        try:
-            from .. import __version__ as v
-            info["version"] = v
-        except Exception:
-            pass
-    try:
-        head = _git("rev-parse", "--short", "HEAD")
-        if head.returncode == 0:
-            info["isGit"] = True
-            info["commit"] = head.stdout.strip()
-            d = _git("log", "-1", "--format=%cs")
-            if d.returncode == 0:
-                info["date"] = d.stdout.strip()
-            b = _git("rev-parse", "--abbrev-ref", "HEAD")
-            if b.returncode == 0:
-                info["branch"] = b.stdout.strip()
-    except Exception as e:
-        info["error"] = str(e)
-    return web.json_response(info)
-
-
-@routes.post("/peropixfy/api/check-update")
-async def peropix_check_update(request):
-    """origin에서 fetch 후 HEAD가 몇 커밋 뒤처졌는지 계산(읽기 전용). 적용은 안 한다."""
-    try:
-        if _git("rev-parse", "--is-inside-work-tree").returncode != 0:
-            return web.json_response({"ok": False, "error": "not a git checkout"})
-        branch = (_git("rev-parse", "--abbrev-ref", "HEAD").stdout or "").strip() or "main"
-        # fetch는 네트워크 호출 — 이벤트 루프를 막지 않도록 executor로 뺀다.
-        fetch = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: _git("fetch", "--quiet", "origin", branch, timeout=40))
-        if fetch.returncode != 0:
-            return web.json_response({"ok": False, "error": (fetch.stderr or "git fetch failed").strip()})
-        upstream = "origin/" + branch
-        behind = int((_git("rev-list", "--count", "HEAD.." + upstream).stdout or "0").strip() or "0")
-        return web.json_response({
-            "ok": True, "behind": behind, "hasUpdate": behind > 0, "branch": branch,
-            "current": (_git("rev-parse", "--short", "HEAD").stdout or "").strip(),
-            "latest": (_git("rev-parse", "--short", upstream).stdout or "").strip(),
-        })
-    except subprocess.TimeoutExpired:
-        return web.json_response({"ok": False, "error": "git fetch timed out"})
-    except Exception as e:
-        return web.json_response({"ok": False, "error": str(e)})
 
 
 def _delete_output_files(files, keep=None):

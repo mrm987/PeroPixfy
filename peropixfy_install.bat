@@ -55,20 +55,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-REM --- dependencies (color-matcher, for hires color match) ---
-echo.
-if exist "%PY%" (
-  echo Installing requirements ^(color-matcher^)...
-  "%PY%" -m pip install -r "%TARGET%\requirements.txt"
-  if errorlevel 1 (
-    echo [WARN] requirements install failed - PeroPixfy still works, but the
-    echo        "color match" feature will be skipped. You can retry later:
-    echo        "%PY%" -m pip install color-matcher
-  )
-) else (
-  echo [WARN] "%PY%" not found - skipping requirements.
-  echo        Install color-matcher into your ComfyUI python manually:  pip install color-matcher
-)
+REM --- no third-party Python dependencies to install ---
 
 echo.
 echo === Done! Restart ComfyUI, then open the "PeroPixfy" tab in the sidebar. ===

@@ -45,13 +45,9 @@ export const HIRES_DEFAULTS: HiresParams = {
   // (불필요한 노드 설치 안내 방지). Anima는 기본 선명도가 높아 1패스 resample은 디테일 체감이 약함.
   enabled: false,
   scale: 1.5,
-  useTargetScale: false, // 기본 off — 모델 고유 배율로 바로 2패스
   denoise: 0.4,
   steps: 20, // 업스케일 패스 스텝 (본 steps와 별개로 조절 가능)
   upscaleModel: '',
-  colorMatch: true, // 기본 on — 하이레스 색 칙칙함 보정 (color-matcher 기반)
-  colorMatchStrength: 0.8,
-  colorMatchMethod: 'reinhard',
 }
 
 // 스펙트럼 기본값 — 사용자의 실제 워크플로우(KSampler Spectrum + Mod Guidance) 그대로.

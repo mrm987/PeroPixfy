@@ -407,22 +407,27 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
           )}
 
           <label className="checkbox"
-            title={t('Generate the image, then redraw it larger for more detail. Slower.')}>
+            title={t('Enlarge the finished image — optionally resampling it for more detail.')}>
             <input type="checkbox" checked={hires.enabled}
-              onChange={(e) => setHires({ enabled: e.target.checked })} /> {t('Hires fix')}
+              onChange={(e) => setHires({ enabled: e.target.checked })} /> {t('Upscale')}
           </label>
           {hires.enabled && (
             <div className="sub-opts">
               <div className="preset-row">
-                <button type="button" className={hiresMethod === 'usdu' ? 'active' : ''}
-                  title={meta?.usduAvailable === false ? t('Needs the Ultimate SD Upscale node — click to install') : t('Tiled re-diffusion — adds real detail (slower)')}
-                  onClick={() => setHires({ method: 'usdu' })}>
-                  {t('USDU (tiled)')}{meta?.usduAvailable === false ? t(' (node missing)') : ''}
+                <button type="button" className={hiresMethod === 'upscale' ? 'active' : ''}
+                  title={t('Just enlarge — no resampling (fastest, keeps the image as-is)')}
+                  onClick={() => setHires({ method: 'upscale' })}>
+                  {t('Upscale only')}
                 </button>
                 <button type="button" className={hiresMethod === 'resample' ? 'active' : ''}
                   title={t('Upscale then one full resample (faster, less detail)')}
                   onClick={() => setHires({ method: 'resample' })}>
                   {t('2-pass resample')}
+                </button>
+                <button type="button" className={hiresMethod === 'usdu' ? 'active' : ''}
+                  title={meta?.usduAvailable === false ? t('Needs the Ultimate SD Upscale node — click to install') : t('Tiled re-diffusion — adds real detail (slower)')}
+                  onClick={() => setHires({ method: 'usdu' })}>
+                  {t('USDU (tiled)')}{meta?.usduAvailable === false ? t(' (node missing)') : ''}
                 </button>
               </div>
               {hiresMethod === 'usdu' && meta?.usduAvailable === false && (
@@ -442,42 +447,16 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
               <SelectField label={t('upscale model')} value={hires.upscaleModel ?? ''}
                 options={meta?.upscaleModels ?? []}
                 onChange={(v) => setHires({ upscaleModel: v })} />
-              <div className="grid-2">
-                <NumberField label={t('hires denoise')} value={hires.denoise} min={0} max={1} step={0.05}
-                  onChange={(v) => setHires({ denoise: v })} />
-                <NumberField label={t('hires steps')} value={hires.steps ?? params.steps} min={1} max={100} step={1}
-                  onChange={(v) => setHires({ steps: v })} />
-              </div>
-              {hiresMethod === 'usdu' ? (
-                <NumberField label={t('target scale (× orig)')} value={hires.scale} min={1} max={4} step={0.25}
-                  onChange={(v) => setHires({ scale: v })} />
-              ) : (
-                <>
-                  <label className="checkbox"
-                    title={t("Upscale models only enlarge by a fixed factor — turn this on to auto-adjust the result to your exact target size. Off keeps the model's own factor.")}>
-                    <input type="checkbox" checked={hires.useTargetScale === true}
-                      onChange={(e) => setHires({ useTargetScale: e.target.checked })} /> {t('Use target scale')}
-                  </label>
-                  {hires.useTargetScale === true && (
-                    <NumberField label={t('target scale (× orig)')} value={hires.scale} min={1} max={4} step={0.25}
-                      onChange={(v) => setHires({ scale: v })} />
-                  )}
-                </>
-              )}
-              <label className="checkbox"
-                title={t("Hires can make colors look duller — this restores the original image's vivid colors.")}>
-                <input type="checkbox" checked={hires.colorMatch !== false}
-                  onChange={(e) => setHires({ colorMatch: e.target.checked })} /> {t('Color match (restore original colors)')}
-              </label>
-              {hires.colorMatch !== false && (
+              {hiresMethod !== 'upscale' && (
                 <div className="grid-2">
-                  <SelectField label={t('color method')} value={hires.colorMatchMethod ?? 'reinhard'}
-                    options={['reinhard', 'mkl', 'mvgd', 'hm-mkl-hm', 'hm-mvgd-hm', 'hm']}
-                    onChange={(v) => setHires({ colorMatchMethod: v })} />
-                  <NumberField label={t('color strength')} value={hires.colorMatchStrength ?? 0.8} min={0} max={1} step={0.05}
-                    onChange={(v) => setHires({ colorMatchStrength: v })} />
+                  <NumberField label={t('hires denoise')} value={hires.denoise} min={0} max={1} step={0.05}
+                    onChange={(v) => setHires({ denoise: v })} />
+                  <NumberField label={t('hires steps')} value={hires.steps ?? params.steps} min={1} max={100} step={1}
+                    onChange={(v) => setHires({ steps: v })} />
                 </div>
               )}
+              <NumberField label={t('target scale (× orig)')} value={hires.scale} min={1} max={4} step={0.25}
+                onChange={(v) => setHires({ scale: v })} />
             </div>
           )}
 

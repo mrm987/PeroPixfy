@@ -8,18 +8,12 @@ export type GenMode = 't2i' | 'i2i' | 'inpaint'
 
 export interface HiresParams {
   enabled: boolean
-  // usdu = Ultimate SD Upscale(타일 단위 재확산, 디테일↑) / resample = 업스케일 후 전체 1패스 재샘플.
-  method?: 'resample' | 'usdu'
-  // 2-pass: 업스케일 모델로 키운 뒤 목표 배율로 리사이즈 → 전체 재샘플.
-  scale: number // 최종 목표 배율 (× 원본). 모델 배율과 별개로 이 크기로 맞춘다.
-  useTargetScale?: boolean // off면 목표 배율 리사이즈 생략, 모델 고유 배율로 바로 2패스
+  // upscale = 순수 업스케일(무샘플링) / resample = 업스케일 후 전체 재샘플 / usdu = 타일 단위 재확산.
+  method?: 'upscale' | 'resample' | 'usdu'
+  scale: number // 목표 배율 (× 원본). 세 방식 모두 이 배율로 맞춘다.
   denoise: number
-  steps?: number // 업스케일 패스 전용 스텝 (미설정 시 본 steps 사용)
+  steps?: number // 재샘플 패스 전용 스텝 (미설정 시 본 steps 사용)
   upscaleModel: string // 사용할 업스케일 모델
-  // 하이레스 결과 색을 1패스 원본 색감으로 되돌린다 (VAE 왕복·재샘플로 칙칙해지는 것 보정).
-  colorMatch?: boolean
-  colorMatchStrength?: number // 색 복원 강도 0~1 (원본↔결과 블렌드)
-  colorMatchMethod?: string // color-matcher 메서드 (mkl/mvgd/hm-mkl-hm/...)
 }
 
 export interface GenerationParams {

@@ -104,57 +104,6 @@ class PeroPixSaveImage:
         return {"ui": {"images": results}}
 
 
-class PeroPixColorMatch:
-    """색 복원 — 하이레스픽스로 칙칙해진 색을 원본(reference) 색으로 되돌린다.
-
-    원인: 하이레스 2패스의 VAE 왕복이 '생생한 영역'의 채도를 압축(칙칙함).
-    구현: 검증된 color-matcher 라이브러리(KJNodes ColorMatch가 쓰는 것)로 전역 색 전이.
-    - mkl: Monge-Kantorovich(Pitié) 선형전이 — 균형 좋고 매끄러움(기본).
-    - mvgd: 다변량 가우시안 분포 전이. hm: 히스토그램. reinhard: 평균/표준편차.
-    - hm-mkl-hm / hm-mvgd-hm: 전후 히스토그램 매칭 결합(복합).
-    strength로 원본↔결과 블렌드. reference 해상도가 달라도 됨(통계만 사용).
-    """
-
-    METHODS = ["mkl", "mvgd", "hm-mkl-hm", "hm-mvgd-hm", "hm", "reinhard"]
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "image": ("IMAGE",),
-                "reference": ("IMAGE",),
-                "method": (cls.METHODS, {"default": "mkl"}),
-                "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05}),
-            }
-        }
-
-    RETURN_TYPES = ("IMAGE",)
-    FUNCTION = "match"
-    CATEGORY = "PeroPixfy"
-
-    def match(self, image, reference, method="mkl", strength=1.0):
-        try:
-            from color_matcher import ColorMatcher
-        except ImportError:
-            print("[PeroPix] color-matcher 미설치 — 색 보정 건너뜀 (pip install color-matcher)")
-            return (image,)
-        cm = ColorMatcher()
-        out = image.clone()
-        rn = reference.shape[0]
-        for i in range(image.shape[0]):
-            src = image[i].detach().cpu().numpy()
-            ref = reference[i % rn].detach().cpu().numpy()
-            try:
-                res = cm.transfer(src=src, ref=ref, method=method)
-            except Exception as e:  # 메서드 실패 시 원본 유지
-                print(f"[PeroPix] color match 실패({method}): {e}")
-                continue
-            res = np.clip(np.asarray(res, dtype=np.float32), 0.0, 1.0)
-            t = torch.from_numpy(res).to(image.device, image.dtype)
-            out[i] = (image[i] + (t - image[i]) * float(strength)).clamp(0.0, 1.0)
-        return (out,)
-
-
 _LUT_DIR = os.path.join(folder_paths.models_dir, "luts")
 _LUT_CACHE = {}
 
@@ -241,11 +190,9 @@ class PeroPixApplyLUT:
 
 NODE_CLASS_MAPPINGS = {
     "PeroPixSaveImage": PeroPixSaveImage,
-    "PeroPixColorMatch": PeroPixColorMatch,
     "PeroPixApplyLUT": PeroPixApplyLUT,
 }
 NODE_CLASS_DISPLAY_NAME_MAPPINGS = {
     "PeroPixSaveImage": "PeroPix Save Image",
-    "PeroPixColorMatch": "PeroPix Color Match",
     "PeroPixApplyLUT": "PeroPix Apply LUT",
 }

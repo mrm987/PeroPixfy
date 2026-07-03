@@ -125,39 +125,27 @@ export function buildGraph(p: GenerationParams): ApiGraph {
       }
       image = ['usdu', 0]
     } else {
-      // resample: 모델 업스케일 → (목표 스케일 on이면 lanczos 리사이즈) → 전체 재샘플.
+      // upscale/resample 공통: 업스케일 모델로 키운 뒤 목표 배율(scale × 원본)로 리사이즈.
       g['up_img'] = { class_type: 'ImageUpscaleWithModel', inputs: { upscale_model: ['upmodel', 0], image: ['decode_base', 0] } }
-      let upscaled: [string, number] = ['up_img', 0]
-      if (p.hires.useTargetScale === true) {
-        g['up_resized'] = {
-          class_type: 'ImageScale',
-          inputs: {
-            image: ['up_img', 0],
-            upscale_method: 'lanczos',
-            width: round8(p.width * p.hires.scale),
-            height: round8(p.height * p.hires.scale),
-            crop: 'disabled',
-          },
-        }
-        upscaled = ['up_resized', 0]
-      }
-      g['hires_latent'] = { class_type: 'VAEEncode', inputs: { pixels: upscaled, vae: ['vae', 0] } }
-      sample('sampler_hires', ['hires_latent', 0], p.hires.denoise, p.hires.steps ?? p.steps)
-      g['decode'] = { class_type: 'VAEDecode', inputs: { samples: ['sampler_hires', 0], vae: ['vae', 0] } }
-      image = ['decode', 0]
-    }
-    // 하이레스 색감 보정: 1패스 원본(decode_base)의 색 통계로 되돌린다. (reference 해상도가 달라도 OK)
-    if (p.hires.colorMatch !== false) {
-      g['hires_cm'] = {
-        class_type: 'PeroPixColorMatch',
+      g['up_resized'] = {
+        class_type: 'ImageScale',
         inputs: {
-          image,
-          reference: ['decode_base', 0],
-          method: p.hires.colorMatchMethod ?? 'reinhard',
-          strength: p.hires.colorMatchStrength ?? 0.8,
+          image: ['up_img', 0],
+          upscale_method: 'lanczos',
+          width: round8(p.width * p.hires.scale),
+          height: round8(p.height * p.hires.scale),
+          crop: 'disabled',
         },
       }
-      image = ['hires_cm', 0]
+      if (p.hires.method === 'upscale') {
+        image = ['up_resized', 0] // 순수 업스케일 — 재샘플 없이 여기서 끝.
+      } else {
+        // resample: 리사이즈한 이미지를 다시 인코딩 → 전체 재샘플.
+        g['hires_latent'] = { class_type: 'VAEEncode', inputs: { pixels: ['up_resized', 0], vae: ['vae', 0] } }
+        sample('sampler_hires', ['hires_latent', 0], p.hires.denoise, p.hires.steps ?? p.steps)
+        g['decode'] = { class_type: 'VAEDecode', inputs: { samples: ['sampler_hires', 0], vae: ['vae', 0] } }
+        image = ['decode', 0]
+      }
     }
   } else {
     g['decode'] = { class_type: 'VAEDecode', inputs: { samples: ['sampler', 0], vae: ['vae', 0] } }
