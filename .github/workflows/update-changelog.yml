@@ -1,0 +1,27 @@
+# 이미 게시된 버전의 '업데이트 내역(changelog)'만 갱신한다 (재게시 X).
+# 게시는 버전당 1회뿐이라 문구를 고치려면 이 워크플로우를 쓴다.
+#
+# 사용: Actions 탭 → "Update registry changelog" → Run workflow
+#   version 비우면 pyproject.toml의 현재 버전, 채우면 그 버전(예: 1.2.0)을 갱신.
+#   내용은 CHANGELOG.md의 '## <version>' 섹션에서 가져온다.
+name: Update registry changelog
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "갱신할 버전 (비우면 pyproject.toml의 version)"
+        required: false
+        default: ""
+
+jobs:
+  update-changelog:
+    name: Update changelog on registry
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+      - name: Update changelog
+        env:
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_ACCESS_TOKEN }}
+        run: bash .github/scripts/set-changelog.sh "${{ inputs.version }}" 1
