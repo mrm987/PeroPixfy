@@ -6,19 +6,23 @@ export const CATEGORY_LABEL: Record<string, string> = {
   general: 'general', artist: 'artist', character: 'character', copyright: 'copyright', meta: 'meta',
 }
 
-// 삽입 시 언더바를 띄어쓰기로 변환. 단 ^_^ / >_< 같은 이모티콘의 _는 보존한다.
-export const underscoresToSpaces = (tag: string) =>
-  tag.replace(/_/g, (_m, i: number, s: string) => {
+// 삽입 시 언더바를 띄어쓰기로 변환. 단 ^_^ / >_< 같은 이모티콘의 _, 그리고 score_9 등
+// 스코어 태그의 _는 보존한다(모델이 언더바 형태를 요구).
+export const underscoresToSpaces = (tag: string) => {
+  if (/^score_\d/i.test(tag)) return tag
+  return tag.replace(/_/g, (_m, i: number, s: string) => {
     const before = s[i - 1]
     const after = s[i + 1]
     if (before === '^' || after === '^' || (before && after && /[><;:=]/.test(before + after))) return '_'
     return ' '
   })
+}
 
 // 커서 위치의 '현재 단어'를 구한다. 콤마/개행/괄호/콜론이 단어 경계.
 // 검색은 커서 앞부분만 쓰고, 교체 범위는 단어 뒤 공백까지 흡수한다.
 export function getCurrentWord(value: string, cursorPos: number) {
-  const isTagChar = (c: string) => /[a-zA-Z0-9_\-\s]/.test(c)
+  // 어퍼스트로피(')도 태그 문자 — another's, girls' 등(단부루 태그 911개)이 끊기지 않게.
+  const isTagChar = (c: string) => /[a-zA-Z0-9_\-\s']/.test(c)
   let start = cursorPos
   while (start > 0) {
     const ch = value[start - 1]
@@ -89,6 +93,7 @@ interface Props {
   onChange: (value: string) => void
   rows?: number
   placeholder?: string
+  className?: string
   style?: React.CSSProperties
   onMouseUp?: (e: React.MouseEvent<HTMLTextAreaElement>) => void
 }
@@ -97,7 +102,7 @@ interface Props {
  * Danbooru 태그 자동완성이 붙은 textarea (PeroPix 이식). 입력 중인 단어를 검색해
  * 커서 위치에 드롭다운을 띄우고, ↑/↓·Enter·Esc로 조작, 선택 시 ', ' 접미사로 삽입한다.
  */
-export function TagAutocompleteTextarea({ value, onChange, rows, placeholder, style, onMouseUp }: Props) {
+export function TagAutocompleteTextarea({ value, onChange, rows, placeholder, className, style, onMouseUp }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
@@ -204,7 +209,7 @@ export function TagAutocompleteTextarea({ value, onChange, rows, placeholder, st
 
   return (
     <>
-      <textarea ref={ref} rows={rows} value={value} placeholder={placeholder} style={style}
+      <textarea ref={ref} rows={rows} value={value} placeholder={placeholder} className={className} style={style}
         onChange={handleChange} onKeyDown={handleKeyDown} onMouseUp={onMouseUp} onMouseDown={onMouseDown}
         onBlur={() => setTimeout(close, 150)} />
       {open && results.length > 0 && createPortal(

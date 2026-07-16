@@ -41,6 +41,7 @@ export interface CanvasTab {
   results: SlotResult[]
   promptInsert?: number // 슬롯 프롬프트를 base positive의 몇 번째 태그 자리에 끼울지. 미설정 = 최하단(끝).
   slotStart?: number // 이 탭 슬롯 번호 시작값(표시·파일명). 미설정 = 1.
+  unseen?: boolean // 비활성 탭에서 생성이 완료됐지만 아직 열어보지 않음 → 탭에 dot 표시. 전환 시 해제.
 }
 
 // 캐릭터 = 외형/스타일을 고정하는 base 파라미터의 단위. 각 캐릭터별로 감정세트 등
@@ -49,6 +50,10 @@ export interface Character {
   id: string
   name: string
   base: GenerationParams
+  // Single과 동일한 자동 트리거워드 기능(로라 트리거를 뱃지로 관리 → base.triggers에 동기화 →
+  // 빌더가 base.positive의 @triggers 자리에 삽입). 캐릭터별로 독립. 기존 캐릭터(undefined)는 off로 취급.
+  triggerBadges?: boolean
+  triggerOrder?: string[] // 트리거 뱃지 표시/삽입 순서(사용자 드래그)
 }
 
 export interface Viewport {
@@ -65,11 +70,31 @@ const newSlot = (): Slot => ({ id: uid(), name: '', prompt: '', locked: false })
 const newTab = (charId: string, name = 'New tab', presetFilename: string | null = null, slots?: Slot[]): CanvasTab => ({
   id: uid(), charId, name, presetFilename, slots: slots && slots.length ? slots : [newSlot()], results: [],
 })
+// 지정 탭을 '봤음'으로 표시(미확인 dot 해제). 탭/캐릭터 전환 시 새로 활성화되는 탭에 적용.
+const markSeen = (tabs: CanvasTab[], id: string): CanvasTab[] =>
+  tabs.map((t) => (t.id === id && t.unseen ? { ...t, unseen: false } : t))
 const newCharBase = (): GenerationParams => ({ ...ANIMA_DEFAULTS, mode: 't2i', loras: [] })
+// positive 끝에 @triggers 토큰을 보장(이미 있으면 그대로). 트리거 관리 on일 때 삽입 자리 표시.
+const withTriggerToken = (p: string): string => {
+  if (/@triggers/i.test(p)) return p
+  const s = (p || '').replace(/[\s,]+$/, '')
+  return s ? s + ', @triggers' : '@triggers'
+}
+const withoutTriggerToken = (p: string): string =>
+  (p || '').replace(/@triggers/gi, '').replace(/,\s*,/g, ', ').replace(/^[\s,]+|[\s,]+$/g, '')
 // 임의 params(예: Single 결과)를 캐릭터 base로 정규화 — Multi는 t2i 전용이라 소스/마스크 제거.
-const baseFromParams = (p: GenerationParams): GenerationParams => ({ ...p, mode: 't2i', sourceImage: undefined, maskImage: undefined })
+// 트리거 기능은 캐릭터가 off로 시작하므로 @triggers 토큰과 triggers를 제거(프롬프트에 리터럴 '@triggers'가
+// 남거나 빌더가 옛 트리거를 끝에 붙이는 걸 방지). 캐릭터에서 켜면 그때 토큰/트리거가 다시 채워진다.
+const baseFromParams = (p: GenerationParams): GenerationParams => ({
+  ...p, mode: 't2i', sourceImage: undefined, maskImage: undefined,
+  positive: withoutTriggerToken(p.positive), triggers: [],
+})
 const charLabel = (n: number) => `char${String(n).padStart(2, '0')}`
-const newCharacter = (name: string): Character => ({ id: uid(), name, base: newCharBase() })
+// 새 캐릭터는 Single처럼 자동 트리거 기능을 켠 채로 시작(@triggers 토큰 보장).
+const newCharacter = (name: string): Character => {
+  const base = newCharBase()
+  return { id: uid(), name, base: { ...base, positive: withTriggerToken(base.positive) }, triggerBadges: true, triggerOrder: [] }
+}
 
 const pad3 = (n: number) => String(n).padStart(3, '0')
 export const sanitize = (s: string) => s.trim().replace(/[^\w\-가-힣]+/g, '_').replace(/^_+|_+$/g, '')
@@ -138,6 +163,7 @@ interface BatchState {
   countPerSlot: number
   excludeSlotNumber: boolean
   randomizeSeed: boolean // true=결과마다 시드 무작위, false=Base의 seed로 고정(재현용)
+  slotCollapsed: Record<string, boolean> // 슬롯 접힘 상태(slotId→true). UI 상태(프리셋 파일엔 저장 안 함).
   // 프리셋 목록 / 실행
   presets: presetApi.PresetSummary[]
   presetOrder: string[] // 드롭다운 표시 순서(파일명). 사용자가 ↑↓로 변경.
@@ -152,6 +178,8 @@ interface BatchState {
   removeCharacter: (id: string) => void
   switchCharacter: (id: string) => void
   setCharBase: (patch: Partial<GenerationParams>) => void
+  setCharTriggerBadges: (on: boolean) => void // 활성 캐릭터 자동 트리거 on/off (@triggers 토큰 관리)
+  setCharTriggerOrder: (order: string[]) => void // 활성 캐릭터 트리거 뱃지 순서
   importBaseFromWorkbench: () => void
   setCharacterBase: (charId: string, params: GenerationParams) => void
   addCharacterFromParams: (params: GenerationParams) => void
@@ -169,11 +197,15 @@ interface BatchState {
   duplicateSlot: (id: string) => void
   moveSlot: (id: string, dir: -1 | 1) => void
   reorderSlots: (from: number, to: number) => void // 드래그 reorder (인덱스 기반)
+  setAllSlotsLocked: (locked: boolean) => void // 활성 탭 전체 슬롯 잠금/해제 (locked=생성 제외)
   setSetting: (patch: Partial<Pick<BatchState, 'outputFolder' | 'format' | 'quality' | 'countPerSlot' | 'excludeSlotNumber' | 'randomizeSeed'>>) => void
+  toggleSlotCollapsed: (id: string) => void
+  setSlotsCollapsed: (ids: string[], collapsed: boolean) => void
   // 프리셋
   loadPresetList: () => Promise<void>
   applyPreset: (filename: string) => Promise<void>
   overwritePreset: () => Promise<void> // 편집 자동저장(현재 탭 슬롯 → 프리셋 파일)
+  refreshPresetTabs: (charId: string) => Promise<void> // 진입 캐릭터의 프리셋 탭을 파일 최신 내용으로 갱신(캐릭터 간 동기화)
   duplicatePreset: () => Promise<void>
   duplicatePresetFile: (filename: string) => Promise<void> // 특정 프리셋 파일을 복제
   newPreset: (name: string) => Promise<void>
@@ -248,6 +280,7 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
     countPerSlot: 1,
     excludeSlotNumber: false,
     randomizeSeed: true,
+    slotCollapsed: {},
     presets: [],
     presetOrder: [],
     running: false,
@@ -288,19 +321,81 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
         delete activeTabByChar[id]
         return { characters, tabs, activeCharId, activeTabId, activeTabByChar }
       }),
-    switchCharacter: (id) =>
-      set((s) => {
-        if (!s.characters.some((c) => c.id === id)) return s
-        const charTabs = s.tabs.filter((t) => t.charId === id)
-        const remembered = s.activeTabByChar[id]
-        const activeTabId = (remembered && charTabs.some((t) => t.id === remembered))
-          ? remembered
-          : charTabs[0]?.id ?? s.activeTabId
-        return { activeCharId: id, activeTabId }
-      }),
+    switchCharacter: async (id) => {
+      const s0 = get()
+      if (!s0.characters.some((c) => c.id === id)) return
+      // 떠나는 프리셋 탭의 편집을 파일에 flush — 디바운스(600ms) 저장 전에 전환하면 취소되어 유실되고,
+      // 다른 캐릭터의 동일 프리셋 탭이 옛 내용으로 남기 때문. (진입 시 항상 파일에서 갱신하므로 떠나는
+      // 탭은 늘 최신/편집본이라 stale 덮어쓰기 위험이 없다.)
+      const leaving = activeTabOf(s0)
+      const flush = leaving?.presetFilename
+        ? presetApi.updatePreset(leaving.presetFilename, leaving.name,
+            leaving.slots.map((sl) => ({ name: sl.name, prompt: sl.prompt, locked: sl.locked, promptH: sl.promptH }))).catch(() => {})
+        : Promise.resolve()
+      // 즉시 전환(UI 반응성) 후, flush 완료를 기다렸다가 진입 캐릭터 프리셋 탭을 파일 최신 내용으로 갱신.
+      const charTabs = s0.tabs.filter((t) => t.charId === id)
+      const remembered = s0.activeTabByChar[id]
+      const activeTabId = (remembered && charTabs.some((t) => t.id === remembered))
+        ? remembered
+        : charTabs[0]?.id ?? s0.activeTabId
+      set((s) => ({ activeCharId: id, activeTabId, tabs: markSeen(s.tabs, activeTabId) }))
+      await flush
+      await get().refreshPresetTabs(id)
+    },
+    // 진입 캐릭터의 프리셋 연동 탭을 파일 최신 내용으로 갱신한다(여러 캐릭터가 같은 프리셋을 쓸 때
+    // 한쪽 수정이 다른 쪽에 반영되게). 슬롯 내용(name/prompt/locked)만 인덱스로 매칭해 갱신하고 슬롯
+    // id는 보존한다 — 결과(생성 이미지)가 slotId로 묶여 있어 id가 바뀌면 이미지가 유실되기 때문.
+    refreshPresetTabs: async (charId) => {
+      const linked = get().tabs.filter((t) => t.charId === charId && t.presetFilename)
+      const filenames = [...new Set(linked.map((t) => t.presetFilename!))]
+      if (filenames.length === 0) return
+      const entries = await Promise.all(
+        filenames.map(async (fn) => {
+          try { return [fn, await presetApi.getPreset(fn)] as const } catch { return [fn, null] as const }
+        }),
+      )
+      const byFile = new Map<string, presetApi.PresetData>()
+      for (const [fn, p] of entries) if (p) byFile.set(fn, p)
+      if (byFile.size === 0) return
+      set((s) => ({
+        tabs: s.tabs.map((t) => {
+          if (t.charId !== charId || !t.presetFilename) return t
+          const p = byFile.get(t.presetFilename)
+          if (!p) return t
+          const fileSlots = p.slots ?? []
+          // 인덱스 매칭: 겹치는 범위는 내용만 갱신하고 id 보존, 파일이 더 길면 새 슬롯 추가.
+          const synced: Slot[] = fileSlots.map((fsl, i) => {
+            const ex = t.slots[i]
+            // 내용(name/prompt/promptH)만 동기화. 잠금(locked)은 생성 제외용 세션 상태라 파일에서
+            // 덮어쓰지 않는다 — 기존 슬롯은 현재 잠금 유지, 새로 생기는 슬롯은 해제로 시작.
+            return ex
+              ? { ...ex, name: fsl.name, prompt: fsl.prompt, promptH: fsl.promptH }
+              : { id: uid(), name: fsl.name, prompt: fsl.prompt, locked: false, promptH: fsl.promptH }
+          })
+          // 파일보다 많은 나머지 탭 슬롯: 생성된 이미지가 있으면 보존(이미지 삭제 방지), 없으면 정리.
+          const extras = t.slots.slice(fileSlots.length).filter((sl) => t.results.some((r) => r.slotId === sl.id))
+          const slots = [...synced, ...extras]
+          return { ...t, name: p.name, slots: slots.length ? slots : t.slots }
+        }),
+      }))
+    },
     setCharBase: (patch) =>
       set((s) => ({
         characters: s.characters.map((c) => (c.id === s.activeCharId ? { ...c, base: { ...c.base, ...patch } } : c)),
+      })),
+    // 활성 캐릭터 자동 트리거 on/off. Single과 동일하게 base.positive의 @triggers 토큰을 관리하고,
+    // off 시 base.triggers를 비운다(빌더가 아무것도 삽입 안 하게).
+    setCharTriggerBadges: (on) =>
+      set((s) => ({
+        characters: s.characters.map((c) => {
+          if (c.id !== s.activeCharId) return c
+          const positive = on ? withTriggerToken(c.base.positive) : withoutTriggerToken(c.base.positive)
+          return { ...c, triggerBadges: on, base: { ...c.base, positive, triggers: on ? c.base.triggers : [] } }
+        }),
+      })),
+    setCharTriggerOrder: (order) =>
+      set((s) => ({
+        characters: s.characters.map((c) => (c.id === s.activeCharId ? { ...c, triggerOrder: order } : c)),
       })),
     // 현재 Single(workbench) 설정을 활성 캐릭터 base로 복사한다. Multi는 t2i 전용이라
     // 모드는 t2i로 고정하고 i2i/inpaint 전용 소스·마스크는 가져오지 않는다.
@@ -330,12 +425,17 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
     switchTab: (id) =>
       set((s) => {
         if (!s.tabs.some((t) => t.id === id)) return s
-        return { activeTabId: id, activeTabByChar: { ...s.activeTabByChar, [s.activeCharId]: id } }
+        return { activeTabId: id, activeTabByChar: { ...s.activeTabByChar, [s.activeCharId]: id }, tabs: markSeen(s.tabs, id) }
       }),
     openNewTab: () =>
       set((s) => {
         const t = newTab(s.activeCharId)
-        return { tabs: [...s.tabs, t], activeTabId: t.id, activeTabByChar: { ...s.activeTabByChar, [s.activeCharId]: t.id } }
+        // 새 탭은 슬롯을 모두 접힌 상태로 시작(전부 펼쳐 길어지지 않게).
+        return {
+          tabs: [...s.tabs, t], activeTabId: t.id,
+          activeTabByChar: { ...s.activeTabByChar, [s.activeCharId]: t.id },
+          slotCollapsed: { ...s.slotCollapsed, ...Object.fromEntries(t.slots.map((sl) => [sl.id, true] as const)) },
+        }
       }),
     closeTab: (id) =>
       set((s) => {
@@ -349,7 +449,7 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
         delete viewports[id]
         const fallback = sibling[Math.max(0, i - 1)].id
         const activeTabId = s.activeTabId === id ? fallback : s.activeTabId
-        return { tabs, activeTabId, viewports, activeTabByChar: { ...s.activeTabByChar, [tab.charId]: activeTabId } }
+        return { tabs: markSeen(tabs, activeTabId), activeTabId, viewports, activeTabByChar: { ...s.activeTabByChar, [tab.charId]: activeTabId } }
       }),
     setViewport: (tabId, vp) => set((s) => ({ viewports: { ...s.viewports, [tabId]: vp } })),
 
@@ -357,7 +457,15 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
     setSlotStart: (n) => patchActive(() => ({ slotStart: Math.max(1, Math.floor(n) || 1) })),
     addSlot: () => patchActive((t) => ({ slots: [...t.slots, newSlot()] })),
     updateSlot: (id, patch) => patchActive((t) => ({ slots: t.slots.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
-    removeSlot: (id) => patchActive((t) => ({ slots: t.slots.length > 1 ? t.slots.filter((x) => x.id !== id) : t.slots })),
+    // 슬롯 삭제 = 그 슬롯의 결과까지 함께 제거하고, 실제 이미지 파일도 삭제(deleteGeneration이
+    // 백엔드에서 output 파일까지 지운다). 마지막 슬롯은 남긴다.
+    removeSlot: (id) => {
+      const tab = activeTabOf(get())
+      if (!tab || tab.slots.length <= 1) return
+      const promptIds = tab.results.filter((r) => r.slotId === id && r.promptId).map((r) => r.promptId!)
+      patchActive((t) => ({ slots: t.slots.filter((x) => x.id !== id), results: t.results.filter((r) => r.slotId !== id) }))
+      void Promise.all(promptIds.map((pid) => deleteGeneration(pid)))
+    },
     duplicateSlot: (id) =>
       patchActive((t) => {
         const i = t.slots.findIndex((x) => x.id === id)
@@ -383,7 +491,15 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
         next.splice(to, 0, moved)
         return { slots: next }
       }),
+    setAllSlotsLocked: (locked) => patchActive((t) => ({ slots: t.slots.map((x) => ({ ...x, locked })) })),
     setSetting: (patch) => set(patch),
+    toggleSlotCollapsed: (id) => set((s) => ({ slotCollapsed: { ...s.slotCollapsed, [id]: !s.slotCollapsed[id] } })),
+    setSlotsCollapsed: (ids, collapsed) =>
+      set((s) => {
+        const m = { ...s.slotCollapsed }
+        ids.forEach((id) => { m[id] = collapsed })
+        return { slotCollapsed: m }
+      }),
 
     loadPresetList: async () => {
       set({ presets: await presetApi.listPresets().catch(() => []) })
@@ -394,10 +510,16 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
       const existing = s0.tabs.find((t) => t.presetFilename === filename && t.charId === s0.activeCharId)
       if (existing) { get().switchTab(existing.id); return }
       const p = await presetApi.getPreset(filename)
-      const slots = (p.slots ?? []).map((sl) => ({ id: uid(), name: sl.name, prompt: sl.prompt, locked: sl.locked, promptH: sl.promptH }))
+      // 새 탭은 잠금 기본값을 전부 해제(잠금은 생성 제외용 세션 컨트롤 — 프리셋 내용으로 취급하지 않음).
+      const slots = (p.slots ?? []).map((sl) => ({ id: uid(), name: sl.name, prompt: sl.prompt, locked: false, promptH: sl.promptH }))
       set((s) => {
         const tab = newTab(s.activeCharId, p.name, filename, slots)
-        return { tabs: [...s.tabs, tab], activeTabId: tab.id, activeTabByChar: { ...s.activeTabByChar, [s.activeCharId]: tab.id } }
+        // 슬롯을 모두 접힌 상태로 시작.
+        return {
+          tabs: [...s.tabs, tab], activeTabId: tab.id,
+          activeTabByChar: { ...s.activeTabByChar, [s.activeCharId]: tab.id },
+          slotCollapsed: { ...s.slotCollapsed, ...Object.fromEntries(slots.map((sl) => [sl.id, true] as const)) },
+        }
       })
     },
     // 편집 자동저장 — 현재 프리셋 탭의 슬롯을 그 프리셋 파일에 기록(BatchSlotPanel에서 디바운스 호출).
@@ -495,6 +617,13 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
         running: true,
         runningTabId: st.runningTabId ?? tab.id,
       }))
+      // Single과 동일하게: 랜덤 모드면 생성 '후' 표시 시드(base.seed)를 새 값으로 advance한다
+      // → 시드 칸이 매 생성마다 바뀌고, 다음 고정생성(Random off)의 기준 시드도 갱신된다.
+      if (s.randomizeSeed) {
+        set((st) => ({
+          characters: st.characters.map((c) => (c.id === s.activeCharId ? { ...c, base: { ...c.base, seed: randomSeed() } } : c)),
+        }))
+      }
       pump()
       pump()
     },
@@ -561,7 +690,12 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
       set((s) => ({
         tabs: s.tabs.map((t) =>
           t.id === tab.id
-            ? { ...t, results: t.results.map((r) => (r.promptId === promptId ? { ...r, status: 'done' as const, imageUrls: (outputs ?? []).map(viewUrl) } : r)) }
+            ? {
+                ...t,
+                // 활성 탭이 아니면 미확인 dot 표시(사용자가 안 보고 있는 탭에서 완료됨).
+                unseen: t.id !== s.activeTabId ? true : t.unseen,
+                results: t.results.map((r) => (r.promptId === promptId ? { ...r, status: 'done' as const, imageUrls: (outputs ?? []).map(viewUrl) } : r)),
+              }
             : t,
         ),
       }))
@@ -624,6 +758,7 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
     countPerSlot: s.countPerSlot,
     excludeSlotNumber: s.excludeSlotNumber,
     randomizeSeed: s.randomizeSeed,
+    slotCollapsed: s.slotCollapsed,
     presetOrder: s.presetOrder,
   }),
 }))

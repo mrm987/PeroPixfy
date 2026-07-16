@@ -29,6 +29,8 @@ export const ko: Record<string, string> = {
   'scheduler': '스케줄러',
   'batch size': '배치 크기',
   'denoise': '디노이즈',
+  'mask expand': '마스크 확장',
+  'mask feather': '마스크 페더',
   'mod guidance': 'mod guidance',
   'positive': '포지티브',
   'negative': '네거티브',
@@ -107,6 +109,11 @@ export const ko: Record<string, string> = {
   'Double-click to rename': '더블클릭으로 이름변경',
   'New tab': '새 탭',
   'Close tab': '탭 닫기',
+  'New images — not viewed yet': '새 이미지 — 아직 확인 안 함',
+  'Click to use this seed for generation': '클릭하면 이 시드를 생성 옵션에 반영',
+  '✓ seed applied': '✓ 시드 적용됨',
+  'This slot has {n} generated image(s) — they will be deleted too. Delete the slot?':
+    '이 슬롯에 생성된 이미지 {n}개가 함께 삭제됩니다. 슬롯을 삭제할까요?',
   // 프리셋 바
   '— No preset —': '— 프리셋 없음 —',
   'New': '새로',
@@ -176,8 +183,8 @@ export const ko: Record<string, string> = {
   'Reset zoom': '줌 초기화',
   'Reset': '초기화',
   'Delete this image': '이 이미지 삭제',
-  'Wheel: prev/next image · Drag (when zoomed): pan · Double-click: reset zoom':
-    '휠: 이전/다음 · 드래그(확대 시): 이동 · 더블클릭: 줌 초기화',
+  'Wheel / ←→: prev/next image · ↑↓: prev/next slot · Drag (when zoomed): pan · Double-click: reset zoom':
+    '휠 / ←→: 이전/다음 이미지 · ↑↓: 이전/다음 슬롯 · 드래그(확대 시): 이동 · 더블클릭: 줌 초기화',
   'Keep only this image and delete the other {n}?': '이 이미지만 남기고 나머지 {n}개를 삭제할까요?',
   '(untitled)': '(제목 없음)',
   'Keep only this · delete others ({n})': '이것만 남기기 · 나머지 삭제 ({n})',
@@ -301,4 +308,32 @@ export const ko: Record<string, string> = {
   '✓ installed': '✓ 설치됨',
   '✓ you already have models here': '✓ 이미 모델이 있습니다',
   'missing': '없음',
+
+  // 워크스페이스 (Single 작업 단위 — 탭)
+  'Add workspace': '워크스페이스 추가',
+  'Close tab (keeps data)': '탭 닫기 (데이터 보존)',
+  '＋ New workspace': '＋ 새 워크스페이스',
+  'Closed workspaces': '닫아둔 워크스페이스',
+  'Reopen this workspace': '이 워크스페이스 다시 열기',
+  'Delete permanently (folder + all images)': '완전 삭제 (폴더 + 모든 이미지)',
+  'Permanently delete workspace "{name}"? Its folder and ALL its images will be deleted. This cannot be undone.':
+    '워크스페이스 "{name}"을(를) 완전히 삭제할까요? 폴더와 모든 이미지가 삭제되며 되돌릴 수 없습니다.',
+  'Copy to another workspace (original stays)': '다른 워크스페이스로 복제 (원본은 유지)',
+  '⮕ Copy to ▾': '⮕ 복제 ▾',
+  'Copied {n} to "{name}".': '{n}개를 "{name}"(으)로 복제했습니다.',
+
+  // 시드 클릭 → 생성 옵션에 등록
+  'Use this seed for the next generation': '이 시드를 다음 생성에 등록',
+  'Seed {n} set for the next generation': '시드 {n}을(를) 다음 생성에 등록했습니다',
+
+  // Multi 슬롯 접기/잠금
+  'Click header to collapse/expand': '헤더 클릭해서 접기/펴기',
+  'Collapse all slots': '전체 슬롯 접기',
+  'Expand all slots': '전체 슬롯 펴기',
+  '▾ Collapse all': '▾ 전체 접기',
+  '▸ Expand all': '▸ 전체 펴기',
+  'Lock all slots (exclude from generation)': '전체 슬롯 잠금 (생성 제외)',
+  'Unlock all slots': '전체 슬롯 잠금해제',
+  '🔒 Lock all': '🔒 전체 잠금',
+  '🔓 Unlock all': '🔓 전체 해제',
 }

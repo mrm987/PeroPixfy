@@ -46,6 +46,9 @@ const ratioBox = (w: number, h: number, max = 34) => {
 }
 const orientation = (w: number, h: number) => (w > h ? 'landscape' : w < h ? 'portrait' : 'square')
 
+// 안정적인 빈 배열 참조 — store 셀렉터 기본값으로 새 []를 만들면 무한 렌더 루프가 난다.
+const EMPTY_ORDER: string[] = []
+
 const sourcePreviewUrl = (name: string) => {
   const [sub, file] = name.includes('/') ? name.split(/\/(.+)/) : ['', name]
   return `/view?filename=${encodeURIComponent(file)}&subfolder=${encodeURIComponent(sub)}&type=input`
@@ -64,21 +67,33 @@ interface Meta {
   modWProfiles: string[]
 }
 
-export function ParamsPanel({ width, embedded = false }: { width?: number; embedded?: boolean }) {
+export function ParamsPanel({ width, embedded = false, variant, flat = false }: { width?: number; embedded?: boolean; variant?: 'full' | 'appearance' | 'params'; flat?: boolean }) {
   // embedded(Multi Base) = 활성 캐릭터 base를 편집(Single과 분리). 아니면 workbench params.
   const t = useT()
   const wbParams = useWorkbench((s) => s.params)
   const wbSet = useWorkbench((s) => s.set)
   const charBase = useBatch((s) => activeCharOf(s)?.base)
   const setCharBase = useBatch((s) => s.setCharBase)
-  const batchRandom = useBatch((s) => s.randomizeSeed)
-  const setBatchSetting = useBatch((s) => s.setSetting)
   const params = embedded ? (charBase ?? ANIMA_DEFAULTS) : wbParams
   const set = embedded ? setCharBase : wbSet
   const randomizeSeed = useWorkbench((s) => s.randomizeSeed)
   const setRandomize = useWorkbench((s) => s.setRandomize)
-  const triggerBadges = useWorkbench((s) => s.triggerBadges)
-  const setTriggerBadges = useWorkbench((s) => s.setTriggerBadges)
+  // 자동 트리거워드: Single=workbench, Multi(embedded)=활성 캐릭터. 기존 캐릭터(undefined)는 off.
+  const wbTriggerBadges = useWorkbench((s) => s.triggerBadges)
+  const setWbTriggerBadges = useWorkbench((s) => s.setTriggerBadges)
+  const wbTriggerOrder = useWorkbench((s) => s.triggerOrder)
+  const setWbTriggerOrder = useWorkbench((s) => s.setTriggerOrder)
+  const charTriggerBadges = useBatch((s) => activeCharOf(s)?.triggerBadges ?? false)
+  const setCharTriggerBadges = useBatch((s) => s.setCharTriggerBadges)
+  // 셀렉터에서 `?? []`로 새 배열을 만들면 안 된다 — zustand는 useSyncExternalStore 기반이라
+  // 매 호출 새 참조를 돌려주면 React가 무한 렌더 루프로 판단해 크래시한다(기존 캐릭터는
+  // triggerOrder가 undefined라 매번 새 []가 생성됨). 원시값/원본 참조만 select하고 기본값은 밖에서.
+  const charTriggerOrder = useBatch((s) => activeCharOf(s)?.triggerOrder)
+  const setCharTriggerOrder = useBatch((s) => s.setCharTriggerOrder)
+  const triggerBadges = embedded ? charTriggerBadges : wbTriggerBadges
+  const setTriggerBadges = embedded ? setCharTriggerBadges : setWbTriggerBadges
+  const triggerOrder = embedded ? (charTriggerOrder ?? EMPTY_ORDER) : wbTriggerOrder
+  const setTriggerOrder = embedded ? setCharTriggerOrder : setWbTriggerOrder
   // LoRA 설치목록은 스캔 후 갱신되는 store의 availableLoras를 쓴다(meta.loras는 마운트 시 1회 고정).
   const availableLoras = useWorkbench((s) => s.availableLoras)
   const generate = useWorkbench((s) => s.generate)
@@ -198,11 +213,16 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
   const spectrum = { ...SPECTRUM_DEFAULTS, ...params.spectrum }
   const setSpectrum = (patch: Partial<typeof spectrum>) => set({ spectrum: { ...spectrum, ...patch } })
 
-  return (
-    <div className={`params-panel${embedded ? ' embedded' : ''}`} style={{ width: embedded ? undefined : width }}>
-      <div className="params-scroll">
+  // 섹션 그룹: appearance=모델/로라/프롬프트, params=해상도/샘플링/고급/LUT.
+  // Multi Base=appearance, Multi Slot=params(flat로 슬롯 패널 스크롤 안에 배치), Single=full(전부).
+  const v: 'full' | 'appearance' | 'params' = variant ?? (embedded ? 'appearance' : 'full')
+  const showAppearance = v === 'full' || v === 'appearance'
+  const showParams = v === 'full' || v === 'params'
+
+  const scrollBody = (
+    <>
         {/* Multi(embedded)는 t2i 전용 — 모드 전환 미노출. */}
-        {!embedded && (
+        {v === 'full' && (
           <div className="preset-row mode-row">
             {MODES.map((m) => (
               <button key={m.id} className={params.mode === m.id ? 'active' : ''}
@@ -213,7 +233,7 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
           </div>
         )}
 
-        {params.mode !== 't2i' && (
+        {v === 'full' && params.mode !== 't2i' && (
           <Section id="source" title={t('Source image')}>
             <div className="source-box">
               {params.sourceImage ? (
@@ -226,7 +246,7 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
                     }} />
                   )}
                   <button className="source-remove" title={t('Remove source image')}
-                    onClick={() => set({ sourceImage: undefined, maskImage: undefined })}>✕</button>
+                    onClick={() => set({ sourceImage: undefined, maskImage: undefined, maskBbox: undefined })}>✕</button>
                 </div>
               ) : (
                 <div className="placeholder">
@@ -251,10 +271,21 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
                 value={params.mode === 'inpaint' ? params.inpaintDenoise : params.i2iDenoise}
                 min={0} max={1} step={0.05}
                 onChange={(v) => set(params.mode === 'inpaint' ? { inpaintDenoise: v } : { i2iDenoise: v })} />
+              {params.mode === 'inpaint' && (
+                <div className="grid-2">
+                  <NumberField label={t('mask expand')}
+                    value={params.inpaintMaskExpand} min={0} max={128} step={1}
+                    onChange={(v) => set({ inpaintMaskExpand: v })} />
+                  <NumberField label={t('mask feather')}
+                    value={params.inpaintMaskFeather} min={0} max={128} step={1}
+                    onChange={(v) => set({ inpaintMaskFeather: v })} />
+                </div>
+              )}
             </div>
           </Section>
         )}
 
+        {showAppearance && (<>
         <Section id="model" title={t('Model')}>
           <SelectField label={t('Model (UNet)')} value={params.unet} options={meta?.unets ?? []}
             onChange={(v) => set({ unet: v })} />
@@ -270,34 +301,33 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
           <LoraStack available={availableLoras}
             loras={params.loras}
             setLoras={(loras) => set({ loras })} />
-          {/* 자동 트리거워드 on/off. 체크박스+제목 한 줄, 체크 시 같은 줄에 삽입위치(@triggers 칩)
-              표시 + 아래에 뱃지. off면 체크박스만(최소화) + 프롬프트에 직접 입력. */}
-          {!embedded && (
-            <>
-              <div className="trig-feature">
-                <label className="checkbox trig-feature-toggle"
-                  title={t('Off: type trigger words directly in the prompt')}>
-                  <input type="checkbox" checked={triggerBadges}
-                    onChange={(e) => setTriggerBadges(e.target.checked)} />
-                  {' '}{t('Auto trigger words')}
-                </label>
-                {triggerBadges && (
-                  <span className="trig-feature-hint">
-                    {t('— inserted at')}{' '}
-                    <span className="trig-badge anchor static"
-                      title={t('@triggers: where trigger words are inserted (drag to move)')}>@triggers</span>
-                  </span>
-                )}
-              </div>
-              {triggerBadges && <TriggerBadges />}
-            </>
+          {/* 자동 트리거워드 on/off (Single·Multi Base 공통). 체크박스+제목 한 줄, 체크 시 같은 줄에
+              삽입위치(@triggers 칩) 표시 + 아래에 뱃지. off면 체크박스만 + 프롬프트에 직접 입력. */}
+          <div className="trig-feature">
+            <label className="checkbox trig-feature-toggle"
+              title={t('Off: type trigger words directly in the prompt')}>
+              <input type="checkbox" checked={triggerBadges}
+                onChange={(e) => setTriggerBadges(e.target.checked)} />
+              {' '}{t('Auto trigger words')}
+            </label>
+            {triggerBadges && (
+              <span className="trig-feature-hint">
+                {t('— inserted at')}{' '}
+                <span className="trig-badge anchor static"
+                  title={t('@triggers: where trigger words are inserted (drag to move)')}>@triggers</span>
+              </span>
+            )}
+          </div>
+          {triggerBadges && (
+            <TriggerBadges loras={params.loras} order={triggerOrder}
+              setOrder={setTriggerOrder} setTriggers={(triggers) => set({ triggers })} />
           )}
         </Section>
 
         <Section id="positive" title={t('Positive')} summary={promptSummary(params.positive.replace(/@triggers/gi, '').replace(/,\s*,/g, ', '))}>
-          {/* 트리거 관리 on(Single)이면 @triggers 인라인 칩 에디터, off거나 Multi base면 일반 자동완성 textarea. */}
-          {!embedded && triggerBadges ? (
-            <PromptEditor value={params.positive} placeholder={t('positive')}
+          {/* 트리거 관리 on(Single·Multi Base 공통)이면 @triggers 인라인 칩 에디터, off면 일반 자동완성 textarea. */}
+          {triggerBadges ? (
+            <PromptEditor value={params.positive} placeholder={t('positive')} triggers={params.triggers ?? []}
               style={{ height: promptH ?? undefined }}
               onMouseUp={(e) => { const h = e.currentTarget.offsetHeight; if (h && h !== promptH) setPref({ promptH: h }) }}
               onChange={(v) => set({ positive: v })} />
@@ -314,7 +344,9 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
             onMouseUp={(e) => { const h = e.currentTarget.offsetHeight; if (h && h !== negativeH) setPref({ negativeH: h }) }}
             onChange={(v) => set({ negative: v })} />
         </Section>
+        </>)}
 
+        {showParams && (<>
         <Section id="resolution" title={t('Resolution')} summary={`${params.width} × ${params.height}`}>
           {params.mode !== 't2i' ? (
             <p className="notice">{t('Fixed to source image: {w} × {h} (i2i/inpaint keeps the source resolution)', { w: params.width, h: params.height })}</p>
@@ -354,22 +386,7 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
             <NumberField label={t('cfg')} value={params.cfg} min={0} max={30} step={0.5}
               onChange={(v) => set({ cfg: v })} />
           </div>
-          <div className="seed-row">
-            <NumberField label={t('seed')} value={params.seed} min={0}
-              onChange={(v) => set({ seed: v })} />
-            {/* Multi(embedded)는 배치 설정의 randomizeSeed에 바인딩 — 끄면 위 seed로 고정 생성. */}
-            {embedded ? (
-              <label className="checkbox" title={t('Randomize the seed for each generated image (off = use the seed above)')}>
-                <input type="checkbox" checked={batchRandom}
-                  onChange={(e) => setBatchSetting({ randomizeSeed: e.target.checked })} /> {t('Random')}
-              </label>
-            ) : (
-              <label className="checkbox">
-                <input type="checkbox" checked={randomizeSeed}
-                  onChange={(e) => setRandomize(e.target.checked)} /> {t('Random')}
-              </label>
-            )}
-          </div>
+          {/* 시드는 자주 쓰여 생성 버튼 바로 위(푸터)에 고정. Multi는 BatchTab 푸터에 별도 고정. */}
         </Section>
 
         <Section id="advanced" title={t('Advanced')}>
@@ -478,9 +495,10 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
             )}
           </Section>
         )}
+        </>)}
 
         {/* 저장 포맷 — Single 전용(Multi는 Slot 패널의 'Save settings'에서 따로 설정). 세션 지속. */}
-        {!embedded && (
+        {v === 'full' && (
           <Section id="save" title={t('Save format')} summary={format.toUpperCase()}>
             <div className="grid-2">
               <SelectField label={t('format')} value={format} options={['png', 'jpg', 'webp']}
@@ -495,9 +513,14 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
             )}
           </Section>
         )}
-      </div>
+    </>
+  )
 
-      {!embedded && (
+  if (flat) return scrollBody
+  return (
+    <div className={`params-panel${embedded ? ' embedded' : ''}`} style={{ width: embedded ? undefined : width }}>
+      <div className="params-scroll">{scrollBody}</div>
+      {v === 'full' && (
         <div className="params-footer">
           {/* 큐/진행/오류 UI는 Generate 버튼 '위'에 쌓고, 버튼은 항상 맨 아래 고정. */}
           {error && <pre className="error">{error}</pre>}
@@ -513,6 +536,14 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
                 title={t('Clear the entire queue and stop everything')}>{t('Clear queue')}</button>
             </div>
           )}
+          {/* 자주 쓰는 시드 — 생성 버튼 바로 위에 고정 */}
+          <div className="seed-row seed-pinned">
+            <NumberField label={t('seed')} value={params.seed} min={0} onChange={(v) => set({ seed: v })} />
+            <label className="checkbox">
+              <input type="checkbox" checked={randomizeSeed}
+                onChange={(e) => setRandomize(e.target.checked)} /> {t('Random')}
+            </label>
+          </div>
           <button className="generate" onClick={generate}>{t('Generate')}</button>
         </div>
       )}
@@ -520,9 +551,9 @@ export function ParamsPanel({ width, embedded = false }: { width?: number; embed
       {editMask && params.sourceImage && (
         <MaskEditor imageUrl={sourcePreviewUrl(params.sourceImage)}
           initialMask={params.maskImage ? sourcePreviewUrl(params.maskImage) : undefined}
-          onApply={async (blob) => {
+          onApply={async (blob, bbox) => {
             const name = await uploadImage(blob, `peropix_mask_${Date.now()}.png`)
-            set({ maskImage: name })
+            set({ maskImage: name, maskBbox: bbox ?? undefined })
             setEditMask(false)
           }}
           onClose={() => setEditMask(false)} />

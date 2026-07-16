@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { openOutputFolder } from '../../api/comfy'
 import { useT } from '../../i18n'
+import { NumberField } from '../../components/controls'
 import { Resizer } from '../../components/Resizer'
 import { activeCharOf, activeTabOf, sanitize, useBatch, type Viewport } from '../../stores/batch'
 import { useUi } from '../../stores/ui'
@@ -33,6 +34,9 @@ export function BatchTab() {
   const running = useBatch((s) => s.running)
   const start = useBatch((s) => s.start)
   const stop = useBatch((s) => s.stop)
+  const setCharBase = useBatch((s) => s.setCharBase)
+  const randomizeSeed = useBatch((s) => s.randomizeSeed)
+  const setSetting = useBatch((s) => s.setSetting)
   const countPerSlot = useBatch((s) => s.countPerSlot)
   const outputFolder = useBatch((s) => s.outputFolder)
   const activePromptId = useBatch((s) => s.activePromptId)
@@ -46,7 +50,9 @@ export function BatchTab() {
 
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null)
-  const [curateSlot, setCurateSlot] = useState<string | null>(null)
+  // 큐레이션 대상 슬롯 + (더블클릭 진입 시) 처음 선택할 이미지 id.
+  const [curateSlot, setCurateSlot] = useState<{ slotId: string; initialId?: string } | null>(null)
+  const batchRef = useRef<HTMLDivElement>(null)
 
   const slots = active?.slots ?? []
   const results = active?.results ?? []
@@ -83,8 +89,13 @@ export function BatchTab() {
     setEditing(null)
   }
 
-  // 캔버스 진입(마운트) 시 1회 — 원본이 외부에서 지워진 stale 프리뷰를 정리.
-  useEffect(() => { void pruneMissing() }, [pruneMissing])
+  // 캔버스 진입(마운트) 시 1회 — 원본이 외부에서 지워진 stale 프리뷰를 정리 + 활성 캐릭터의
+  // 프리셋 탭을 파일 최신 내용으로 갱신(다른 세션/캐릭터에서 수정된 동일 프리셋 반영).
+  useEffect(() => {
+    void pruneMissing()
+    void useBatch.getState().refreshPresetTabs(useBatch.getState().activeCharId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pruneMissing])
 
   // 캔버스에서 선택한 항목을 Delete/Backspace로 삭제. 입력창 포커스·큐레이션 모달 중엔 무시.
   useEffect(() => {
@@ -103,8 +114,34 @@ export function BatchTab() {
     return () => window.removeEventListener('keydown', onKey)
   }, [sel, curateSlot, removeResults])
 
+  // 좌측 패널(슬롯/베이스) 휠 스크롤 보강: 자식(섹션 좌측 여백·헤더·텍스트박스 등) 위에서 휠이
+  // 스크롤 컨테이너로 전파되지 않는 경우가 있다. 특히 좌측 패널 '바깥'의 .batch padding-left 여백은
+  // .batch-left에 붙인 핸들러가 못 받으므로, 최상위 .batch에서 휠을 받아 좌측 활성 스크롤 영역
+  // (.batch-slot-panel 또는 .params-scroll)을 세로 스크롤한다. 우측 캔버스는 자체 줌 핸들러에 맡김.
+  useEffect(() => {
+    const el = batchRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY === 0) return
+      const target = e.target as HTMLElement
+      if (target.closest('.batch-right')) return // 우측 캔버스(줌)는 건드리지 않음
+      const ta = target.closest('textarea') as HTMLTextAreaElement | null
+      if (ta && ta.scrollHeight > ta.clientHeight + 1) {
+        const atTop = ta.scrollTop <= 0
+        const atBottom = ta.scrollTop + ta.clientHeight >= ta.scrollHeight - 1
+        if ((e.deltaY < 0 && !atTop) || (e.deltaY > 0 && !atBottom)) return // textarea 내부 스크롤에 맡김
+      }
+      const scroller = el.querySelector('.batch-slot-panel, .params-scroll') as HTMLElement | null
+      if (!scroller || scroller.scrollHeight <= scroller.clientHeight) return
+      e.preventDefault()
+      scroller.scrollTop += e.deltaY
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
+
   return (
-    <div className="batch">
+    <div className="batch" ref={batchRef}>
       <div className="batch-left" style={{ width: multiW }}>
         <div className="sub-tab-bar">
           <button className={sub === 'base' ? 'active' : ''} onClick={() => setPref({ multiSub: 'base' })}>{t('Base')}</button>
@@ -117,7 +154,7 @@ export function BatchTab() {
           </div>
         )}
         <div className="batch-left-body">
-          {sub === 'base' ? <ParamsPanel embedded /> : <BatchSlotPanel />}
+          {sub === 'base' ? <ParamsPanel embedded variant="appearance" /> : <BatchSlotPanel />}
         </div>
         {/* 생성 푸터 — Single과 동일하게 큐/진행 + Cancel을 위에 쌓고, Generate는 항상 맨 아래 고정 */}
         <div className="batch-footer">
@@ -132,6 +169,15 @@ export function BatchTab() {
               )}
             </div>
           )}
+          {/* 자주 쓰는 시드 — 생성 버튼 바로 위에 고정 (Multi는 활성 캐릭터 base 시드) */}
+          <div className="seed-row seed-pinned">
+            <NumberField label={t('seed')} value={activeChar?.base.seed ?? 0} min={0}
+              onChange={(v) => setCharBase({ seed: v })} />
+            <label className="checkbox" title={t('Randomize the seed for each generated image (off = use the seed above)')}>
+              <input type="checkbox" checked={randomizeSeed}
+                onChange={(e) => setSetting({ randomizeSeed: e.target.checked })} /> {t('Random')}
+            </label>
+          </div>
           <button className="generate" onClick={start}>
             {running ? t('Add to queue') : t('Generate')} ({t('{slots} slots × {per} = {total}', { slots: activeSlots, per: countPerSlot, total: activeSlots * countPerSlot })})
           </button>
@@ -169,6 +215,7 @@ export function BatchTab() {
             {charTabs.map((ct) => (
               <div key={ct.id} className={`canvas-tab${ct.id === activeTabId ? ' active' : ''}`}
                 onClick={() => { setSel(new Set()); switchTab(ct.id) }}>
+                {ct.unseen && <span className="tab-dot" title={t('New images — not viewed yet')} />}
                 <span className="canvas-tab-name">
                   {ct.name}{ct.id === runningTabId ? ' …' : ''}
                 </span>
@@ -209,7 +256,7 @@ export function BatchTab() {
             activePromptId={activePromptId}
             initialViewport={viewports[activeTabId] as Viewport | undefined}
             onViewportChange={(vp) => setViewport(activeTabId, vp)}
-            onCurate={setCurateSlot}
+            onCurate={(slotId, resultId) => setCurateSlot({ slotId, initialId: resultId })}
             slotStart={active?.slotStart ?? 1}
             onOpenFolder={() => {
               // 해당 캔버스의 캐릭터 폴더(출력폴더/캐릭터이름)를 연다.
@@ -220,7 +267,7 @@ export function BatchTab() {
           />
         )}
         {/* 큐레이션 — 전체화면 모달 대신 우측 캔버스 영역을 채우는 인라인 패널(Single 프리뷰와 일관). */}
-        {curateSlot && <CurationModal slotId={curateSlot} aspect={aspect} onClose={() => setCurateSlot(null)} />}
+        {curateSlot && <CurationModal slotId={curateSlot.slotId} initialId={curateSlot.initialId} aspect={aspect} onClose={() => setCurateSlot(null)} />}
         </div>
       </div>
     </div>

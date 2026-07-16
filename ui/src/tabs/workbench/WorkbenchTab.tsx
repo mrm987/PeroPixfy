@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { openOutputFolder, parseViewUrl, thumbUrl, uploadImage } from '../../api/comfy'
 import { useT } from '../../i18n'
 import { MaskEditor } from '../../components/MaskEditor'
+import type { MaskBbox } from '../../workflow/types'
 import { Resizer } from '../../components/Resizer'
 import { SaveStyleModal } from '../../components/SaveStyleModal'
 import { useBatch } from '../../stores/batch'
@@ -11,6 +12,7 @@ import { useUi } from '../../stores/ui'
 import { HISTORY_LIMIT, useWorkbench, type HistoryItem } from '../../stores/workbench'
 import { ParamsPanel } from './ParamsPanel'
 import { RefCanvas } from './RefCanvas'
+import { WorkspaceBar } from './WorkspaceBar'
 
 async function fetchAsBlob(url: string): Promise<Blob> {
   return (await fetch(url)).blob()
@@ -46,6 +48,9 @@ export function WorkbenchTab() {
   const reloadHistory = useWorkbench((s) => s.reloadHistory)
   const set = useWorkbench((s) => s.set)
   const setNotice = useWorkbench((s) => s.setNotice)
+  const workspaces = useWorkbench((s) => s.workspaces)
+  const activeWs = useWorkbench((s) => s.activeWs)
+  const copyToWorkspace = useWorkbench((s) => s.copyToWorkspace)
   const characters = useBatch((s) => s.characters)
   const setCharacterBase = useBatch((s) => s.setCharacterBase)
   const addCharacterFromParams = useBatch((s) => s.addCharacterFromParams)
@@ -158,6 +163,31 @@ export function WorkbenchTab() {
   const deleteSelected = () =>
     removeMany(multiSel.size > 0 ? [...multiSel] : selected ? [selected.promptId] : [])
 
+  // 선택 항목을 다른 워크스페이스로 '복제' — 원본은 그대로 두므로 현재 뷰/선택은 유지한다.
+  // 다중선택이었으면 선택만 비우고, 완료를 잠깐 안내한다.
+  const copyToWs = async (ids: string[], targetId: string) => {
+    if (ids.length === 0) return
+    const target = workspaces.find((w) => w.id === targetId)
+    setMultiSel(new Set())
+    await copyToWorkspace(ids, targetId)
+    flashNotice(t('Copied {n} to "{name}".', { n: ids.length, name: target?.name ?? '' }))
+  }
+
+  // '다른 워크스페이스로 복제' 셀렉트 — 현재 외 워크스페이스를 나열. 워크스페이스가 하나뿐이면 안 보임.
+  const otherWorkspaces = workspaces.filter((w) => w.id !== activeWs)
+  const copySelect = (ids: string[]) =>
+    otherWorkspaces.length > 0 ? (
+      <select className="send-ws-select" value="" title={t('Copy to another workspace (original stays)')}
+        onChange={(e) => {
+          const target = e.target.value
+          e.currentTarget.value = ''
+          if (target) void copyToWs(ids, target)
+        }}>
+        <option value="">{t('⮕ Copy to ▾')}</option>
+        {otherWorkspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+      </select>
+    ) : null
+
   // 프리뷰 보는 중 키보드: ←/→ 전환, Delete 삭제. 입력란/모달에선 무시.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -231,19 +261,21 @@ export function WorkbenchTab() {
     set({ mode: 'i2i', sourceImage: name, maskImage: undefined }) // 새 소스 → 이전 마스크 제거
   }
 
-  const applyMask = async (blob: Blob) => {
+  const applyMask = async (blob: Blob, bbox: MaskBbox | null) => {
     if (!maskTarget) return
     const stamp = Date.now()
     const [sourceImage, maskImage] = await Promise.all([
       uploadImage(await fetchAsBlob(maskTarget), `peropix_inpaint_src_${stamp}.png`),
       uploadImage(blob, `peropix_inpaint_mask_${stamp}.png`),
     ])
-    set({ mode: 'inpaint', sourceImage, maskImage })
+    set({ mode: 'inpaint', sourceImage, maskImage, maskBbox: bbox ?? undefined })
     setMaskTarget(null)
   }
 
   return (
-    <div className="workbench">
+    <div className="workbench-view">
+      <WorkspaceBar />
+      <div className="workbench">
       <ParamsPanel width={singleW} />
       <Resizer value={singleW} onChange={(w) => setPref({ singleW: w })} dir={1} min={300} max={720} />
       <div className="result-area">
@@ -267,6 +299,8 @@ export function WorkbenchTab() {
             <button onClick={() => restore(selected.params)} title={t("Load this result's settings back into the panel")}>
               {t('Reuse settings')}
             </button>
+            {/* 관련 드롭다운끼리 묶어 '캐릭터로 지정' 바로 왼쪽에 둔다. (다중선택 시엔 multi-bar에서 복제) */}
+            {multiSel.size === 0 && copySelect([selected.promptId])}
             <select className="set-char-select" value=""
               title={t("Set this result's settings as a Multi character's base")}
               onChange={(e) => {
@@ -315,7 +349,14 @@ export function WorkbenchTab() {
               {starredOnly ? t('★ Starred') : t('☆ All')}
             </button>
             {/* 길이가 변하는 시드·해상도는 맨 뒤로 — 뒤에 밀릴 게 없어 버튼들이 고정된다. */}
-            <span className="seed">{t('seed {n}', { n: selected.params.seed })}</span>
+            {/* 시드 클릭 → 그 시드를 좌측 패널 생성 옵션에 등록(재현용). Random은 건드리지 않음. */}
+            <button className="seed seed-btn" title={t('Use this seed for the next generation')}
+              onClick={() => {
+                set({ seed: selected.params.seed })
+                flashNotice(t('Seed {n} set for the next generation', { n: selected.params.seed }))
+              }}>
+              {t('seed {n}', { n: selected.params.seed })}
+            </button>
             <span className="res-tag">{dims?.w ?? selected.params.width} × {dims?.h ?? selected.params.height}</span>
             {/* 캔버스 토글은 가장 오른쪽에. */}
             <button className={`ref-toggle${canvasOn ? ' active' : ''}`}
@@ -329,6 +370,7 @@ export function WorkbenchTab() {
           <div className="multi-bar">
             <span>{t('{n} selected', { n: multiSel.size })}</span>
             <button onClick={() => void deleteSelected()}>{t('Delete selected')}</button>
+            {copySelect([...multiSel])}
             <button onClick={() => setMultiSel(new Set())}>{t('Clear')}</button>
           </div>
         )}
@@ -370,6 +412,7 @@ export function WorkbenchTab() {
           style={{ left: thumbDrag.x + 14, top: thumbDrag.y + 14 }} />,
         document.body,
       )}
+      </div>
     </div>
   )
 }

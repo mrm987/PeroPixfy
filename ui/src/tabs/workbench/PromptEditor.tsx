@@ -41,6 +41,7 @@ interface Props {
   placeholder?: string
   style?: React.CSSProperties
   onMouseUp?: (e: React.MouseEvent<HTMLDivElement>) => void
+  triggers?: string[] // @triggers 칩 표시/툴팁용 활성 트리거워드. 미지정 시 workbench params 사용(Single).
 }
 
 /**
@@ -49,9 +50,10 @@ interface Props {
  * 트리거워드를 치환 삽입). textarea의 Danbooru 태그 자동완성도 그대로 포팅.
  * DOM은 React가 아니라 직접 관리(uncontrolled) — 입력 중 캐럿이 튀지 않도록.
  */
-export function PromptEditor({ value, onChange, placeholder, style, onMouseUp }: Props) {
+export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, triggers: triggersProp }: Props) {
   const t = useT()
-  const triggers = useWorkbench((s) => s.params.triggers)
+  const wbTriggers = useWorkbench((s) => s.params.triggers)
+  const triggers = triggersProp ?? wbTriggers
   const ref = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)

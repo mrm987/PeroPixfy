@@ -27,3 +27,40 @@ jobs:
         uses: Comfy-Org/publish-node-action@main
         with:
           personal_access_token: ${{ secrets.REGISTRY_ACCESS_TOKEN }}
+
+      # 레지스트리 버전 상세의 '업데이트 내역(changelog)'을 채운다.
+      # publish-node-action도 pyproject.toml도 changelog 입력을 지원하지 않으므로(그래서 1.0.0~1.2.0이
+      # 전부 비어 있음), 게시 직후 레지스트리 API로 직접 넣는다:
+      #   PUT /publishers/{publisherId}/nodes/{nodeId}/versions/{version}  body={"changelog": "..."}
+      # {version}은 semver 문자열을 그대로 받고, 인증은 위와 같은 토큰(Authorization: Bearer).
+      # 내용은 CHANGELOG.md에서 이번 버전의 '## <version>' 섹션만 뽑아 쓴다.
+      # 게시는 이미 성공했으므로 이 단계가 실패해도 릴리스를 실패로 만들지 않는다(로그에 경고만).
+      - name: Fill in changelog on registry
+        continue-on-error: true
+        env:
+          TOKEN: ${{ secrets.REGISTRY_ACCESS_TOKEN }}
+        run: |
+          set -uo pipefail
+          VERSION=$(grep -m1 '^version' pyproject.toml | sed -E 's/^version *= *"([^"]+)".*/\1/')
+          NODE=$(grep -m1 '^name' pyproject.toml | sed -E 's/^name *= *"([^"]+)".*/\1/')
+          PUBLISHER=$(grep -m1 '^PublisherId' pyproject.toml | sed -E 's/^PublisherId *= *"([^"]+)".*/\1/')
+          NOTES=$(awk -v v="## $VERSION" '$0 == v {f=1; next} /^## /{f=0} f' CHANGELOG.md)
+          if [ -z "$(printf '%s' "$NOTES" | tr -d '[:space:]')" ]; then
+            echo "::warning::CHANGELOG.md has no '## $VERSION' section — skipping changelog"
+            exit 0
+          fi
+          jq -n --arg c "$NOTES" '{changelog: $c}' > /tmp/changelog.json
+          # 게시 직후 버전이 아직 조회되지 않을 수 있어 몇 번 재시도.
+          for i in 1 2 3 4 5; do
+            if curl -fsS -X PUT \
+              "https://api.comfy.org/publishers/$PUBLISHER/nodes/$NODE/versions/$VERSION" \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Content-Type: application/json" \
+              --data @/tmp/changelog.json; then
+              echo "changelog set for $NODE $VERSION"
+              exit 0
+            fi
+            echo "attempt $i failed — retrying in 10s"
+            sleep 10
+          done
+          echo "::warning::could not set changelog for $VERSION (publish itself succeeded)"

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { parseViewUrl, thumbUrl } from '../../api/comfy'
 import { useT } from '../../i18n'
 import { activeTabOf, useBatch } from '../../stores/batch'
@@ -21,18 +21,58 @@ const stripSrc = (url: string, key: string) => {
  * 버튼·슬라이더·넘패드 +/-. 줌 상태는 이미지를 넘겨도 유지된다. 결과는 스토어에서
  * 라이브로 읽어 삭제가 즉시 반영된다.
  */
-export function CurationModal({ slotId, aspect, onClose }: { slotId: string; aspect: number; onClose: () => void }) {
+export function CurationModal({ slotId, initialId, aspect, onClose }: { slotId: string; initialId?: string; aspect: number; onClose: () => void }) {
   const t = useT()
+  // 큐레이션 대상 슬롯은 내부 상태 — 상/하 방향키로 다른 슬롯으로 전환한다. 모달은 캔버스를 덮는
+  // 오버레이라 열려있는 동안 외부에서 prop slotId가 바뀌지 않으므로, 프롭으로 1회 초기화해도 안전.
+  const [curSlotId, setCurSlotId] = useState(slotId)
   const results = useBatch((s) => activeTabOf(s)?.results ?? [])
-  const slotName = useBatch((s) => activeTabOf(s)?.slots.find((sl) => sl.id === slotId)?.name ?? '')
+  const slots = useBatch((s) => activeTabOf(s)?.slots ?? [])
   const removeResults = useBatch((s) => s.removeResults)
-  const [idx, setIdx] = useState(0)
+  const setCharBase = useBatch((s) => s.setCharBase)
+  const [seedFlash, setSeedFlash] = useState(false)
+  const flashTimer = useRef<number | null>(null)
+  const slotName = slots.find((sl) => sl.id === curSlotId)?.name ?? ''
 
-  const items = results.filter((r) => r.slotId === slotId && r.status === 'done' && r.imageUrls[0])
+  const items = results.filter((r) => r.slotId === curSlotId && r.status === 'done' && r.imageUrls[0])
+  // 더블클릭으로 진입했으면 그 이미지(initialId)가 선택된 상태로 시작한다. (없으면 첫 이미지.)
+  const [idx, setIdx] = useState(() => {
+    const i = initialId ? items.findIndex((it) => it.id === initialId) : -1
+    return i >= 0 ? i : 0
+  })
   const safeIdx = Math.min(idx, Math.max(0, items.length - 1))
   const cur = items[safeIdx]
   const lenRef = useRef(items.length)
   lenRef.current = items.length
+
+  // 상/하 방향키 슬롯 전환용 — 결과가 있는 슬롯만(빈 슬롯은 열면 바로 닫히므로 제외) 슬롯 순서대로.
+  // 안정적 키보드 핸들러가 읽도록 이전/다음 슬롯 id를 ref에 담는다. 끝에서는 undefined(=정지).
+  const curatableIds = slots
+    .filter((sl) => results.some((r) => r.slotId === sl.id && r.status === 'done' && r.imageUrls[0]))
+    .map((sl) => sl.id)
+  const slotPos = curatableIds.indexOf(curSlotId)
+  const slotNavRef = useRef<{ up?: string; down?: string }>({})
+  slotNavRef.current = {
+    up: slotPos > 0 ? curatableIds[slotPos - 1] : undefined,
+    down: slotPos >= 0 && slotPos < curatableIds.length - 1 ? curatableIds[slotPos + 1] : undefined,
+  }
+
+  // 휠 내비게이션(이미지 넘기기)을 모달 루트에 건다 — 삭제 직후 포인터가 썸네일 스트립 위에 있어도
+  // 넘길 수 있고, 콜백 ref라 노드가 리마운트돼도 리스너를 다시 붙여 '삭제 후 잠깐 휠이 안 먹는' 문제를
+  // 없앤다. deltaY만 소비하므로 shift+휠(가로 스크롤)로 스트립을 넘기는 동작은 그대로 유지된다.
+  const wheelCleanup = useRef<(() => void) | null>(null)
+  const rootRef = useCallback((node: HTMLDivElement | null) => {
+    wheelCleanup.current?.()
+    wheelCleanup.current = null
+    if (!node) return
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY === 0) return
+      e.preventDefault()
+      setIdx((i) => clamp(i + (e.deltaY > 0 ? 1 : -1), 0, Math.max(0, lenRef.current - 1)))
+    }
+    node.addEventListener('wheel', onWheel, { passive: false })
+    wheelCleanup.current = () => node.removeEventListener('wheel', onWheel)
+  }, [])
 
   // 이미지 뷰어식 확대/축소·패닝. 이미지를 넘겨도 줌 상태는 유지한다(리셋 안 함).
   const stageRef = useRef<HTMLDivElement>(null)
@@ -75,25 +115,29 @@ export function CurationModal({ slotId, aspect, onClose }: { slotId: string; asp
     if (items.length === 0) onClose()
   }, [items.length, onClose])
 
-  // 휠 = 이미지 넘기기 (Single과 동일, 1이벤트=1장).
-  useEffect(() => {
-    const el = stageRef.current
-    if (!el) return
-    const onWheel = (e: WheelEvent) => {
-      if (e.deltaY === 0) return
-      e.preventDefault()
-      setIdx((i) => clamp(i + (e.deltaY > 0 ? 1 : -1), 0, Math.max(0, lenRef.current - 1)))
-    }
-    el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
-  }, [])
+  // 시드 적용 ✓ 플래시 타이머 정리(언마운트 시).
+  useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current) }, [])
 
-  // 키보드: ←/→ 넘기기, 넘패드 +/-(및 +/-) 확대축소, Delete 현재 삭제, Esc 닫기.
+  // 삭제 등으로 항목 수가 줄면 idx가 범위를 벗어난 채 남는다(표시는 클램프한 safeIdx라 정상이지만,
+  // 이동은 원본 idx 기준이라 첫 입력이 idx를 유효범위로 되돌리기만 하고 화면은 안 바뀜 = "두 번 눌러야
+  // 전환"). 항목 수가 바뀔 때마다 idx를 safeIdx로 즉시 맞춰 이 어긋남을 없앤다.
+  useEffect(() => {
+    setIdx((i) => Math.min(i, Math.max(0, items.length - 1)))
+  }, [items.length])
+
+  // 키보드: ←/→ 전후 이미지, ↑/↓ 전후 슬롯, 넘패드 +/-(및 +/-) 확대축소, Delete 현재 삭제, Esc 닫기.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // 텍스트 입력(슬롯 프롬프트 등)에 포커스가 있으면 큐레이션 단축키를 가로채지 않는다 —
+      // Delete=텍스트 삭제, 화살표=커서 이동, +/-·Esc=그 입력/자동완성이 처리하게.
+      const fel = document.activeElement as HTMLElement | null
+      if (fel && (fel.tagName === 'INPUT' || fel.tagName === 'TEXTAREA' || fel.isContentEditable)) return
       if (e.key === 'Escape') { onClose(); return }
       if (e.key === 'ArrowLeft') { e.preventDefault(); setIdx((i) => clamp(i - 1, 0, Math.max(0, lenRef.current - 1))) }
       else if (e.key === 'ArrowRight') { e.preventDefault(); setIdx((i) => clamp(i + 1, 0, Math.max(0, lenRef.current - 1))) }
+      // ↑/↓ = 전후 슬롯으로 전환. 전환 시 새 슬롯의 첫 이미지(idx 0)에서 시작하고 줌은 초기화한다.
+      else if (e.key === 'ArrowUp') { e.preventDefault(); const up = slotNavRef.current.up; if (up) { setCurSlotId(up); setIdx(0); resetZoom() } }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); const dn = slotNavRef.current.down; if (dn) { setCurSlotId(dn); setIdx(0); resetZoom() } }
       else if (e.code === 'NumpadAdd' || e.key === '+' || e.key === '=') { e.preventDefault(); zoomBy(1.25) }
       else if (e.code === 'NumpadSubtract' || e.key === '-') { e.preventDefault(); zoomBy(0.8) }
       else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); if (cur) void removeResults([cur.id]) }
@@ -112,10 +156,26 @@ export function CurationModal({ slotId, aspect, onClose }: { slotId: string; asp
     }
   }
 
+  // 현재 이미지의 시드를 생성 옵션(활성 캐릭터 Base seed)에 반영. Single의 시드 클릭과 동일하게
+  // 시드만 바꾸고 Random 토글은 건드리지 않는다. 적용 확인용으로 버튼을 잠깐 ✓로 바꾼다.
+  const applySeed = () => {
+    if (cur.seed == null) return
+    setCharBase({ seed: cur.seed })
+    setSeedFlash(true)
+    if (flashTimer.current) clearTimeout(flashTimer.current)
+    flashTimer.current = window.setTimeout(() => setSeedFlash(false), 1200)
+  }
+
   return (
-    <div className="curate">
+    <div className="curate" ref={rootRef}>
         <div className="curate-head">
           <span className="curate-title">{slotName || t('(untitled)')} · {safeIdx + 1}/{items.length}</span>
+          {cur.seed != null && (
+            <button className={`curate-seed${seedFlash ? ' applied' : ''}`} onClick={applySeed}
+              title={t('Click to use this seed for generation')}>
+              {seedFlash ? t('✓ seed applied') : `🎲 ${cur.seed}`}
+            </button>
+          )}
           <div className="curate-zoom">
             <button onClick={() => zoomBy(0.8)} title={t('Zoom out (Numpad -)')}>－</button>
             <input type="range" min={20} max={800} step={5} value={Math.round(zoom.scale * 100)}
@@ -135,7 +195,7 @@ export function CurationModal({ slotId, aspect, onClose }: { slotId: string; asp
             onPointerDown={onPanStart} onPointerMove={onPanMove} onPointerUp={onPanEnd} onPointerLeave={onPanEnd}
             onDoubleClick={resetZoom}
             style={{ cursor: zoom.scale > 1 ? 'grab' : 'default' }}
-            title={t('Wheel: prev/next image · Drag (when zoomed): pan · Double-click: reset zoom')}>
+            title={t('Wheel / ←→: prev/next image · ↑↓: prev/next slot · Drag (when zoomed): pan · Double-click: reset zoom')}>
             <img ref={imgRef} src={bust(cur.imageUrls[0], cur.id)} alt="" draggable={false}
               onLoad={() => setZoom((z) => applyClamp(z.scale, z.x, z.y))}
               style={{ transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})` }} />

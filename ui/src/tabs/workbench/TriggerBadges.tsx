@@ -1,20 +1,22 @@
 import { useEffect, useState } from 'react'
 import { useT } from '../../i18n'
 import { useLibrary } from '../../stores/library'
-import { useWorkbench } from '../../stores/workbench'
 import { activeTriggerWords, collectTriggers, normPath, splitCsv } from '../../tags/triggers'
+import type { LoraEntry } from '../../workflow/types'
 
 /**
  * 활성 로라들의 트리거워드를 뱃지로 보여주고(중복 제거), 클릭으로 on/off(로라 정보에 영구
- * 저장), 드래그로 순서 변경한다. on인 단어들을 순서대로 params.triggers에 동기화 →
- * 빌더가 positive의 @triggers 위치에 삽입한다. 포지티브 프롬프트와 완전히 분리.
+ * 저장), 드래그로 순서 변경한다. on인 단어들을 순서대로 triggers에 동기화 → 빌더가 positive의
+ * @triggers 위치에 삽입한다. 포지티브 프롬프트와 완전히 분리. Single(workbench)과 Multi(캐릭터
+ * base) 양쪽에서 재사용하도록 loras/order/setOrder/setTriggers를 prop으로 받는다.
  */
-export function TriggerBadges() {
+export function TriggerBadges({ loras, order, setOrder, setTriggers }: {
+  loras: LoraEntry[]
+  order: string[]
+  setOrder: (order: string[]) => void
+  setTriggers: (triggers: string[]) => void
+}) {
   const t = useT()
-  const loras = useWorkbench((s) => s.params.loras)
-  const order = useWorkbench((s) => s.triggerOrder)
-  const setOrder = useWorkbench((s) => s.setTriggerOrder)
-  const setParams = useWorkbench((s) => s.set)
   const libLoras = useLibrary((s) => s.loras)
   const toggleDisabled = useLibrary((s) => s.toggleTriggerDisabled)
   const [drag, setDrag] = useState<number | null>(null)
@@ -26,9 +28,9 @@ export function TriggerBadges() {
   const orderedKey = ordered.join('|')
   const onKey = onWords.join('|')
 
-  // params.triggers(빌더용) 동기화 + order에서 사라진/새 단어 반영.
+  // triggers(빌더용) 동기화 + order에서 사라진/새 단어 반영.
   useEffect(() => {
-    setParams({ triggers: onWords })
+    setTriggers(onWords)
     if (orderedKey !== order.join('|')) setOrder(ordered)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderedKey, onKey])

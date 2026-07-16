@@ -21,23 +21,19 @@ export const ANIMA_DEFAULTS: GenerationParams = {
   batchSize: 1,
   denoise: 0.5,
   i2iDenoise: 0.6,
-  inpaintDenoise: 0.6,
+  inpaintDenoise: 0.7, // crop-and-stitch(마스크 영역을 ~1MP로 확대 인페인트)에선 해상도가 충분해 0.7이 안전하게 디테일↑
+  inpaintMaskExpand: 12,
+  inpaintMaskFeather: 12,
   filenamePrefix: 'PeroPixfy', // 제출 시 defaultFilenamePrefix()로 덮어씀
 }
 
-// %date:...% 토큰은 ComfyUI 프론트엔드가 치환하는 기능이라 API 제출에서는
-// 동작하지 않음 (Windows에서 ':' 폴더명 오류) — 날짜는 클라이언트에서 계산한다.
+// 워크스페이스 폴더 '최상위'에 저장한다 — 날짜별 하위폴더 없이. mode(t2i/i2i/inpaint)는
+// 폴더가 아니라 파일명 prefix로 남는다(t2i_00001_.png). base는 옵션 모달의 Single 출력
+// 폴더(상대/절대). 비면 기본 'PeroPixfy/Single'. 안정적 prefix → SaveImage가 폴더 내
+// 최대 번호 +1로 순차 저장(정렬 가능).
 export function defaultFilenamePrefix(mode: string, base = 'PeroPixfy/Single'): string {
-  const d = new Date()
-  const ymd = [
-    d.getFullYear(),
-    String(d.getMonth() + 1).padStart(2, '0'),
-    String(d.getDate()).padStart(2, '0'),
-  ].join('-')
-  // 안정적인 prefix → SaveImage가 폴더 내 최대 번호 +1로 순차 저장(정렬 가능).
-  // base는 옵션 모달의 Single 출력 폴더(상대/절대). 비면 기본 'PeroPixfy'.
   const root = (base || '').trim() || 'PeroPixfy/Single'
-  return `${root}/${ymd}/${mode}`
+  return `${root}/${mode}`
 }
 
 export const HIRES_DEFAULTS: HiresParams = {

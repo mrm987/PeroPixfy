@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useT } from '../../i18n'
 import { useLibrary } from '../../stores/library'
@@ -87,6 +87,18 @@ export function LoraPicker({
       window.removeEventListener('mousedown', onDown)
       window.removeEventListener('keydown', onKey)
     }
+  }, [open])
+
+  // 열릴 때 현재 선택된 로라가 리스트 중앙에 보이도록 스크롤한다(네이티브 select처럼). 리스트
+  // 내부 scrollTop만 조정해 페이지 스크롤 부작용이 없고, 페인트 전(useLayoutEffect)이라 깜빡임 없음.
+  useLayoutEffect(() => {
+    if (!open) return
+    const list = panelRef.current?.querySelector('.lora-picker-list') as HTMLElement | null
+    const active = panelRef.current?.querySelector('.lora-picker-item.active') as HTMLElement | null
+    if (!list || !active) return
+    const lr = list.getBoundingClientRect()
+    const ar = active.getBoundingClientRect()
+    list.scrollTop += (ar.top - lr.top) - (lr.height - ar.height) / 2
   }, [open])
 
   const filtered = useMemo(() => {

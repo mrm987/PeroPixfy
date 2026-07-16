@@ -524,7 +524,7 @@ async def tags_json(request):
 async def gallery_record(request):
     data = await request.json()
     gallery.record(data["prompt_id"], json.dumps(data["params"], ensure_ascii=False),
-                   source=data.get("source", "single"))
+                   source=data.get("source", "single"), workspace=data.get("workspace", ""))
     return web.json_response({"ok": True})
 
 
@@ -605,7 +605,56 @@ async def gallery_list(request):
     limit = int(request.query.get("limit", "100"))
     offset = int(request.query.get("offset", "0"))
     source = request.query.get("source")  # 'single' | 'multi' | 미지정(전체)
-    return web.json_response({"generations": gallery.list_recent(limit, offset, source)})
+    workspace = request.query.get("workspace")  # Single 작업 단위. 없으면(멀티 등) 필터 안 함.
+    return web.json_response({"generations": gallery.list_recent(limit, offset, source, workspace)})
+
+
+@routes.post("/peropixfy/api/gallery/copy-to-workspace")
+async def gallery_copy_to_workspace(request):
+    """선택한 기록들을 다른 워크스페이스로 복제 — 원본은 두고, 대상에 새 기록 + 파일 사본을 만든다."""
+    data = await request.json()
+    ids = data.get("prompt_ids") or []
+    ws = data.get("workspace", "")
+    folder = data.get("folder", "")
+    try:
+        out_dir = os.path.abspath(folder_paths.get_output_directory())
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+    copied = await asyncio.get_event_loop().run_in_executor(
+        None, gallery.copy_to_workspace, ids, ws, folder, out_dir)
+    return web.json_response({"ok": True, "copied": copied})
+
+
+@routes.post("/peropixfy/api/gallery/delete-workspace-data")
+async def gallery_delete_workspace_data(request):
+    """워크스페이스 완전 삭제 — 그 워크스페이스의 DB 기록 + 이미지 파일 + (전용) 폴더까지 제거."""
+    data = await request.json()
+    ws = data.get("workspace", "")
+    folder = data.get("folder", "")
+    try:
+        out_dir = os.path.abspath(folder_paths.get_output_directory())
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+    deleted = await asyncio.get_event_loop().run_in_executor(
+        None, gallery.delete_workspace_data, ws, folder, out_dir)
+    return web.json_response({"ok": True, "deleted": deleted})
+
+
+@routes.post("/peropixfy/api/gallery/rename-folder")
+async def gallery_rename_folder(request):
+    """워크스페이스 이름 변경 시 그 워크스페이스의 출력 파일을 옛 폴더→새 폴더로 실제 이동하고
+    DB 경로도 갱신(폴더 이분화 방지). 파일 이동은 블로킹이라 executor에서 실행."""
+    data = await request.json()
+    ws = data.get("workspace", "")
+    old_root = data.get("old_root", "")
+    new_root = data.get("new_root", "")
+    try:
+        out_dir = os.path.abspath(folder_paths.get_output_directory())
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=500)
+    moved = await asyncio.get_event_loop().run_in_executor(
+        None, gallery.rename_workspace_files, ws, old_root, new_root, out_dir)
+    return web.json_response({"ok": True, "moved": moved})
 
 
 @routes.post("/peropixfy/api/exists")

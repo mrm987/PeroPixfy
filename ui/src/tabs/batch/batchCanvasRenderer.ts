@@ -6,6 +6,7 @@ import { parseViewUrl, thumbUrl } from '../../api/comfy'
 export interface SlotLike {
   id: string
   name: string
+  locked?: boolean // true = 생성 제외(잠금). 캔버스 타이틀을 비활성 표시.
 }
 export interface ResultLike {
   id: string
@@ -45,6 +46,7 @@ export interface LayoutNode {
 export interface LayoutRow {
   label: string
   slotId: string
+  locked: boolean
   x: number
   y: number
   nodes: LayoutNode[]
@@ -104,7 +106,10 @@ export function computeLayout(slots: SlotLike[], results: ResultLike[], cardW = 
       w,
       h: CARD_H,
     }))
-    rows.push({ label: `${pad3(slotStart + i)} ${slot.name || '(untitled)'}`, slotId: slot.id, x: MARGIN_X, y, nodes })
+    rows.push({
+      label: `${slot.locked ? '🔒 ' : ''}${pad3(slotStart + i)} ${slot.name || '(untitled)'}`,
+      slotId: slot.id, locked: !!slot.locked, x: MARGIN_X, y, nodes,
+    })
     y = nodeY + CARD_H + ROW_GAP
   })
   return rows
@@ -243,13 +248,14 @@ export function render(
       tx = sx + ROW_BTN + 5
     }
     // 타이틀 — 카드 위에 겹쳐도 읽히게 그림자. 호버 시 밝게 + 보라 밑줄(클릭=확대 표시).
+    // 잠긴 슬롯(생성 제외)은 흐린 색 + 🔒(label에 접두)으로 비활성 표시.
     const hot = row.slotId === hoverTitle
     ctx.font = '600 16px sans-serif'
     ctx.textAlign = 'left'
     ctx.textBaseline = 'top'
     ctx.shadowColor = 'rgba(0, 0, 0, 0.85)'
     ctx.shadowBlur = 3
-    ctx.fillStyle = hot ? '#ffffff' : '#e2e8f0'
+    ctx.fillStyle = hot ? '#ffffff' : row.locked ? '#5b6472' : '#e2e8f0'
     ctx.fillText(row.label, tx, sy + 2)
     ctx.shadowColor = 'transparent'
     ctx.shadowBlur = 0

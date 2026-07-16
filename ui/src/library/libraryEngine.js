@@ -2291,6 +2291,15 @@ function sortLoras(list) {
     secondary = (a, b) =>
       (a.file_name || a.rel_path || "").toLowerCase()
         .localeCompare((b.file_name || b.rel_path || "").toLowerCase());
+  } else if (sortMode === "styleuse") {
+    // 스타일에 많이 쓰인 순 — style_count(각 로라가 등장하는 스타일 수) 내림차순.
+    // 동수면 이름순으로 안정 정렬.
+    secondary = (a, b) => {
+      const d = (b.style_count || 0) - (a.style_count || 0);
+      if (d) return d;
+      return (a.file_name || a.rel_path || "").toLowerCase()
+        .localeCompare((b.file_name || b.rel_path || "").toLowerCase());
+    };
   } else {  // date
     const key = l => l.ctime || l.updated_at || 0;
     secondary = (a, b) => key(b) - key(a);
@@ -2731,7 +2740,7 @@ function buildPanel(el) {
   const sortSel = document.createElement("select");
   sortSel.className = "lm-sort";
   sortSel.title = "Sort";
-  [["default", "Default"], ["name", "Name (A-Z)"], ["date", "Recently added"]]
+  [["default", "Default"], ["name", "Name (A-Z)"], ["date", "Recently added"], ["styleuse", "Most used in styles"]]
     .forEach(([v, t]) => {
       const o = document.createElement("option");
       o.value = v; o.textContent = t;

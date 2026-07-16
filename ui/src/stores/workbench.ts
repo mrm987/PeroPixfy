@@ -2,8 +2,9 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { clearQueue as apiClearQueue, deleteQueued, enumValues, fetchNodeInfo, fetchOutputs, fetchQueueIds, interrupt, submitPrompt, viewUrl } from '../api/comfy'
 import {
-  completeGeneration, deleteGeneration, failGeneration, listGenerations,
-  recordGeneration, starGeneration, type GenerationRecord,
+  completeGeneration, copyToWorkspace as copyToWorkspaceApi, deleteGeneration, deleteWorkspaceData,
+  failGeneration, listGenerations, recordGeneration, renameWorkspaceFolder,
+  starGeneration, type GenerationRecord,
 } from '../api/gallery'
 import { fetchSettings } from '../api/settings'
 import { buildGraph } from '../workflow/builder'
@@ -19,7 +20,42 @@ export interface HistoryItem {
   starred: boolean
 }
 
+export interface Workspace {
+  id: string
+  name: string
+}
+
+// 워크스페이스별로 독립 저장되는 필드(생성세팅 + 저장소/포맷). 스타일·로라는 전역 공유라 제외.
+export interface WsData {
+  params: GenerationParams
+  singleOutput: string
+  format: 'png' | 'jpg' | 'webp'
+  quality: number
+  randomizeSeed: boolean
+  triggerBadges: boolean
+  triggerOrder: string[]
+}
+
 const randomSeed = () => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
+
+const WS_DEFAULT_ID = 'default' // 기본/레거시 워크스페이스 id — 서버 마이그레이션이 옛 single 기록을 이 id로 귀속시킨다.
+
+// 워크스페이스 이름을 출력 폴더명으로 안전하게 정규화(경로 구분자·특수문자 제거).
+const safeFolder = (name: string) =>
+  name.trim().replace(/[^\w\-가-힣 ]+/g, '').replace(/\s+/g, '_').slice(0, 40) || 'ws'
+
+// 현재 라이브 필드 → 워크스페이스 스냅샷.
+const pickWs = (s: Pick<WsData, keyof WsData>): WsData => ({
+  params: s.params, singleOutput: s.singleOutput, format: s.format, quality: s.quality,
+  randomizeSeed: s.randomizeSeed, triggerBadges: s.triggerBadges, triggerOrder: s.triggerOrder,
+})
+
+// 새 워크스페이스 기본값. 폴더명이 주어지면 PeroPixfy/Single/<이름> 하위로 저장(디스크에서도 분리).
+const defaultWsData = (folderName?: string): WsData => ({
+  params: ANIMA_DEFAULTS,
+  singleOutput: folderName ? `PeroPixfy/Single/${safeFolder(folderName)}` : '',
+  format: 'png', quality: 95, randomizeSeed: true, triggerBadges: true, triggerOrder: [],
+})
 
 interface WorkbenchState {
   params: GenerationParams
@@ -38,6 +74,16 @@ interface WorkbenchState {
   format: 'png' | 'jpg' | 'webp' // Single 저장 포맷 (Multi 배치 설정과 동일, 세션 지속).
   quality: number // jpg/webp 품질(1–100). png은 무시.
 
+  // 워크스페이스 — Single 작업 단위. 각 워크스페이스는 독립된 히스토리·생성세팅·출력폴더를 가진다
+  // (위 라이브 필드 params/singleOutput/format/quality/... 는 '활성' 워크스페이스의 현재 상태).
+  // 스타일·로라 라이브러리는 전역 공유. 비활성 워크스페이스의 스냅샷은 wsData에 보관.
+  // workspaces=알려진 전체(열림+닫힘), openIds=탭으로 열려있는 것(순서), activeWs∈openIds.
+  // 탭을 '닫으면' openIds에서만 빠지고 데이터는 보존 — + 메뉴에서 다시 열 수 있다.
+  workspaces: Workspace[]
+  openIds: string[]
+  activeWs: string
+  wsData: Record<string, WsData>
+
   init: () => Promise<void>
   set: (patch: Partial<GenerationParams>) => void
   setRandomize: (v: boolean) => void
@@ -51,6 +97,13 @@ interface WorkbenchState {
   setNotice: (notice: string | null) => void
   setSingleOutput: (v: string) => void
   setSave: (patch: Partial<Pick<WorkbenchState, 'format' | 'quality'>>) => void
+  createWorkspace: (name?: string) => void
+  switchWorkspace: (id: string) => Promise<void>
+  openWorkspace: (id: string) => Promise<void>
+  closeWorkspace: (id: string) => Promise<void>
+  renameWorkspace: (id: string, name: string) => Promise<void>
+  deleteWorkspace: (id: string) => Promise<void>
+  copyToWorkspace: (promptIds: string[], targetId: string) => Promise<void>
   restore: (params: GenerationParams) => void
   select: (promptId: string) => void
   star: (promptId: string) => Promise<void>
@@ -79,36 +132,31 @@ const recordToHistory = (r: GenerationRecord): HistoryItem => ({
 
 const PERSIST_KEY = 'peropix.workbench'
 
-export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
-  params: ANIMA_DEFAULTS,
-  randomizeSeed: true,
-  triggerBadges: true,
-  triggerOrder: [],
-  history: [],
-  selectedId: null,
-  progress: null,
-  error: null,
-  flashLora: null,
-  availableLoras: [],
-  availableUnets: [],
-  notice: null,
-  singleOutput: '',
-  format: 'png',
-  quality: 95,
-
-  // 앱 시작 시: 기록 복원 + pending 상태 복구 (/history → /queue 순서로 확인).
-  // 서버 저장 기본값은 마지막 작업 상태(localStorage)가 없을 때만 적용.
-  init: async () => {
-    if (localStorage.getItem(PERSIST_KEY) == null) {
-      const saved = await fetchSettings().catch(() => ({}))
-      set((s) => ({ params: { ...s.params, ...saved } }))
-    }
-
-    const records = await listGenerations(HISTORY_LIMIT, 'single')
-    const history = records.map(recordToHistory)
-    set({ history })
-
-    const pending = history.filter((h) => h.status === 'pending')
+export const useWorkbench = create<WorkbenchState>()(persist((set, get) => {
+  // 활성 워크스페이스의 기록만 불러온다.
+  const loadHistory = async (ws: string): Promise<HistoryItem[]> => {
+    const records = await listGenerations(HISTORY_LIMIT, 'single', ws)
+    return records.map(recordToHistory)
+  }
+  // 워크스페이스 활성화 — 현재 것을 스냅샷 저장하고 대상 세팅/히스토리로 전환한다.
+  const activate = async (id: string) => {
+    const s = get()
+    if (id === s.activeWs) return
+    const target = s.wsData[id] ?? defaultWsData()
+    set({
+      wsData: { ...s.wsData, [s.activeWs]: pickWs(s) },
+      activeWs: id,
+      history: [], selectedId: null, progress: null, error: null, notice: null,
+      ...target,
+      // 구버전 저장 params에 없는 신규 필드(마스크 확장/페더 등)를 기본값으로 백필.
+      params: { ...ANIMA_DEFAULTS, ...target.params },
+    })
+    set({ history: await loadHistory(id) })
+    await recoverPending()
+  }
+  // pending 기록을 큐/출력으로 대조해 done/error로 확정 (init·워크스페이스 전환 시 호출).
+  const recoverPending = async () => {
+    const pending = get().history.filter((h) => h.status === 'pending')
     if (pending.length === 0) return
     const queueIds = await fetchQueueIds().catch(() => new Set<string>())
     for (const h of pending) {
@@ -126,6 +174,38 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
       }
       // 큐에 아직 있으면 pending 유지 — WS가 완료를 알려줌
     }
+  }
+
+  return {
+  params: ANIMA_DEFAULTS,
+  randomizeSeed: true,
+  triggerBadges: true,
+  triggerOrder: [],
+  history: [],
+  selectedId: null,
+  progress: null,
+  error: null,
+  flashLora: null,
+  availableLoras: [],
+  availableUnets: [],
+  notice: null,
+  singleOutput: '',
+  format: 'png',
+  quality: 95,
+  workspaces: [{ id: WS_DEFAULT_ID, name: 'Workspace 1' }],
+  openIds: [WS_DEFAULT_ID],
+  activeWs: WS_DEFAULT_ID,
+  wsData: {},
+
+  // 앱 시작 시: 활성 워크스페이스 기록 복원 + pending 상태 복구 (/history → /queue 순서로 확인).
+  // 서버 저장 기본값은 마지막 작업 상태(localStorage)가 없을 때만 적용.
+  init: async () => {
+    if (localStorage.getItem(PERSIST_KEY) == null) {
+      const saved = await fetchSettings().catch(() => ({}))
+      set((s) => ({ params: { ...s.params, ...saved } }))
+    }
+    set({ history: await loadHistory(get().activeWs) })
+    await recoverPending()
   },
 
   set: (patch) => set((s) => ({ params: { ...s.params, ...patch } })),
@@ -162,6 +242,125 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
   setNotice: (notice) => set({ notice }),
   setSingleOutput: (singleOutput) => set({ singleOutput }),
   setSave: (patch) => set(patch),
+
+  // 새 워크스페이스 생성 → 현재 것을 스냅샷으로 보존하고, 새 탭(열림)으로 빈 히스토리·기본 세팅 전환.
+  createWorkspace: (name) => {
+    const s = get()
+    const nm = (name || '').trim() || `Workspace ${s.workspaces.length + 1}`
+    const id = `ws_${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`
+    set({
+      wsData: { ...s.wsData, [s.activeWs]: pickWs(s) },
+      workspaces: [...s.workspaces, { id, name: nm }],
+      openIds: [...s.openIds, id],
+      activeWs: id,
+      history: [], selectedId: null, progress: null, error: null, notice: null,
+      ...defaultWsData(nm),
+    })
+  },
+
+  // 탭 전환 (이미 열려있는 워크스페이스).
+  switchWorkspace: async (id) => { await activate(id) },
+
+  // 닫아둔(보존된) 워크스페이스를 다시 탭으로 열고 전환. 이미 열려있으면 그냥 전환.
+  openWorkspace: async (id) => {
+    if (!get().openIds.includes(id)) set((s) => ({ openIds: [...s.openIds, id] }))
+    await activate(id)
+  },
+
+  // 탭 닫기 — openIds에서만 빼고 데이터(히스토리·폴더·스냅샷)는 보존한다(+ 메뉴에서 다시 열 수 있음).
+  // 마지막 열린 탭은 닫지 않는다. 활성 탭을 닫으면 인접한 열린 탭으로 전환한다.
+  closeWorkspace: async (id) => {
+    const s = get()
+    if (!s.openIds.includes(id) || s.openIds.length <= 1) return
+    const idx = s.openIds.indexOf(id)
+    const openIds = s.openIds.filter((x) => x !== id)
+    if (id === s.activeWs) {
+      const nextId = openIds[Math.min(idx, openIds.length - 1)]
+      const target = s.wsData[nextId] ?? defaultWsData()
+      set({
+        openIds,
+        wsData: { ...s.wsData, [s.activeWs]: pickWs(s) },
+        activeWs: nextId,
+        history: [], selectedId: null, progress: null, error: null, notice: null,
+        ...target,
+      })
+      set({ history: await loadHistory(nextId) })
+      await recoverPending()
+    } else {
+      set({ openIds })
+    }
+  },
+
+  // 이름 변경 시, 출력 폴더가 '자동 파생'(빈값=베이스 또는 옛 이름에서 만든 값)이면 새 이름에
+  // 맞춰 폴더도 바꾸고, 그 워크스페이스의 기존 이미지를 실제로 새 폴더로 옮긴다(백엔드) — 폴더가
+  // 둘로 쪼개지지 않게. 사용자가 Options에서 직접 지정한 커스텀/절대 폴더는 건드리지 않는다.
+  // (활성 워크스페이스는 라이브 필드, 비활성은 wsData 스냅샷을 갱신.)
+  renameWorkspace: async (id, name) => {
+    const nm = name.trim()
+    if (!nm) return
+    const s = get()
+    const ws = s.workspaces.find((w) => w.id === id)
+    if (!ws) return
+    const curFolder = id === s.activeWs ? s.singleOutput : (s.wsData[id]?.singleOutput ?? '')
+    const isAuto = curFolder === '' || curFolder === `PeroPixfy/Single/${safeFolder(ws.name)}`
+    const nextFolder = `PeroPixfy/Single/${safeFolder(nm)}`
+    const workspaces = s.workspaces.map((w) => (w.id === id ? { ...w, name: nm } : w))
+    if (id === s.activeWs) {
+      set({ workspaces, ...(isAuto ? { singleOutput: nextFolder } : {}) })
+    } else {
+      const cur = s.wsData[id]
+      set(cur && isAuto
+        ? { workspaces, wsData: { ...s.wsData, [id]: { ...cur, singleOutput: nextFolder } } }
+        : { workspaces })
+    }
+    if (!isAuto) return
+    // 실제 폴더/DB 경로 이동 (기존 이미지가 새 폴더로 따라오게). 활성 워크스페이스면 히스토리의
+    // 이미지 URL이 새 경로를 가리키도록 다시 로드한다.
+    const oldRoot = curFolder || 'PeroPixfy/Single'
+    await renameWorkspaceFolder(id, oldRoot, nextFolder).catch(() => {})
+    if (get().activeWs === id) set({ history: await loadHistory(id) })
+  },
+
+  // 워크스페이스 '완전 삭제' → 목록·탭·스냅샷에서 제거하고, 백엔드에서 DB 기록 + 이미지 파일 +
+  // (전용) 폴더까지 전부 삭제한다. 보통 +메뉴의 닫힌 목록(비활성·비열림)에서만 호출된다.
+  // 마지막 하나는 남긴다. 방어적으로 활성/열림이면 인접 탭으로 전환한다.
+  deleteWorkspace: async (id) => {
+    const s = get()
+    if (s.workspaces.length <= 1) return
+    const folder = id === s.activeWs ? s.singleOutput : (s.wsData[id]?.singleOutput ?? '')
+    const remaining = s.workspaces.filter((w) => w.id !== id)
+    const openIds = s.openIds.filter((x) => x !== id)
+    const nextData = { ...s.wsData }
+    delete nextData[id]
+    if (id === s.activeWs) {
+      // 활성 탭을 삭제하는 경우 — 남은 열린 탭(없으면 남은 워크스페이스)으로 전환.
+      const nextId = openIds[0] ?? remaining[0].id
+      const nextOpen = openIds.length ? openIds : [nextId]
+      const target = nextData[nextId] ?? defaultWsData()
+      set({
+        workspaces: remaining, openIds: nextOpen, wsData: nextData, activeWs: nextId,
+        history: [], selectedId: null, progress: null, error: null, notice: null,
+        ...target,
+      })
+      set({ history: await loadHistory(nextId) })
+      await recoverPending()
+    } else {
+      set({ workspaces: remaining, openIds, wsData: nextData })
+    }
+    await deleteWorkspaceData(id, folder).catch(() => {})
+  },
+
+  // 선택한 기록들을 다른 워크스페이스로 '복제'한다 — 원본(현재 히스토리)은 그대로 두고, 백엔드가
+  // 대상 워크스페이스에 새 기록 + 파일 사본을 만든다. 대상 폴더는 그 워크스페이스의 저장 폴더(wsData).
+  // 현재 뷰는 바뀌지 않으므로(사본은 대상으로 감) 히스토리를 건드리지 않는다.
+  copyToWorkspace: async (promptIds, targetId) => {
+    const s = get()
+    const ids = promptIds.filter((id) => s.history.some((h) => h.promptId === id))
+    if (ids.length === 0 || targetId === s.activeWs) return
+    const folder = s.wsData[targetId]?.singleOutput ?? ''
+    await copyToWorkspaceApi(ids, targetId, folder).catch(() => {})
+  },
+
   // 기록을 패널로 불러오기. 칩(@triggers)으로 생성된 기록(토큰 원형 positiveTemplate 또는 옛
   // 토큰형 positive)이면 자동 트리거워드를 켜고 칩을 원위치로 복원한다. 토큰 단서가 전혀 없는
   // 기록(자동 트리거워드 기능 이전의 옛날 이미지 또는 off로 생성)은 기능을 끄고 평문으로 불러온다
@@ -206,7 +405,7 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
 
   // 삭제 등으로 limit 이하로 줄었을 때, 그동안 안 보이던 더 오래된 기록을 다시 채운다.
   reloadHistory: async () => {
-    const records = await listGenerations(HISTORY_LIMIT, 'single')
+    const records = await listGenerations(HISTORY_LIMIT, 'single', get().activeWs)
     set((s) => ({
       history: records.map(recordToHistory),
       selectedId: records.some((r) => r.prompt_id === s.selectedId)
@@ -260,7 +459,7 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
         // 위 history/record에 그대로 보존된다.
         ...(randomizeSeed ? { params: { ...s.params, seed: randomSeed() } } : {}),
       }))
-      await recordGeneration(promptId, storeParams)
+      await recordGeneration(promptId, storeParams, 'single', get().activeWs)
     } catch (e) {
       set({ error: String(e) })
     }
@@ -323,16 +522,58 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => ({
       history: s.history.map((h) => (h.promptId === promptId ? { ...h, status: 'error' as const } : h)),
     }))
   },
-}), {
+  }
+}, {
   name: PERSIST_KEY,
-  partialize: (s) => ({ params: s.params, randomizeSeed: s.randomizeSeed, triggerBadges: s.triggerBadges, triggerOrder: s.triggerOrder, singleOutput: s.singleOutput, format: s.format, quality: s.quality }),
-  // 앱 업데이트로 params에 새 필드가 생겨도 기본값으로 채워지도록 병합
+  // 워크스페이스 목록/활성 id/스냅샷만 영속. 활성 워크스페이스의 라이브 필드는 wsData[activeWs]로
+  // 항상 반영해 저장한다(별도 최상위 필드로 중복 저장하지 않음).
+  partialize: (s) => ({
+    workspaces: s.workspaces,
+    openIds: s.openIds,
+    activeWs: s.activeWs,
+    wsData: { ...s.wsData, [s.activeWs]: pickWs(s) },
+  }),
   merge: (persisted, current) => {
-    const p = (persisted ?? {}) as Partial<WorkbenchState>
+    const p = (persisted ?? {}) as Record<string, unknown>
+    let workspaces = Array.isArray(p.workspaces) && p.workspaces.length ? (p.workspaces as Workspace[]) : null
+    let wsData = (p.wsData && typeof p.wsData === 'object' ? p.wsData : {}) as Record<string, WsData>
+    let activeWs = typeof p.activeWs === 'string' ? p.activeWs : ''
+    let openIds = Array.isArray(p.openIds) ? (p.openIds as string[]) : null
+    if (!workspaces) {
+      // 구버전(워크스페이스 이전): params/singleOutput 등이 최상위에 저장돼 있었다 → 기본
+      // 워크스페이스로 승계한다. (또는 완전 신규 설치 — 기본값으로 채워짐.)
+      workspaces = [{ id: WS_DEFAULT_ID, name: 'Workspace 1' }]
+      activeWs = WS_DEFAULT_ID
+      wsData = {
+        [WS_DEFAULT_ID]: {
+          params: (p.params as GenerationParams) ?? ANIMA_DEFAULTS,
+          singleOutput: (p.singleOutput as string) ?? '',
+          format: (p.format as WsData['format']) ?? 'png',
+          quality: (p.quality as number) ?? 95,
+          randomizeSeed: (p.randomizeSeed as boolean) ?? true,
+          triggerBadges: (p.triggerBadges as boolean) ?? true,
+          triggerOrder: (p.triggerOrder as string[]) ?? [],
+        },
+      }
+    }
+    // openIds가 없거나(구버전) 유효 id가 하나도 없으면 전체를 열린 것으로 본다(기존 동작 보존).
+    // 알려진 워크스페이스만 남기고, 활성 id는 반드시 열려있게 보장한다.
+    const known = new Set(workspaces.map((w) => w.id))
+    openIds = (openIds ?? workspaces.map((w) => w.id)).filter((id) => known.has(id))
+    if (openIds.length === 0) openIds = [workspaces[0].id]
+    if (!openIds.includes(activeWs)) activeWs = openIds[0]
+    const active = wsData[activeWs] ?? defaultWsData()
     // 재실행(앱/ComfyUI 재시작) 시 i2i/인페인트 소스는 업로드 temp가 사라져 깨지므로 t2i로 초기화.
     return {
-      ...current, ...p,
-      params: { ...ANIMA_DEFAULTS, ...(p.params ?? {}), mode: 't2i', sourceImage: undefined, maskImage: undefined },
+      ...current,
+      workspaces, openIds, activeWs, wsData,
+      params: { ...ANIMA_DEFAULTS, ...(active.params ?? {}), mode: 't2i', sourceImage: undefined, maskImage: undefined },
+      singleOutput: active.singleOutput ?? '',
+      format: active.format ?? 'png',
+      quality: active.quality ?? 95,
+      randomizeSeed: active.randomizeSeed ?? true,
+      triggerBadges: active.triggerBadges ?? true,
+      triggerOrder: active.triggerOrder ?? [],
     }
   },
 }))

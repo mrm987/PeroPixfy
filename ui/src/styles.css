@@ -54,12 +54,56 @@ button:disabled { opacity: 0.4; cursor: default; }
 .tab-bar button.active { color: var(--fg); border-bottom-color: var(--accent); }
 .tab-content { flex: 1; min-height: 0; overflow: hidden; }
 
+/* Single 탭: 상단 워크스페이스 바 + 그 아래 작업 영역(좌측 패널 | 결과) 세로 배치 */
+.workbench-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .workbench {
   display: flex;
   gap: 0;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   padding: 12px 16px;
 }
+
+/* 워크스페이스 탭 바 — Single 작업 단위(멀티 캐릭터 탭과 동일 스타일).
+   탭 클릭=전환, 더블클릭=이름변경, ✕=삭제, +=새 워크스페이스. */
+.workspace-tab-bar {
+  flex: 0 0 auto;
+  display: flex; gap: 4px; align-items: center; flex-wrap: wrap;
+  padding: 6px 12px 0; border-bottom: 1px solid var(--border);
+}
+.workspace-tab {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 5px 10px; border: 1px solid var(--border); border-bottom: none;
+  border-radius: 7px 7px 0 0; background: var(--panel); color: var(--muted);
+  font-size: 13px; max-width: 200px; position: relative; top: 1px;
+}
+.workspace-tab.active { color: var(--fg); border-color: var(--accent); background: #2a2640; }
+.workspace-tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-tab-edit { width: 120px; font-size: 13px; padding: 1px 4px; }
+.workspace-tab-close { padding: 0 3px; background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 11px; }
+.workspace-tab-close:hover { color: var(--error); }
+.workspace-tab-new { padding: 5px 10px; font-size: 12px; }
+
+/* ＋ 메뉴 (새 워크스페이스 / 닫아둔 것 다시 열기 / 완전 삭제) */
+.ws-add-wrap { position: relative; display: inline-flex; }
+.ws-menu {
+  position: absolute; top: calc(100% + 3px); left: 0; z-index: 50;
+  min-width: 220px; max-width: 340px; max-height: 60vh; overflow-y: auto; padding: 4px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.ws-menu-new { text-align: left; background: none; border: none; padding: 7px 10px; border-radius: 6px; }
+.ws-menu-new:hover { background: #2a2640; border: none; }
+.ws-menu-label { color: var(--muted); font-size: 11px; padding: 6px 10px 2px; border-top: 1px solid var(--border); margin-top: 2px; }
+.ws-menu-item { display: flex; align-items: center; gap: 2px; }
+.ws-menu-open {
+  flex: 1; text-align: left; background: none; border: none; padding: 6px 10px; border-radius: 6px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ws-menu-open:hover { background: #2a2640; border: none; }
+.ws-menu-del { background: none; border: none; padding: 4px 7px; color: var(--muted); font-size: 12px; }
+.ws-menu-del:hover { color: var(--error); border: none; }
 
 /* 좌측 패널: 스크롤 영역(params-scroll) + 항상 보이는 하단 푸터(Generate) 분리 */
 .params-panel {
@@ -136,6 +180,12 @@ button:disabled { opacity: 0.4; cursor: default; }
 .grid-2 { display: flex; gap: 8px; }
 .preset-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .seed-row { display: flex; gap: 8px; align-items: flex-end; }
+/* 생성 버튼 바로 위에 고정한 자주 쓰는 시드 — 위 내용과 얇은 선으로 구분 */
+.seed-pinned { margin-bottom: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+/* '시드' 라벨과 입력칸을 한 줄로 (기본 NumberField는 라벨이 위줄) */
+.seed-pinned .field { flex-direction: row; align-items: center; gap: 6px; }
+.seed-pinned .field .field-label { margin-top: 0; flex-shrink: 0; }
+.seed-pinned .field input { flex: 1; min-width: 0; }
 .checkbox { display: flex; align-items: center; gap: 4px; padding-bottom: 8px; white-space: nowrap; }
 /* 토글 하위 옵션 묶음 (예: Hires fix 켰을 때) — 들여쓰기 + 좌측 보더로 소속을 명확히 */
 .sub-opts { margin: 0 0 8px 6px; padding: 6px 0 2px 10px; border-left: 2px solid var(--border, #3a3a3a); display: flex; flex-direction: column; gap: 2px; }
@@ -305,6 +355,9 @@ button:disabled { opacity: 0.4; cursor: default; }
 .result-meta button, .result-meta select { white-space: nowrap; flex-shrink: 0; }
 /* 시드·해상도는 맨 뒤로 보내고 우측 정렬 — 길이가 바뀌어도 앞 버튼들이 안 밀린다. */
 .result-meta .seed { margin-left: auto; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+/* 시드는 클릭하면 그 값을 생성 옵션에 등록 — 텍스트처럼 보이되 클릭 가능함을 hover로 표시 */
+.result-meta .seed-btn { background: none; border: none; padding: 0 2px; color: var(--muted); }
+.result-meta .seed-btn:hover { color: var(--fg); border: none; text-decoration: underline; }
 .result-meta .res-tag { flex-shrink: 0; font-variant-numeric: tabular-nums; }
 
 /* ===== 라이브러리 — Style-Manager(loraManager.js) 디자인 이식 ===== */
@@ -783,6 +836,10 @@ button.danger:hover { background: #7f1d1d; color: #fff; border-color: #7f1d1d; }
 .curate { position: absolute; inset: 0; z-index: 7; background: var(--panel); display: flex; flex-direction: column; gap: 10px; padding: 8px; }
 .curate-head { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .curate-title { color: var(--fg); font-weight: 600; }
+/* 현재 이미지 시드 — 클릭 시 생성 옵션(Base seed)에 반영 */
+.curate-seed { padding: 3px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--muted); cursor: pointer; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.curate-seed:hover { color: var(--fg); border-color: var(--accent); }
+.curate-seed.applied { color: var(--fg); border-color: var(--accent); background: #2a2640; }
 .curate-zoom { display: flex; align-items: center; gap: 6px; }
 .curate-zoom input[type="range"] { width: 140px; }
 .curate-pct { width: 44px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -854,12 +911,18 @@ button.danger:hover { background: #7f1d1d; color: #fff; border-color: #7f1d1d; }
 .slot-row.locked { opacity: 0.5; }
 .slot-row.dragging { opacity: 0.45; }
 .slot-row.drag-over { outline: 2px dashed var(--accent); outline-offset: -2px; border-radius: 4px; }
-.slot-head { display: flex; align-items: center; gap: 6px; }
+.slot-head { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.slot-caret { color: var(--muted); font-size: 10px; flex-shrink: 0; width: 10px; text-align: center; }
 .slot-drag { cursor: grab; user-select: none; color: var(--muted); padding: 0 2px; line-height: 1; flex-shrink: 0; }
 .slot-drag:active { cursor: grabbing; }
 .slot-num { font-family: monospace; font-size: 11px; color: var(--muted); flex-shrink: 0; text-align: right; }
 .slot-lock { padding: 0 2px; flex-shrink: 0; background: transparent; border: none; cursor: pointer; font-size: 14px; }
 .slot-name { flex: 1; min-width: 0; }
+/* 접힌 슬롯: 이름칸은 좁히고 프롬프트 미리보기를 한 줄로 */
+.slot-row.collapsed .slot-name { flex: 0 1 auto; width: 110px; }
+.slot-preview { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+.slots-headbtn { padding: 2px 8px; font-size: 11px; }
+.slots-headbtn.lockall { margin-right: auto; }
 .slot-prompt { width: 100%; margin: 0; }
 .slot-actions { display: flex; gap: 2px; flex-shrink: 0; }
 .slot-actions button { padding: 1px 6px; font-size: 11px; }
@@ -878,6 +941,8 @@ button.danger:hover { background: #7f1d1d; color: #fff; border-color: #7f1d1d; }
 }
 .canvas-tab.active { color: var(--fg); border-color: var(--accent); background: #2a2640; }
 .canvas-tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 미확인(비활성 탭에서 생성 완료) 표시 dot */
+.tab-dot { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 4px var(--accent); }
 .canvas-tab-close { padding: 0 3px; background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 11px; }
 .canvas-tab-close:hover { color: var(--error); }
 .canvas-tab-new { padding: 3px 9px; font-size: 13px; }

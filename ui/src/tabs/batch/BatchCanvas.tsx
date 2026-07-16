@@ -32,7 +32,7 @@ interface Props {
   activePromptId: string | null // 지금 실제로 실행 중인 프롬프트(나머지 제출분은 'queued')
   initialViewport?: Viewport // 탭 전환 시 복원할 마지막 줌/위치
   onViewportChange: (vp: Viewport) => void
-  onCurate: (slotId: string) => void // 슬롯 타이틀 옆 버튼 → 비교/선별 모달
+  onCurate: (slotId: string, resultId?: string) => void // 슬롯 타이틀 옆 버튼 → 비교/선별 모달 (더블클릭 시 그 이미지 선택)
   onOpenFolder: () => void // 줌 툴바의 폴더 열기 버튼
   slotStart: number // 슬롯 번호 시작값(타이틀 표시)
 }
@@ -353,6 +353,18 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
     if (canvasRef.current) canvasRef.current.style.cursor = 'default'
   }
 
+  // 이미지(카드) 더블클릭 → 그 이미지가 속한 슬롯의 큐레이션(비교/선별) 모드 진입.
+  const onDoubleClick = (e: React.MouseEvent) => {
+    const pos = canvasPos(e)
+    if (curateHitAt(pos.x, pos.y) || titleHitAt(pos.x, pos.y)) return // 타이틀/버튼은 단일 클릭 동작
+    const w = toWorld(pos.x, pos.y)
+    const hit = hitTest(layoutRef.current, w.x, w.y)
+    if (!hit) return
+    for (const row of layoutRef.current) {
+      if (row.nodes.some((n) => n.result.id === hit)) { onCurate(row.slotId, hit); return }
+    }
+  }
+
   const zoomBy = (f: number) => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -381,6 +393,7 @@ export function BatchCanvas({ slots, results, selected, onSelectionChange, aspec
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
         onMouseLeave={onMouseLeave}
+        onDoubleClick={onDoubleClick}
         onContextMenu={(e) => e.preventDefault()}
       />
     </div>
