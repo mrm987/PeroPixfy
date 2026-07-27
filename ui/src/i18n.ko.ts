@@ -36,6 +36,24 @@ export const ko: Record<string, string> = {
   'negative': '네거티브',
   'Custom': '직접 입력',
   'Random': '랜덤',
+
+  // Multi Base — 프리셋 한정 positive 변형
+  'all': 'all',
+  'Applied to every preset tab of this character (unless it has its own variant)': '이 캐릭터의 모든 프리셋 탭에 공통 적용 (전용 변형이 있는 프리셋 제외)',
+  'Base positive used only when generating this preset': '이 프리셋을 생성할 때만 쓰는 베이스 포지티브',
+  'Base positive used only when generating this preset (applies to the open preset tab)': '이 프리셋을 생성할 때만 쓰는 베이스 포지티브 (지금 열어둔 프리셋 탭에 적용됨)',
+  'Base negative used only when generating this preset': '이 프리셋을 생성할 때만 쓰는 베이스 네거티브',
+  'Base negative used only when generating this preset (applies to the open preset tab)': '이 프리셋을 생성할 때만 쓰는 베이스 네거티브 (지금 열어둔 프리셋 탭에 적용됨)',
+  'Remove — this preset goes back to all': '삭제 — 이 프리셋은 다시 all 적용',
+  'Add a preset-only positive variant (starts as a copy of the current positive)': '프리셋 전용 포지티브 변형 추가 (현재 포지티브를 복제해서 시작)',
+  'Add a preset-only negative variant (starts as a copy of the current negative)': '프리셋 전용 네거티브 변형 추가 (현재 네거티브를 복제해서 시작)',
+
+  // 와일드카드
+  'Wildcards': '와일드카드',
+  'Type #name in a prompt to insert a random line from the pool on every generation': '프롬프트에 #이름 을 쓰면 생성할 때마다 풀에서 한 줄이 랜덤으로 들어갑니다',
+  'Define a pool with a "#name" line followed by one candidate per line ("//" = comment). Type #name in a prompt to insert a random candidate on every generation.': '"#이름" 줄로 풀을 정의하고 그 아래 한 줄에 후보 하나씩 적습니다("//"는 주석). 프롬프트에 #이름 을 쓰면 생성할 때마다 후보 중 하나가 랜덤으로 들어갑니다.',
+  'Discard unsaved wildcard changes?': '저장하지 않은 와일드카드 수정을 버릴까요?',
+  'Failed to load wildcards': '와일드카드 불러오기 실패',
   'landscape': '가로',
   'portrait': '세로',
   'square': '정사각',
@@ -126,20 +144,9 @@ export const ko: Record<string, string> = {
   'Duplicate current preset': '현재 프리셋 복제',
   'Rename preset': '프리셋 이름변경',
   'Delete preset': '프리셋 삭제',
-  // 삽입 위치
-  'Base positive · slot prompt position': '베이스 포지티브 · 슬롯 프롬프트 위치',
-  'empty': '비어있음',
-  'at end': '끝에',
-  'before "{tag}"': '"{tag}" 앞',
-  'Base positive is empty — each slot prompt is used as-is.':
-    '베이스 포지티브가 비어있음 — 각 슬롯 프롬프트가 그대로 사용됨.',
-  'Drag onto a tag (or click a tag) to move where the slot prompt goes':
-    '태그에 드래그(또는 클릭)해 슬롯 프롬프트 위치를 옮김',
-  '▸ slot prompt': '▸ 슬롯 프롬프트',
-  'Click (or drop the block) to insert the slot prompt before this':
-    '클릭(또는 블록 드롭)해 이 앞에 슬롯 프롬프트 삽입',
-  'Insert at the end (default)': '끝에 삽입 (기본)',
-  '⏎end': '⏎끝',
+  // 슬롯 프롬프트 삽입 위치 (@slot 칩)
+  '@slot: where each slot prompt is inserted (drag to move)':
+    '@slot: 각 슬롯 프롬프트가 삽입되는 자리 (드래그로 이동)',
   // 슬롯 에디터
   'Slots': '슬롯',
   'Start': '시작',
@@ -263,8 +270,8 @@ export const ko: Record<string, string> = {
   'New preset name': '새 프리셋 이름',
   'preset': '프리셋',
   "Delete preset '{name}'?": "프리셋 '{name}'을(를) 삭제할까요?",
-  "Delete character '{name}'? (its tabs and results are removed too)":
-    "캐릭터 '{name}'을(를) 삭제할까요? (탭과 결과도 함께 제거됨)",
+  "Delete character '{name}'? (its tabs and result previews are removed — image files on disk are kept)":
+    "캐릭터 '{name}'을(를) 삭제할까요? (탭과 결과 프리뷰는 제거되지만, 디스크에 저장된 이미지 파일은 보존됩니다)",
 
   // SaveStyleModal
   'Saving…': '저장 중…',
@@ -330,10 +337,6 @@ export const ko: Record<string, string> = {
   'Click header to collapse/expand': '헤더 클릭해서 접기/펴기',
   'Collapse all slots': '전체 슬롯 접기',
   'Expand all slots': '전체 슬롯 펴기',
-  '▾ Collapse all': '▾ 전체 접기',
-  '▸ Expand all': '▸ 전체 펴기',
   'Lock all slots (exclude from generation)': '전체 슬롯 잠금 (생성 제외)',
   'Unlock all slots': '전체 슬롯 잠금해제',
-  '🔒 Lock all': '🔒 전체 잠금',
-  '🔓 Unlock all': '🔓 전체 해제',
 }

@@ -8,6 +8,7 @@ import { SetupBanner } from './components/SetupBanner'
 import { useBatch } from './stores/batch'
 import { useUi, type Tab } from './stores/ui'
 import { useWorkbench } from './stores/workbench'
+import { loadWildcards } from './tags/wildcards'
 import { BatchTab } from './tabs/batch/BatchTab'
 import { WorkbenchTab } from './tabs/workbench/WorkbenchTab'
 
@@ -55,6 +56,9 @@ export default function App() {
 
     // UI 언어는 ComfyUI 설정(Comfy.Locale)을 따른다 — 자체 선택 없이 일원화.
     void fetchComfyLang().then((lang) => useUi.setState({ lang }))
+
+    // 와일드카드 풀 로드 — 생성 시 #이름 해석과 자동완성에 필요.
+    void loadWildcards().catch(() => {})
 
     useWorkbench.getState().init()
 

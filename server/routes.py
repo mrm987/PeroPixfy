@@ -772,6 +772,49 @@ async def list_luts(request):
     return web.json_response({"luts": files})
 
 
+# 와일드카드 정의 문서 — #이름 섹션 + 한 줄=한 후보. 프롬프트의 #이름을 생성 시 랜덤 치환(프론트).
+WILDCARDS_PATH = os.path.join(PLUGIN_DIR, "data", "wildcards.txt")
+
+# 파일이 아직 없을 때 보여줄 기본 샘플 (기능 이해용)
+DEFAULT_WILDCARDS = """\
+// 샘플 와일드카드 — 자유롭게 수정/삭제하세요
+// 규칙: #이름 = 풀 정의 / 한 줄 = 한 후보 / // = 주석
+// 프롬프트에 #이름 을 쓰면 생성할 때마다 그 풀에서 한 줄이 랜덤으로 들어갑니다.
+
+#hair
+blonde hair
+white hair
+(black hair:1.2)
+red twintails, long hair
+
+#outfit
+school uniform
+white dress, frills
+black business suit, necktie
+
+#scene
+1girl, solo, #hair, #outfit, classroom      // 다른 풀 중첩 호출도 가능
+1girl, solo, #hair, #outfit, city street at night
+"""
+
+
+@routes.get("/peropixfy/api/wildcards")
+async def wildcards_get(request):
+    if os.path.isfile(WILDCARDS_PATH):
+        with open(WILDCARDS_PATH, encoding="utf-8") as f:
+            return web.json_response({"content": f.read()})
+    return web.json_response({"content": DEFAULT_WILDCARDS})
+
+
+@routes.post("/peropixfy/api/wildcards")
+async def wildcards_set(request):
+    data = await request.json()
+    os.makedirs(os.path.dirname(WILDCARDS_PATH), exist_ok=True)
+    with open(WILDCARDS_PATH, "w", encoding="utf-8") as f:
+        f.write(data.get("content") or "")
+    return web.json_response({"ok": True})
+
+
 SETTINGS_PATH = os.path.join(PLUGIN_DIR, "data", "settings.json")
 
 

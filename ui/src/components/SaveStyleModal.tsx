@@ -35,6 +35,10 @@ export function SaveStyleModal({ item, onClose }: { item: HistoryItem; onClose: 
         height: p.height,
         loras: p.loras.map((l) => ({ lora_rel_path: l.relPath, strength: l.strength, enabled: l.enabled })),
         image: item.imageUrls[0] ? parseViewUrl(item.imageUrls[0]) : undefined,
+        // 트리거 관리로 생성된 기록이면 뱃지 상태(on 단어 + 전체 순서)도 저장 — 적용 시 복원.
+        ...(/@triggers/i.test(p.positiveTemplate ?? '')
+          ? { trigger_meta: JSON.stringify({ triggers: p.triggers ?? [], order: p.triggerOrder ?? [] }) }
+          : {}),
       })
       if (!res.ok) throw new Error(String(res.error ?? 'Save failed'))
       // 저장 성공 → 라이브러리 도크를 열고, styles를 새로고침하며 방금 만든 스타일을

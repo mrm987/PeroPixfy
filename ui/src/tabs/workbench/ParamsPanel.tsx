@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { enumValues, fetchLuts, fetchNodeInfo, installNode, nodeInstallStatus, uploadImage } from '../../api/comfy'
 import { useT } from '../../i18n'
 import { MaskEditor } from '../../components/MaskEditor'
 import { Field, NumberField, SelectField } from '../../components/controls'
 import { Section } from '../../components/Section'
-import { activeCharOf, useBatch, type ImageFormat } from '../../stores/batch'
+import { WildcardModal } from '../../components/WildcardModal'
+import { activeCharOf, activeTabOf, SLOT_RE, useBatch, withSlotToken, type ImageFormat } from '../../stores/batch'
 import { useUi } from '../../stores/ui'
 import { useWorkbench } from '../../stores/workbench'
 import { TagAutocompleteTextarea } from '../../tags/TagAutocompleteTextarea'
@@ -46,8 +47,9 @@ const ratioBox = (w: number, h: number, max = 34) => {
 }
 const orientation = (w: number, h: number) => (w > h ? 'landscape' : w < h ? 'portrait' : 'square')
 
-// 안정적인 빈 배열 참조 — store 셀렉터 기본값으로 새 []를 만들면 무한 렌더 루프가 난다.
+// 안정적인 빈 배열/객체 참조 — store 셀렉터 기본값으로 새 참조를 만들면 무한 렌더 루프가 난다.
 const EMPTY_ORDER: string[] = []
+const EMPTY_OVERRIDES: Record<string, string> = {}
 
 const sourcePreviewUrl = (name: string) => {
   const [sub, file] = name.includes('/') ? name.split(/\/(.+)/) : ['', name]
@@ -112,6 +114,52 @@ export function ParamsPanel({ width, embedded = false, variant, flat = false }: 
   const [meta, setMeta] = useState<Meta | null>(null)
   const [luts, setLuts] = useState<string[]>([])
   const [editMask, setEditMask] = useState(false)
+  const [wcOpen, setWcOpen] = useState(false) // 와일드카드 정의 편집 모달
+
+  // ── Multi Base 전용: 프리셋 한정 프롬프트 변형(칩) ─────────────────────
+  // [all]=base(모든 프리셋 탭 공통), [프리셋명]=그 프리셋 탭에서만 쓰는 복제본.
+  // 포지티브·네거티브 칩은 서로 독립 — 한쪽만 만들 수도, 각각 지울 수도 있다.
+  const activeCharId = useBatch((s) => s.activeCharId)
+  const charOverrides = useBatch((s) => activeCharOf(s)?.positiveOverrides)
+  const charNegOverrides = useBatch((s) => activeCharOf(s)?.negativeOverrides)
+  const setPosOverride = useBatch((s) => s.setCharPositiveOverride)
+  const setNegOverride = useBatch((s) => s.setCharNegativeOverride)
+  const removePosOverride = useBatch((s) => s.removeCharPositiveOverride)
+  const removeNegOverride = useBatch((s) => s.removeCharNegativeOverride)
+  const batchTabs = useBatch((s) => s.tabs)
+  const batchPresets = useBatch((s) => s.presets)
+  // 칩 선택은 스토어에 캐릭터별로 기억 — Base/Slot 서브탭 전환(언마운트)에도 유지된다.
+  const posVariant = useBatch((s) => s.pvSelByChar[s.activeCharId] ?? 'all') // 'all' | 프리셋 파일명
+  const setPosVariant = useBatch((s) => s.setPosVariantSel)
+  const negVariant = useBatch((s) => s.nvSelByChar[s.activeCharId] ?? 'all')
+  const setNegVariant = useBatch((s) => s.setNegVariantSel)
+  // 현재 열어둔 캔버스 탭의 프리셋 — 해당 칩이 있으면 '지금 생성에 적용되는 변형'으로 강조.
+  const activeTabPreset = useBatch((s) => activeTabOf(s)?.presetFilename ?? null)
+  const overrides = charOverrides ?? EMPTY_OVERRIDES
+  const negOverrides = charNegOverrides ?? EMPTY_OVERRIDES
+  // 선택 칩이 삭제된 경우 등엔 all로 폴백.
+  const pvActive = embedded && posVariant !== 'all' && overrides[posVariant] != null ? posVariant : 'all'
+  const nvActive = embedded && negVariant !== 'all' && negOverrides[negVariant] != null ? negVariant : 'all'
+  const pvLabel = (f: string) =>
+    batchPresets.find((p) => p.filename === f)?.name ?? batchTabs.find((tb) => tb.presetFilename === f)?.name ?? f
+  // + 후보: 이 캐릭터의 열린 프리셋 탭 중 그 필드의 변형이 아직 없는 것(파일명 기준 중복 제거).
+  const candidatesFor = (m: Record<string, string>) => embedded
+    ? [...new Set(batchTabs
+        .filter((tb) => tb.charId === activeCharId && tb.presetFilename && m[tb.presetFilename] == null)
+        .map((tb) => tb.presetFilename!))]
+    : []
+  const positiveValue = pvActive === 'all' ? params.positive : overrides[pvActive]
+  const setPositive = (v: string) => { if (pvActive === 'all') set({ positive: v }); else setPosOverride(pvActive, v) }
+  const negativeValue = nvActive === 'all' ? params.negative : negOverrides[nvActive]
+  const setNegative = (v: string) => { if (nvActive === 'all') set({ negative: v }); else setNegOverride(nvActive, v) }
+
+  // Multi Base: 편집 대상 변형에 @slot 토큰(슬롯 프롬프트 삽입 자리 칩)을 보장한다.
+  // 마운트/변형·캐릭터 전환 시에만 — 타이핑 중 되살리진 않는다(토큰 없으면 생성 시 끝에 삽입).
+  useEffect(() => {
+    if (!embedded || variant === 'params') return
+    if (!SLOT_RE.test(positiveValue)) setPositive(withSlotToken(positiveValue))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embedded, pvActive, activeCharId])
   // USDU 노드 원클릭 설치 상태
   const [usduInstall, setUsduInstall] = useState<'idle' | 'installing' | 'done' | 'error'>('idle')
   const [usduInstallErr, setUsduInstallErr] = useState('')
@@ -324,25 +372,57 @@ export function ParamsPanel({ width, embedded = false, variant, flat = false }: 
           )}
         </Section>
 
-        <Section id="positive" title={t('Positive')} summary={promptSummary(params.positive.replace(/@triggers/gi, '').replace(/,\s*,/g, ', '))}>
-          {/* 트리거 관리 on(Single·Multi Base 공통)이면 @triggers 인라인 칩 에디터, off면 일반 자동완성 textarea. */}
-          {triggerBadges ? (
-            <PromptEditor value={params.positive} placeholder={t('positive')} triggers={params.triggers ?? []}
-              style={{ height: promptH ?? undefined }}
-              onMouseUp={(e) => { const h = e.currentTarget.offsetHeight; if (h && h !== promptH) setPref({ promptH: h }) }}
-              onChange={(v) => set({ positive: v })} />
-          ) : (
-            <TagAutocompleteTextarea rows={8} value={params.positive} placeholder={t('positive')}
-              style={{ height: promptH ?? undefined }}
-              onMouseUp={(e) => { const h = e.currentTarget.offsetHeight; if (h && h !== promptH) setPref({ promptH: h }) }}
-              onChange={(v) => set({ positive: v })} />
+        <Section id="positive" title={t('Positive')} summary={promptSummary(positiveValue.replace(/@triggers/gi, '').replace(/,\s*,/g, ', '))}>
+          {/* Multi Base: 프리셋 한정 포지티브 변형 칩. [all]=공통, [프리셋명]=그 프리셋 전용, +=변형 추가. */}
+          {embedded && (
+            <VariantChips overrides={overrides} active={pvActive} currentPreset={activeTabPreset}
+              candidates={candidatesFor(overrides)} labelOf={pvLabel}
+              chipTitle={t('Base positive used only when generating this preset')}
+              chipTitleCurrent={t('Base positive used only when generating this preset (applies to the open preset tab)')}
+              addTitle={t('Add a preset-only positive variant (starts as a copy of the current positive)')}
+              onSelect={setPosVariant}
+              onRemove={(f) => { removePosOverride(f); if (posVariant === f) setPosVariant('all') }}
+              onAdd={(f) => { setPosOverride(f, positiveValue); setPosVariant(f) }} />
           )}
+          {/* 칩 에디터: 트리거 관리 on이면 @triggers 칩, Multi Base면 @slot 칩(트리거 off여도 유지).
+              둘 다 아니면(Single + 트리거 off) 일반 자동완성 textarea. */}
+          {triggerBadges || embedded ? (
+            <PromptEditor value={positiveValue} placeholder={t('positive')} triggers={params.triggers ?? []}
+              trigChip={triggerBadges} slotChip={embedded}
+              style={{ height: promptH ?? undefined }}
+              onMouseUp={(e) => { const h = e.currentTarget.offsetHeight; if (h && h !== promptH) setPref({ promptH: h }) }}
+              onChange={setPositive} />
+          ) : (
+            <TagAutocompleteTextarea rows={8} value={positiveValue} placeholder={t('positive')}
+              style={{ height: promptH ?? undefined }}
+              onMouseUp={(e) => { const h = e.currentTarget.offsetHeight; if (h && h !== promptH) setPref({ promptH: h }) }}
+              onChange={setPositive} />
+          )}
+          {/* 와일드카드 — 프롬프트에 #이름을 쓰면 정의한 풀에서 랜덤 추출. 버튼으로 정의 편집. */}
+          <div className="wc-row">
+            <button type="button" className="wc-open" onClick={() => setWcOpen(true)}
+              title={t('Type #name in a prompt to insert a random line from the pool on every generation')}>
+              # {t('Wildcards')}
+            </button>
+          </div>
         </Section>
-        <Section id="negative" title={t('Negative')} summary={promptSummary(params.negative)}>
-          <TagAutocompleteTextarea rows={4} value={params.negative} placeholder={t('negative')}
+        {wcOpen && <WildcardModal onClose={() => setWcOpen(false)} />}
+        <Section id="negative" title={t('Negative')} summary={promptSummary(negativeValue)}>
+          {/* Multi Base: 프리셋 한정 네거티브 변형 칩 — 포지티브 칩과 독립. */}
+          {embedded && (
+            <VariantChips overrides={negOverrides} active={nvActive} currentPreset={activeTabPreset}
+              candidates={candidatesFor(negOverrides)} labelOf={pvLabel}
+              chipTitle={t('Base negative used only when generating this preset')}
+              chipTitleCurrent={t('Base negative used only when generating this preset (applies to the open preset tab)')}
+              addTitle={t('Add a preset-only negative variant (starts as a copy of the current negative)')}
+              onSelect={setNegVariant}
+              onRemove={(f) => { removeNegOverride(f); if (negVariant === f) setNegVariant('all') }}
+              onAdd={(f) => { setNegOverride(f, negativeValue); setNegVariant(f) }} />
+          )}
+          <TagAutocompleteTextarea rows={4} value={negativeValue} placeholder={t('negative')}
             style={{ height: negativeH ?? undefined }}
             onMouseUp={(e) => { const h = e.currentTarget.offsetHeight; if (h && h !== negativeH) setPref({ negativeH: h }) }}
-            onChange={(v) => set({ negative: v })} />
+            onChange={setNegative} />
         </Section>
         </>)}
 
@@ -557,6 +637,61 @@ export function ParamsPanel({ width, embedded = false, variant, flat = false }: 
             setEditMask(false)
           }}
           onClose={() => setEditMask(false)} />
+      )}
+    </div>
+  )
+}
+
+/** Multi Base 프리셋 한정 변형 칩 행 — [all] [프리셋명]× [+]. 포지티브/네거티브가 각자 하나씩 쓴다. */
+function VariantChips({ overrides, active, currentPreset, candidates, labelOf, chipTitle, chipTitleCurrent, addTitle, onSelect, onRemove, onAdd }: {
+  overrides: Record<string, string>
+  active: string // 'all' | 프리셋 파일명
+  currentPreset: string | null // 현재 열어둔 캔버스 탭의 프리셋 — 일치 칩에 녹색 점
+  candidates: string[] // +로 추가 가능한 프리셋 파일명들
+  labelOf: (f: string) => string
+  chipTitle: string
+  chipTitleCurrent: string
+  addTitle: string
+  onSelect: (v: string) => void
+  onRemove: (f: string) => void
+  onAdd: (f: string) => void
+}) {
+  const t = useT()
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => { if (!wrapRef.current?.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+  return (
+    <div className="pv-tabs">
+      <span className={`pv-chip${active === 'all' ? ' active' : ''}`} onClick={() => onSelect('all')}
+        title={t('Applied to every preset tab of this character (unless it has its own variant)')}>
+        {t('all')}
+      </span>
+      {Object.keys(overrides).map((f) => (
+        <span key={f}
+          className={`pv-chip${active === f ? ' active' : ''}${f === currentPreset ? ' current' : ''}`}
+          onClick={() => onSelect(f)}
+          title={f === currentPreset ? chipTitleCurrent : chipTitle}>
+          {labelOf(f)}
+          <button type="button" className="pv-x" title={t('Remove — this preset goes back to all')}
+            onClick={(e) => { e.stopPropagation(); onRemove(f) }}>×</button>
+        </span>
+      ))}
+      {candidates.length > 0 && (
+        <span className="pv-add-wrap" ref={wrapRef}>
+          <span className="pv-chip pv-add" onClick={() => setOpen((o) => !o)} title={addTitle}>+</span>
+          {open && (
+            <div className="pv-menu">
+              {candidates.map((f) => (
+                <button key={f} type="button" onClick={() => { onAdd(f); setOpen(false) }}>{labelOf(f)}</button>
+              ))}
+            </div>
+          )}
+        </span>
       )}
     </div>
   )

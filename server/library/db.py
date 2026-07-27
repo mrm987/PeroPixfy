@@ -121,6 +121,7 @@ def init(db_path):
                 notes TEXT DEFAULT '',
                 tags TEXT DEFAULT '',
                 nsfw INTEGER DEFAULT 0,
+                trigger_meta TEXT DEFAULT '',
                 created_at REAL
             )
         """)
@@ -143,6 +144,9 @@ def init(db_path):
             c.execute("ALTER TABLE styles ADD COLUMN steps INTEGER DEFAULT 0")
         if "cfg" not in style_cols:
             c.execute("ALTER TABLE styles ADD COLUMN cfg REAL DEFAULT 0")
+        # 트리거워드 상태 스냅샷(JSON: {triggers, order}) — 적용 시 뱃지 on/off·순서 복원용
+        if "trigger_meta" not in style_cols:
+            c.execute("ALTER TABLE styles ADD COLUMN trigger_meta TEXT DEFAULT ''")
         c.execute("""
             CREATE TABLE IF NOT EXISTS style_loras (
                 style_id INTEGER NOT NULL,
@@ -367,7 +371,7 @@ STYLE_USER_FIELDS = ("name", "notes", "tags", "positive_prompt", "negative_promp
 
 def create_style(name, image_file, width, height, workflow_json, checkpoint, loras,
                  positive_prompt="", negative_prompt="",
-                 sampler="", scheduler="", seed=0, steps=0, cfg=0):
+                 sampler="", scheduler="", seed=0, steps=0, cfg=0, trigger_meta=""):
     """Insert a style row + child style_loras rows. Returns the new style id.
     `loras` is a list of {display_name, strength, enabled} dicts."""
     with _LOCK, _conn() as c:
@@ -375,11 +379,11 @@ def create_style(name, image_file, width, height, workflow_json, checkpoint, lor
             """INSERT INTO styles
                (name, image_file, width, height, workflow_json, checkpoint,
                 positive_prompt, negative_prompt, sampler, scheduler,
-                seed, steps, cfg, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                seed, steps, cfg, trigger_meta, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (name, image_file, width, height, workflow_json, checkpoint,
              positive_prompt, negative_prompt, sampler, scheduler,
-             seed, steps, cfg, time.time()),
+             seed, steps, cfg, trigger_meta, time.time()),
         )
         sid = cur.lastrowid
         if loras:

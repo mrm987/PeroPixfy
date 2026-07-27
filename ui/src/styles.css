@@ -231,8 +231,12 @@ button:disabled { opacity: 0.4; cursor: default; }
 .trig-badge.anchor.static { cursor: default; } /* 안내용(드래그 불가) */
 /* 활성 트리거워드가 없을 때 — 위치는 유지, 비활성처럼 흐리게 */
 .trig-badge.anchor.empty { background: var(--bg); border-color: var(--border); color: var(--muted); }
+/* @slot 인라인 칩(Multi Base) — 슬롯 프롬프트가 삽입될 자리. 트리거 칩과 색으로 구분(녹색) */
+.trig-badge.anchor.slot-anchor {
+  background: rgba(93, 187, 99, 0.14); border-color: rgba(93, 187, 99, 0.65); color: #8fe096;
+}
 /* 드래그 중 원본 칩은 흐리게, 커서엔 고스트가 따라옴 */
-.prompt-editor.dragging-chip .trig-anchor { opacity: 0.35; }
+.prompt-editor .drag-src { opacity: 0.35; }
 .drag-ghost { position: fixed; top: -1000px; left: -1000px; pointer-events: none; opacity: 0.9; }
 /* 드롭하면 @triggers가 놓일 위치 표시 */
 .drop-caret { position: fixed; width: 2px; background: var(--accent); border-radius: 1px; pointer-events: none; z-index: 9999; box-shadow: 0 0 4px var(--accent); }
@@ -815,21 +819,6 @@ button.danger:hover { background: #7f1d1d; color: #fff; border-color: #7f1d1d; }
 .batch-footer .generate { width: 100%; }
 .set-char-select { font-size: 12px; padding: 2px 4px; }
 
-/* Slot 탭: base positive를 원본 그대로(쉼표·공백·개행) 읽기전용 표시 + 'slot prompt' 블록 이동 */
-.insert-text {
-  white-space: pre-wrap; word-break: break-word; font-size: 12.5px; line-height: 1.6;
-  color: var(--muted); background: var(--bg); border: 1px solid var(--border);
-  border-radius: 6px; padding: 8px; margin-bottom: 8px; max-height: 340px; overflow-y: auto;
-}
-.ins-comma { color: #5a5a66; }
-.ins-tok { border-radius: 3px; cursor: pointer; }
-.ins-tok:hover { color: var(--fg); background: #24222e; }
-.ins-tok.over { background: #2a2640; box-shadow: inset 2px 0 0 var(--accent); }
-.ins-end { cursor: pointer; color: #5a5a66; padding: 0 4px; border-radius: 3px; }
-.ins-end:hover { color: var(--fg); }
-.ins-end.over { color: var(--fg); background: #2a2640; }
-.insert-block { font-size: 11px; font-weight: 600; color: #fff; background: var(--accent); padding: 1px 6px; margin: 0 2px; border-radius: 4px; cursor: grab; white-space: nowrap; }
-.insert-block:active { cursor: grabbing; }
 /* 에셋 선별(큐레이션) 모달 */
 /* 모달 대신 Multi 우측 캔버스 영역(.batch-canvas-area, relative)을 채우는 인라인 패널 — Single
    프리뷰와 일관되고, iframe 밖의 ComfyUI 상단 바와 겹치지 않는다. */
@@ -1090,6 +1079,48 @@ button.danger:hover { background: #7f1d1d; color: #fff; border-color: #7f1d1d; }
 .mask-status { font-size: 12px; color: var(--error); }
 .mask-status.ok { color: #5dbb63; }
 
+/* ---- Multi Base: 프리셋 한정 positive 변형 칩 ---- */
+.pv-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 6px; }
+.pv-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg); color: var(--muted); cursor: pointer; user-select: none;
+}
+.pv-chip:hover { color: var(--fg); }
+.pv-chip.active { color: var(--fg); border-color: var(--accent); }
+/* 현재 열어둔 캔버스 탭의 프리셋에 해당하는 변형 — 지금 생성에 적용됨(녹색 점) */
+.pv-chip.current::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #5dbb63; flex-shrink: 0; }
+.pv-chip .pv-x { border: none; background: none; padding: 0 2px; margin: 0; color: var(--muted); cursor: pointer; font-size: 11px; line-height: 1; }
+.pv-chip .pv-x:hover { color: var(--error); background: none; }
+.pv-add-wrap { position: relative; }
+.pv-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 30;
+  display: flex; flex-direction: column; min-width: 140px; overflow: hidden;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.pv-menu button { text-align: left; border: none; border-radius: 0; background: none; padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+.pv-menu button:hover { background: var(--bg); }
+
+/* ---- 와일드카드 (#이름 랜덤 풀) ---- */
+.wc-row { display: flex; justify-content: flex-end; margin-top: 4px; }
+.wc-open {
+  font-size: 11px; padding: 2px 8px; color: var(--muted);
+  background: transparent; border: 1px solid var(--border); border-radius: 4px; cursor: pointer;
+}
+.wc-open:hover { color: var(--fg); background: var(--bg); }
+.wildcard-modal { width: 560px; display: flex; flex-direction: column; gap: 8px; }
+.wc-pools { display: flex; flex-wrap: wrap; gap: 4px; }
+.wc-pool-chip {
+  font-size: 11px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg); color: var(--fg);
+}
+.wc-pool-chip em { font-style: normal; color: var(--muted); margin-left: 4px; }
+.wc-editor {
+  font-family: Consolas, 'Courier New', monospace; font-size: 12px;
+  min-height: 320px; max-height: 60vh; resize: vertical; white-space: pre; overflow: auto;
+}
+
 /* ---- polish ---- */
 ::-webkit-scrollbar { width: 10px; height: 10px; cursor: default; }
 ::-webkit-scrollbar-thumb { background: #33333d; border-radius: 5px; border: 2px solid var(--bg); cursor: default; }
@@ -1148,6 +1179,7 @@ textarea { line-height: 1.45; }
 .tag-ac-badge.character { background: #1f4037; color: #70e1a8; }
 .tag-ac-badge.copyright { background: #3d2f5b; color: #b794f4; }
 .tag-ac-badge.meta { background: #2d3748; color: #90cdf4; }
+.tag-ac-badge.wildcard { background: #4a2540; color: #f490d8; }
 select { text-overflow: ellipsis; }
 
 .result-meta { font-size: 12px; flex-shrink: 0; }

@@ -5,20 +5,29 @@ import { useWorkbench } from '../../stores/workbench'
 import { placeTokenAt, snapTokenOffset } from '../../tags/promptTags'
 import { CATEGORY_LABEL, getCurrentWord, scrollParent, underscoresToSpaces } from '../../tags/TagAutocompleteTextarea'
 import { formatCount, loadTags, searchTags, tagsLoaded, type TagEntry } from '../../tags/tagData'
+import { searchWildcardEntries } from '../../tags/wildcards'
 
 const TOKEN = '@triggers'
+const TOKEN_RE = /@triggers/i
+// Multi Base 전용 두 번째 칩: 슬롯 프롬프트가 삽입될 자리(@slot). slotChip prop으로 켠다.
+const SLOT = '@slot'
+const SLOT_RE = /@slot/i
 
 // 붙여넣기: 웹/윈도우 줄바꿈(CRLF/CR)을 LF로 정규화 — CR가 줄 끝에 안 보이게 남아 Del을 두 번 눌러야 하던 문제 방지. 그 외 문자는 건드리지 않음.
 const sanitizePaste = (s: string): string => s.replace(/\r\n?/g, '\n')
 
 const isChip = (n: Node | null | undefined): n is HTMLElement =>
-  !!n && n.nodeType === Node.ELEMENT_NODE && (n as HTMLElement).classList?.contains('trig-anchor')
+  !!n && n.nodeType === Node.ELEMENT_NODE &&
+  !!((n as HTMLElement).classList?.contains('trig-anchor') || (n as HTMLElement).classList?.contains('slot-anchor'))
 
-// value(문자열) 기준 자식 노드 길이: 칩=TOKEN 길이, <br>=개행 1글자, 텍스트=글자수.
+// 칩이 나타내는 토큰 문자열 (@triggers | @slot).
+const chipTokenOf = (n: HTMLElement): string => (n.classList.contains('slot-anchor') ? SLOT : TOKEN)
+
+// value(문자열) 기준 자식 노드 길이: 칩=그 토큰 길이, <br>=개행 1글자, 텍스트=글자수.
 // 줄바꿈은 텍스트의 '\n'이 아니라 <br>로 표현한다 — contenteditable에서 '\n'으로 만든 빈 줄은
 // 캐럿이 들어가지 않기 때문(빈 줄 편집 불가 문제의 원인).
 const nodeLen = (n: Node | null | undefined): number =>
-  !n ? 0 : isChip(n) ? TOKEN.length : n.nodeName === 'BR' ? 1 : (n.textContent?.length ?? 0)
+  !n ? 0 : isChip(n) ? chipTokenOf(n).length : n.nodeName === 'BR' ? 1 : (n.textContent?.length ?? 0)
 
 // 드롭 지점(좌표) → 캐럿 Range. 브라우저별 API 차이를 흡수.
 function caretRangeFromPoint(x: number, y: number): Range | null {
@@ -42,6 +51,8 @@ interface Props {
   style?: React.CSSProperties
   onMouseUp?: (e: React.MouseEvent<HTMLDivElement>) => void
   triggers?: string[] // @triggers 칩 표시/툴팁용 활성 트리거워드. 미지정 시 workbench params 사용(Single).
+  trigChip?: boolean // false면 @triggers 칩을 쓰지 않는다(자동 트리거워드 off인 Multi Base — @slot 칩만).
+  slotChip?: boolean // Multi Base: @slot 칩(슬롯 프롬프트 삽입 자리)도 하나 유지. 호출측이 value에 토큰을 보장.
 }
 
 /**
@@ -50,7 +61,7 @@ interface Props {
  * 트리거워드를 치환 삽입). textarea의 Danbooru 태그 자동완성도 그대로 포팅.
  * DOM은 React가 아니라 직접 관리(uncontrolled) — 입력 중 캐럿이 튀지 않도록.
  */
-export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, triggers: triggersProp }: Props) {
+export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, triggers: triggersProp, trigChip = true, slotChip = false }: Props) {
   const t = useT()
   const wbTriggers = useWorkbench((s) => s.params.triggers)
   const triggers = triggersProp ?? wbTriggers
@@ -61,7 +72,7 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
   const [sel, setSel] = useState(0)
   const [pos, setPos] = useState({ left: 0, top: 0, maxWidth: 350 })
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const dragging = useRef(false)
+  const dragChip = useRef<HTMLElement | null>(null) // 드래그 중인 칩(@triggers 또는 @slot)
   // 자체 undo/redo 스택 — 붙여넣기·Enter·삭제·자동완성은 직접 DOM을 고쳐 브라우저 네이티브
   // undo에 안 잡히므로, 값 스냅샷을 직접 쌓아 Ctrl+Z/Ctrl+Y를 제공한다.
   const hist = useRef<{ stack: { value: string; caret: number }[]; i: number; ts: number; typing: boolean }>({
@@ -77,13 +88,13 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
     return triggers && triggers.length ? `${base} — ${triggers.join(', ')}` : base
   }
 
-  // DOM → 문자열. withToken=true면 칩을 @triggers로(=value), false면 칩 제외(=plain).
+  // DOM → 문자열. withToken=true면 칩을 그 토큰으로(=value), false면 칩 제외(=plain).
   const serialize = (withToken: boolean) => {
     const el = ref.current
     if (!el) return ''
     let out = ''
     el.childNodes.forEach((n) => {
-      if (isChip(n)) out += withToken ? TOKEN : ''
+      if (isChip(n)) out += withToken ? chipTokenOf(n) : ''
       else if (n.nodeName === 'BR') out += '\n'
       else out += n.textContent ?? ''
     })
@@ -101,6 +112,20 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
     chip.title = chipTitle()
     return chip
   }
+  const makeSlotChip = () => {
+    const chip = document.createElement('span')
+    chip.className = 'trig-badge anchor slot-anchor'
+    chip.setAttribute('contenteditable', 'false')
+    chip.draggable = true
+    chip.textContent = SLOT
+    chip.title = t('@slot: where each slot prompt is inserted (drag to move)')
+    return chip
+  }
+  // 이 에디터에서 활성화된 칩 목록 — 파싱·보호·재구성 로직이 공유한다.
+  const chipDefs = [
+    ...(trigChip ? [{ re: TOKEN_RE, tok: TOKEN, sel: '.trig-anchor', make: makeChip }] : []),
+    ...(slotChip ? [{ re: SLOT_RE, tok: SLOT, sel: '.slot-anchor', make: makeSlotChip }] : []),
+  ]
 
   // 텍스트를 el에 붙이되 '\n'은 <br>로 — 빈 줄에도 캐럿이 들어가게.
   const appendText = (el: HTMLElement, text: string) => {
@@ -111,17 +136,24 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
     })
   }
 
-  // value 문자열로부터 DOM 재구성(텍스트 노드 + <br> + 칩 하나, 플랫 구조).
+  // value 문자열로부터 DOM 재구성(텍스트 노드 + <br> + 칩들, 플랫 구조).
+  // 활성화된 칩은 토큰이 없어도 항상 하나씩 표시(끝) — 호출측이 value에 토큰을 보장한다.
   const buildDom = (str: string) => {
     const el = ref.current
     if (!el) return
-    const idx = str.search(/@triggers/i)
-    const before = idx >= 0 ? str.slice(0, idx) : str
-    const after = idx >= 0 ? str.slice(idx + TOKEN.length) : ''
+    const marks = chipDefs
+      .map((d) => ({ i: str.search(d.re), d }))
+      .filter((m) => m.i >= 0)
+      .sort((a, b) => a.i - b.i)
     el.textContent = ''
-    appendText(el, before)
-    el.appendChild(makeChip()) // 토큰이 없어도 칩은 항상 하나 표시(끝)
-    appendText(el, after)
+    let pos = 0
+    for (const m of marks) {
+      appendText(el, str.slice(pos, m.i))
+      el.appendChild(m.d.make())
+      pos = m.i + m.d.tok.length
+    }
+    appendText(el, str.slice(pos))
+    for (const d of chipDefs) if (str.search(d.re) < 0) el.appendChild(d.make())
   }
 
   // 마운트: plaintext-only로 설정(서식 붙여넣기·리치 편집 차단) + 최초 렌더.
@@ -140,9 +172,9 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    // value에 @triggers 토큰이 있는데 DOM에 칩이 없으면(예: 직접입력 모드에서 받은 텍스트가
+    // value에 토큰이 있는데 DOM에 해당 칩이 없으면(예: 직접입력 모드에서 받은 텍스트가
     // 복원됨) 반드시 재구성해 토큰이 '리터럴 텍스트'로 남지 않게 한다.
-    const tokenButNoChip = /@triggers/i.test(value) && !el.querySelector('.trig-anchor')
+    const tokenButNoChip = chipDefs.some((d) => d.re.test(value) && !el.querySelector(d.sel))
     if (serialize(true) !== value || tokenButNoChip) {
       // 외부 변경(불러오기·스타일·칩 이동 등) → 재구성하고 undo 히스토리를 새 문서로 리셋.
       buildDom(value)
@@ -171,10 +203,13 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
     if (!ctx) return setOpen(false)
     const text = ctx.node.textContent ?? ''
     if (ctx.offset >= 2 && text.substring(ctx.offset - 2, ctx.offset) === '  ') return setOpen(false)
-    const { word } = getCurrentWord(text, ctx.offset)
-    const searchWord = word.replace(/ /g, '_')
-    if (searchWord.length < 2) return setOpen(false)
-    const found = searchTags(searchWord)
+    const { word, fullStart } = getCurrentWord(text, ctx.offset)
+    // #이름 와일드카드 — 단어 바로 앞이 #이면 정의된 풀 이름을 제안(빈 단어=전체 목록).
+    const wcMode = text[fullStart - 1] === '#' && !word.includes(' ')
+    const found = wcMode ? searchWildcardEntries(word) : (() => {
+      const searchWord = word.replace(/ /g, '_')
+      return searchWord.length < 2 ? [] : searchTags(searchWord)
+    })()
     if (found.length === 0) return setOpen(false)
     setResults(found); setSel(0)
     let rect = ctx.range.getBoundingClientRect()
@@ -268,17 +303,20 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
     const el = ref.current
     const s = window.getSelection()
     if (!el || !s || s.rangeCount === 0) return
-    const text = raw.replace(/@triggers/gi, '')
+    // 활성 칩 토큰은 붙여넣기 텍스트에서 제거(칩 중복 방지). 비활성 토큰은 일반 텍스트로 취급.
+    let text = raw
+    for (const d of chipDefs) text = text.replace(new RegExp(d.tok, 'gi'), '')
     const range = s.getRangeAt(0)
     const a = valueOffsetOf(range.startContainer, range.startOffset)
     const b = range.collapsed ? a : valueOffsetOf(range.endContainer, range.endOffset)
     const [lo, hi] = a <= b ? [a, b] : [b, a]
     const value = serialize(true)
-    const tIdx = value.search(/@triggers/i)
-    const tokenInSel = tIdx >= 0 && tIdx < hi && tIdx + TOKEN.length > lo // 선택이 칩을 포함?
-    const next = tokenInSel
-      ? value.slice(0, lo) + text + TOKEN + value.slice(hi) // 칩 보존 — 삽입 텍스트 뒤에 유지
-      : value.slice(0, lo) + text + value.slice(hi)
+    // 선택이 칩(토큰)을 포함하면 그 칩을 보존 — 삽입 텍스트 뒤에 원래 순서대로 유지.
+    const kept = chipDefs
+      .map((d) => ({ i: value.search(d.re), tok: d.tok }))
+      .filter((x) => x.i >= 0 && x.i < hi && x.i + x.tok.length > lo)
+      .sort((x, y) => x.i - y.i)
+    const next = value.slice(0, lo) + text + kept.map((x) => x.tok).join(', ') + value.slice(hi)
     buildDom(next)
     setCaret(lo + text.length)
     onChange(next)
@@ -286,7 +324,8 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
   }
 
   // 선택한 태그를 현재 단어 위치에 삽입(뒤에 ', '). 칩은 건드리지 않음.
-  const insertTag = (tagValue: string) => {
+  // 와일드카드(풀 이름)는 언더바를 그대로 유지해야 #이름 토큰이 성립한다.
+  const insertTag = (tag: TagEntry) => {
     const ctx = caretText()
     if (!ctx) return
     const text = ctx.node.textContent ?? ''
@@ -296,7 +335,7 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
     if (end < text.length && text[end] === ',') {
       suffix = end + 1 < text.length && text[end + 1] !== ' ' ? ' ' : ''
     }
-    const insertText = leading + underscoresToSpaces(tagValue) + suffix
+    const insertText = leading + (tag.type === 'wildcard' ? tag.value : underscoresToSpaces(tag.value)) + suffix
     ctx.node.textContent = text.slice(0, fullStart) + insertText + text.slice(end)
     const caret = Math.min(fullStart + insertText.length, ctx.node.textContent.length)
     const s = window.getSelection()
@@ -312,9 +351,10 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
   const heal = (): boolean => {
     const el = ref.current
     if (!el) return false
-    const chipCount = el.querySelectorAll('.trig-anchor').length
+    const trigCount = el.querySelectorAll('.trig-anchor').length
+    const slotCount = el.querySelectorAll('.slot-anchor').length
     const stray = Array.from(el.childNodes).some((n) => n.nodeType === Node.ELEMENT_NODE && !isChip(n) && n.nodeName !== 'BR')
-    if (chipCount === 1 && !stray) return false
+    if (trigCount === (trigChip ? 1 : 0) && slotCount === (slotChip ? 1 : 0) && !stray) return false
     const caret = caretValueOffset()
     buildDom(serialize(true)) // 칩 하나 + 텍스트로 평탄화(다른 요소는 textContent로 흡수)
     if (caret != null) setCaret(caret)
@@ -381,11 +421,13 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
     const c = caretValueOffset()
     if (c == null) return
     const value = serialize(true)
-    const tIdx = value.search(/@triggers/i)
-    const tEnd = tIdx >= 0 ? tIdx + TOKEN.length : -1
     const target = forward ? c : c - 1 // 지울 글자 위치
     if (target < 0 || target >= value.length) return // 지울 것 없음
-    if (tIdx >= 0 && target >= tIdx && target < tEnd) return // 토큰이면 차단(칩 보존)
+    // 활성 칩 토큰 범위면 차단(칩 보존).
+    for (const d of chipDefs) {
+      const idx = value.search(d.re)
+      if (idx >= 0 && target >= idx && target < idx + d.tok.length) return
+    }
     const next = value.slice(0, target) + value.slice(target + 1)
     buildDom(next)
     setCaret(forward ? c : c - 1)
@@ -405,7 +447,7 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
     if (open && results.length) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(s + 1, results.length - 1)); return }
       if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); return }
-      if (e.key === 'Enter') { e.preventDefault(); const tg = results[sel]; if (tg) insertTag(tg.value); return }
+      if (e.key === 'Enter') { e.preventDefault(); const tg = results[sel]; if (tg) insertTag(tg); return }
       if (e.key === 'Escape') { e.preventDefault(); setOpen(false); return }
     }
     if (e.key === 'Backspace' || e.key === 'Delete') {
@@ -462,20 +504,34 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
     document.addEventListener('mouseup', up)
   }
 
-  // ── @triggers 칩 드래그 → 텍스트 사이로 이동 ──────────────────────
-  // 드롭 지점 Range → '칩 제외 텍스트' 내 문자 offset.
+  // ── 칩(@triggers/@slot) 드래그 → 텍스트 사이로 이동 ──────────────────────
+  // '드래그 공간' = 드래그 중인 칩만 제외한 문자열(다른 칩은 토큰 텍스트로 포함) — 드롭 결과를
+  // placeTokenAt으로 만들 때 다른 칩의 토큰이 유실되지 않게 한다.
   const plainLen = (n: Node) => (n.nodeName === 'BR' ? 1 : (n.textContent ?? '').length)
+  const dragLen = (n: Node) => (isChip(n) ? (n === dragChip.current ? 0 : chipTokenOf(n).length) : plainLen(n))
+  const serializeDrag = () => {
+    const el = ref.current
+    if (!el) return ''
+    let out = ''
+    el.childNodes.forEach((n) => {
+      if (isChip(n)) out += n === dragChip.current ? '' : chipTokenOf(n)
+      else if (n.nodeName === 'BR') out += '\n'
+      else out += n.textContent ?? ''
+    })
+    return out
+  }
+  // 드롭 지점 Range → 드래그 공간 내 문자 offset.
   const offsetFromRange = (el: HTMLElement, range: Range) => {
     let k = 0
     if (range.startContainer === el) {
       for (let i = 0; i < range.startOffset; i++) {
         const n = el.childNodes[i]
-        if (n && !isChip(n)) k += plainLen(n)
+        if (n) k += dragLen(n)
       }
     } else {
       for (const n of Array.from(el.childNodes)) {
         if (n === range.startContainer || n.contains(range.startContainer)) { k += range.startOffset; break }
-        if (!isChip(n)) k += plainLen(n)
+        k += dragLen(n)
       }
     }
     return k
@@ -500,17 +556,17 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
     return rect
   }
 
-  // plain 텍스트 내 문자 offset → DOM 위치. 칩은 건너뛰고, <br>는 el 레벨 경계로.
+  // 드래그 공간 offset → DOM 위치. 드래그 중인 칩은 건너뛰고, <br>·다른 칩은 el 레벨 경계로.
   const locate = (el: HTMLElement, pos: number): { node: Node; offset: number } | null => {
     const kids = Array.from(el.childNodes)
     let acc = 0
     for (const n of kids) {
-      if (isChip(n)) continue
-      const len = plainLen(n)
+      if (n === dragChip.current) continue
+      const len = dragLen(n)
       if (acc + len >= pos) {
         if (n.nodeType === Node.TEXT_NODE) return { node: n, offset: pos - acc }
         const idx = kids.indexOf(n)
-        return { node: el, offset: pos <= acc ? idx : idx + 1 } // <br> 경계
+        return { node: el, offset: pos <= acc ? idx : idx + 1 } // <br>/칩 경계
       }
       acc += len
     }
@@ -521,25 +577,25 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
   const onDragStart = (e: React.DragEvent<HTMLDivElement>) => {
     const chip = e.target as HTMLElement
     if (!isChip(chip)) return // 칩만 드래그(텍스트 선택 드래그는 무시)
-    dragging.current = true
+    dragChip.current = chip
     e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', TOKEN)
+    e.dataTransfer.setData('text/plain', chipTokenOf(chip))
     // 커서를 따라오는 고스트: 칩 복제본을 드래그 이미지로 지정.
     const ghost = chip.cloneNode(true) as HTMLElement
-    ghost.className = 'trig-badge anchor drag-ghost'
+    ghost.className = chip.className + ' drag-ghost'
     document.body.appendChild(ghost)
     e.dataTransfer.setDragImage(ghost, ghost.offsetWidth / 2, ghost.offsetHeight / 2)
     setTimeout(() => ghost.remove(), 0)
-    ref.current?.classList.add('dragging-chip') // 원본 칩 흐리게
+    chip.classList.add('drag-src') // 원본 칩 흐리게
   }
   const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    if (!dragging.current) return
+    if (!dragChip.current) return
     e.preventDefault(); e.dataTransfer.dropEffect = 'move'
     const el = ref.current
     if (!el) return
     const range = caretRangeFromPoint(e.clientX, e.clientY)
     if (!range) return setMarker(null)
-    const pos = snapTokenOffset(serialize(false), offsetFromRange(el, range))
+    const pos = snapTokenOffset(serializeDrag(), offsetFromRange(el, range))
     const loc = locate(el, pos)
     if (!loc) return setMarker(null)
     const rect = measureCaret(loc.node, Math.min(loc.offset, (loc.node.textContent ?? '').length))
@@ -547,18 +603,19 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
     setMarker({ left: rect.left, top: rect.top, height: rect.height || 18 })
   }
   const endDrag = () => {
-    dragging.current = false
+    dragChip.current?.classList.remove('drag-src')
+    dragChip.current = null
     setMarker(null)
-    ref.current?.classList.remove('dragging-chip')
   }
   const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
     // 항상 네이티브 드롭을 막는다 — 외부 텍스트/이미지 등이 HTML로 삽입돼 편집 불가한 조각이
     // 생기는 것(오래 쓰다 특정 행이 먹통 되는 원인)을 원천 차단. 칩 이동만 우리가 처리.
     e.preventDefault()
-    if (!dragging.current) return
+    const chip = dragChip.current
+    if (!chip) return
     const el = ref.current
     const range = el ? caretRangeFromPoint(e.clientX, e.clientY) : null
-    if (el && range) onChange(placeTokenAt(serialize(false), offsetFromRange(el, range)))
+    if (el && range) onChange(placeTokenAt(serializeDrag(), offsetFromRange(el, range), chipTokenOf(chip)))
     endDrag()
   }
 
@@ -598,7 +655,7 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
           style={{ left: pos.left, top: pos.top, maxWidth: pos.maxWidth }}>
           {results.map((tg, i) => (
             <div key={tg.value + i} className={`tag-ac-item${i === sel ? ' selected' : ''}`}
-              onMouseDown={(e) => { e.preventDefault(); insertTag(tg.value) }}
+              onMouseDown={(e) => { e.preventDefault(); insertTag(tg) }}
               onMouseMove={() => setSel(i)}>
               <span className="tag-ac-name" title={tg.label}>{tg.label}</span>
               <span className={`tag-ac-badge ${tg.type}`}>{CATEGORY_LABEL[tg.type] ?? tg.type}</span>

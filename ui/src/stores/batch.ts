@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 import { checkFilesExist, deleteQueued, fetchOutputs, interrupt, parseViewUrl, submitPrompt, viewUrl } from '../api/comfy'
 import { completeGeneration, deleteGeneration, failGeneration, recordGeneration } from '../api/gallery'
 import * as presetApi from '../api/presets'
+import { resolveWildcards } from '../tags/wildcards'
 import { buildGraph } from '../workflow/builder'
 import { ANIMA_DEFAULTS } from '../workflow/defaults'
 import type { GenerationParams } from '../workflow/types'
@@ -39,9 +40,11 @@ export interface CanvasTab {
   presetFilename: string | null
   slots: Slot[]
   results: SlotResult[]
-  promptInsert?: number // 슬롯 프롬프트를 base positive의 몇 번째 태그 자리에 끼울지. 미설정 = 최하단(끝).
   slotStart?: number // 이 탭 슬롯 번호 시작값(표시·파일명). 미설정 = 1.
   unseen?: boolean // 비활성 탭에서 생성이 완료됐지만 아직 열어보지 않음 → 탭에 dot 표시. 전환 시 해제.
+  // 프리셋 탭을 '닫으면' 삭제하지 않고 숨겨 보존한다(완료 결과·뷰포트 유지) — 같은 프리셋을
+  // 다시 열면 이 탭을 복원해 프리뷰가 살아난다. 무제 탭은 닫을 때 완전 삭제(플래그 미사용).
+  closed?: boolean
 }
 
 // 캐릭터 = 외형/스타일을 고정하는 base 파라미터의 단위. 각 캐릭터별로 감정세트 등
@@ -54,6 +57,11 @@ export interface Character {
   // 빌더가 base.positive의 @triggers 자리에 삽입). 캐릭터별로 독립. 기존 캐릭터(undefined)는 off로 취급.
   triggerBadges?: boolean
   triggerOrder?: string[] // 트리거 뱃지 표시/삽입 순서(사용자 드래그)
+  // 프리셋 한정 base 프롬프트 변형 — { 프리셋 파일명: 텍스트 }. 있으면 그 프리셋 탭의 생성에서
+  // base 대신 사용(예: SFW 프리셋만 옷 입은 프롬프트). 없는 프리셋은 base(all).
+  // 포지티브·네거티브는 서로 독립 — 한쪽만 만들 수도, 각각 지울 수도 있다.
+  positiveOverrides?: Record<string, string>
+  negativeOverrides?: Record<string, string>
 }
 
 export interface Viewport {
@@ -73,6 +81,10 @@ const newTab = (charId: string, name = 'New tab', presetFilename: string | null 
 // 지정 탭을 '봤음'으로 표시(미확인 dot 해제). 탭/캐릭터 전환 시 새로 활성화되는 탭에 적용.
 const markSeen = (tabs: CanvasTab[], id: string): CanvasTab[] =>
   tabs.map((t) => (t.id === id && t.unseen ? { ...t, unseen: false } : t))
+// 아무것도 손대지 않은 무제 탭(프리셋 미연결·결과 없음·슬롯 전부 빈칸)인가 — 프리셋을 열 때
+// 이런 탭은 새 탭을 만드는 대신 그 자리를 프리셋으로 대체한다(빈 New tab 잔류 방지).
+const isPristineTab = (t: CanvasTab): boolean =>
+  !t.presetFilename && t.results.length === 0 && t.slots.every((sl) => !sl.name.trim() && !sl.prompt.trim())
 const newCharBase = (): GenerationParams => ({ ...ANIMA_DEFAULTS, mode: 't2i', loras: [] })
 // positive 끝에 @triggers 토큰을 보장(이미 있으면 그대로). 트리거 관리 on일 때 삽입 자리 표시.
 const withTriggerToken = (p: string): string => {
@@ -99,35 +111,22 @@ const newCharacter = (name: string): Character => {
 const pad3 = (n: number) => String(n).padStart(3, '0')
 export const sanitize = (s: string) => s.trim().replace(/[^\w\-가-힣]+/g, '_').replace(/^_+|_+$/g, '')
 
-// base positive를 콤마·마침표 경계로 토큰화(각 토큰 = {텍스트, 뒤따르는 구분자}). 무손실:
-// 토큰들의 text+delim 합치면 원본 그대로. Anima는 태그와 자연어를 마침표로 끊으므로
-// 삽입 위치 선택과 병합 모두 마침표를 경계로 인식해야 한다.
-export interface PromptToken { text: string; delim: string }
-export function tokenizePrompt(base: string): PromptToken[] {
-  const raw = (base || '').split(/([,.])/) // [text, delim, text, delim, ..., text]
-  const toks: PromptToken[] = []
-  for (let k = 0; k < raw.length; k += 2) toks.push({ text: raw[k] ?? '', delim: raw[k + 1] ?? '' })
-  return toks
+// 슬롯 프롬프트 삽입 — base positive의 @slot 토큰 자리에 치환(@triggers와 동일 방식, 칩으로 이동).
+// 토큰이 없으면 끝에 콤마로 덧붙인다(기본). 슬롯이 비면 토큰만 빼고 남는 콤마를 정리.
+export const SLOT_RE = /@slot/i
+export const withSlotToken = (p: string): string => {
+  if (SLOT_RE.test(p)) return p
+  const s = (p || '').replace(/[\s,]+$/, '')
+  return s ? s + ', @slot' : '@slot'
 }
-
-// insert번째 토큰 '앞'에 슬롯 프롬프트를 끼운다(insert 미설정=끝). 슬롯은 태그라 콤마로 잇되,
-// 끼우는 경계의 원래 구분자(마침표면 마침표)는 슬롯 '뒤'로 보내 태그/자연어 구조를 보존한다.
-export function mergePositive(base: string, add: string, insert?: number): string {
+export function insertSlotPrompt(base: string, add: string): string {
   const a = (add || '').trim()
+  if (SLOT_RE.test(base)) {
+    return base.replace(SLOT_RE, a).replace(/[^\S\n]*,[^\S\n]*,[^\S\n]*/g, ', ').replace(/^[\s,]+|[\s,]+$/g, '')
+  }
   if (!a) return base
   if (!(base || '').trim()) return a
-  const toks = tokenizePrompt(base)
-  const n = toks.length
-  const i = insert == null ? n : Math.max(0, Math.min(insert, n))
-  if (i >= n) return `${base.replace(/[\s,.]*$/, '')}, ${a}` // 맨 끝
-  if (i === 0) return `${a}, ${base.replace(/^\s+/, '')}` // 맨 앞
-  const prev = toks.slice(0, i)
-  const rest = toks.slice(i)
-  const boundaryDelim = prev[prev.length - 1].delim || ',' // 끼우는 자리의 원래 구분자(마침표 보존)
-  const leftStr = prev.map((t, k) => t.text + (k === prev.length - 1 ? '' : t.delim)).join('')
-  const rightStr = rest.map((t) => t.text + t.delim).join('')
-  const rightJoin = /^\s/.test(rightStr) ? rightStr : ` ${rightStr}`
-  return `${leftStr.replace(/\s+$/, '')}, ${a}${boundaryDelim}${rightJoin}`
+  return `${base.replace(/[\s,.]*$/, '')}, ${a}`
 }
 
 function slotCategory(slot: Slot | undefined, num: number, excludeNumber: boolean): string {
@@ -164,6 +163,8 @@ interface BatchState {
   excludeSlotNumber: boolean
   randomizeSeed: boolean // true=결과마다 시드 무작위, false=Base의 seed로 고정(재현용)
   slotCollapsed: Record<string, boolean> // 슬롯 접힘 상태(slotId→true). UI 상태(프리셋 파일엔 저장 안 함).
+  pvSelByChar: Record<string, string> // Base Positive 변형 칩 선택(charId → 'all'|프리셋 파일명). 패널 언마운트에도 유지.
+  nvSelByChar: Record<string, string> // Base Negative 변형 칩 선택 — 포지티브와 독립.
   // 프리셋 목록 / 실행
   presets: presetApi.PresetSummary[]
   presetOrder: string[] // 드롭다운 표시 순서(파일명). 사용자가 ↑↓로 변경.
@@ -180,6 +181,12 @@ interface BatchState {
   setCharBase: (patch: Partial<GenerationParams>) => void
   setCharTriggerBadges: (on: boolean) => void // 활성 캐릭터 자동 트리거 on/off (@triggers 토큰 관리)
   setCharTriggerOrder: (order: string[]) => void // 활성 캐릭터 트리거 뱃지 순서
+  setCharPositiveOverride: (filename: string, positive: string) => void // 활성 캐릭터의 프리셋 한정 positive 생성/수정
+  setCharNegativeOverride: (filename: string, negative: string) => void // 활성 캐릭터의 프리셋 한정 negative 생성/수정
+  removeCharPositiveOverride: (filename: string) => void // positive 변형만 삭제 → 그 프리셋의 포지티브는 다시 all
+  removeCharNegativeOverride: (filename: string) => void // negative 변형만 삭제 → 그 프리셋의 네거티브는 다시 all
+  setPosVariantSel: (v: string) => void // 활성 캐릭터의 포지티브 변형 칩 선택 기억
+  setNegVariantSel: (v: string) => void // 활성 캐릭터의 네거티브 변형 칩 선택 기억
   importBaseFromWorkbench: () => void
   setCharacterBase: (charId: string, params: GenerationParams) => void
   addCharacterFromParams: (params: GenerationParams) => void
@@ -189,7 +196,6 @@ interface BatchState {
   closeTab: (id: string) => void
   setViewport: (tabId: string, vp: Viewport) => void
   // 슬롯 (활성 탭 대상)
-  setPromptInsert: (index: number | null) => void
   setSlotStart: (n: number) => void
   addSlot: () => void
   updateSlot: (id: string, patch: Partial<Slot>) => void
@@ -281,6 +287,8 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
     excludeSlotNumber: false,
     randomizeSeed: true,
     slotCollapsed: {},
+    pvSelByChar: {},
+    nvSelByChar: {},
     presets: [],
     presetOrder: [],
     running: false,
@@ -311,7 +319,7 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
         const tabs = s.tabs.filter((t) => t.charId !== id)
         const nextChar = characters[Math.max(0, i - 1)]
         const activeCharId = s.activeCharId === id ? nextChar.id : s.activeCharId
-        const charTabs = tabs.filter((t) => t.charId === activeCharId)
+        const charTabs = tabs.filter((t) => t.charId === activeCharId && !t.closed)
         const activeTabId = s.tabs.find((t) => t.id === s.activeTabId && t.charId !== id)
           ? s.activeTabId
           : (s.activeTabByChar[activeCharId] && charTabs.some((t) => t.id === s.activeTabByChar[activeCharId])
@@ -333,7 +341,7 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
             leaving.slots.map((sl) => ({ name: sl.name, prompt: sl.prompt, locked: sl.locked, promptH: sl.promptH }))).catch(() => {})
         : Promise.resolve()
       // 즉시 전환(UI 반응성) 후, flush 완료를 기다렸다가 진입 캐릭터 프리셋 탭을 파일 최신 내용으로 갱신.
-      const charTabs = s0.tabs.filter((t) => t.charId === id)
+      const charTabs = s0.tabs.filter((t) => t.charId === id && !t.closed)
       const remembered = s0.activeTabByChar[id]
       const activeTabId = (remembered && charTabs.some((t) => t.id === remembered))
         ? remembered
@@ -384,15 +392,49 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
         characters: s.characters.map((c) => (c.id === s.activeCharId ? { ...c, base: { ...c.base, ...patch } } : c)),
       })),
     // 활성 캐릭터 자동 트리거 on/off. Single과 동일하게 base.positive의 @triggers 토큰을 관리하고,
-    // off 시 base.triggers를 비운다(빌더가 아무것도 삽입 안 하게).
+    // off 시 base.triggers를 비운다(빌더가 아무것도 삽입 안 하게). 프리셋 한정 변형도 같이 맞춘다.
     setCharTriggerBadges: (on) =>
       set((s) => ({
         characters: s.characters.map((c) => {
           if (c.id !== s.activeCharId) return c
-          const positive = on ? withTriggerToken(c.base.positive) : withoutTriggerToken(c.base.positive)
-          return { ...c, triggerBadges: on, base: { ...c.base, positive, triggers: on ? c.base.triggers : [] } }
+          const patch = on ? withTriggerToken : withoutTriggerToken
+          const positiveOverrides = c.positiveOverrides
+            ? Object.fromEntries(Object.entries(c.positiveOverrides).map(([f, p]) => [f, patch(p)]))
+            : c.positiveOverrides
+          return { ...c, triggerBadges: on, positiveOverrides, base: { ...c.base, positive: patch(c.base.positive), triggers: on ? c.base.triggers : [] } }
         }),
       })),
+    // 프리셋 한정 프롬프트 변형 — 활성 캐릭터의 { 프리셋 파일명: 텍스트 } 맵을 생성/수정·삭제.
+    setCharPositiveOverride: (filename, positive) =>
+      set((s) => ({
+        characters: s.characters.map((c) =>
+          c.id === s.activeCharId ? { ...c, positiveOverrides: { ...c.positiveOverrides, [filename]: positive } } : c),
+      })),
+    setCharNegativeOverride: (filename, negative) =>
+      set((s) => ({
+        characters: s.characters.map((c) =>
+          c.id === s.activeCharId ? { ...c, negativeOverrides: { ...c.negativeOverrides, [filename]: negative } } : c),
+      })),
+    removeCharPositiveOverride: (filename) =>
+      set((s) => ({
+        characters: s.characters.map((c) => {
+          if (c.id !== s.activeCharId || !c.positiveOverrides || !(filename in c.positiveOverrides)) return c
+          const { [filename]: _x, ...rest } = c.positiveOverrides
+          return { ...c, positiveOverrides: rest }
+        }),
+      })),
+    removeCharNegativeOverride: (filename) =>
+      set((s) => ({
+        characters: s.characters.map((c) => {
+          if (c.id !== s.activeCharId || !c.negativeOverrides || !(filename in c.negativeOverrides)) return c
+          const { [filename]: _x, ...rest } = c.negativeOverrides
+          return { ...c, negativeOverrides: rest }
+        }),
+      })),
+    setPosVariantSel: (v) =>
+      set((s) => ({ pvSelByChar: { ...s.pvSelByChar, [s.activeCharId]: v } })),
+    setNegVariantSel: (v) =>
+      set((s) => ({ nvSelByChar: { ...s.nvSelByChar, [s.activeCharId]: v } })),
     setCharTriggerOrder: (order) =>
       set((s) => ({
         characters: s.characters.map((c) => (c.id === s.activeCharId ? { ...c, triggerOrder: order } : c)),
@@ -440,20 +482,24 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
     closeTab: (id) =>
       set((s) => {
         const tab = s.tabs.find((t) => t.id === id)
-        if (!tab) return s
-        const sibling = s.tabs.filter((t) => t.charId === tab.charId)
-        if (sibling.length <= 1) return s // 캐릭터의 마지막 탭은 유지
+        if (!tab || tab.closed) return s
+        const sibling = s.tabs.filter((t) => t.charId === tab.charId && !t.closed)
+        if (sibling.length <= 1) return s // 캐릭터의 마지막 열린 탭은 유지
         const i = sibling.findIndex((t) => t.id === id)
-        const tabs = s.tabs.filter((t) => t.id !== id)
+        // 프리셋 탭은 숨김 보존(완료 결과만 남김 — 미완료는 이어받을 수 없음). 무제 탭은 완전 삭제.
+        const keep = !!tab.presetFilename
+        const tabs = keep
+          ? s.tabs.map((t) => (t.id === id ? { ...t, closed: true, results: t.results.filter((r) => r.status === 'done') } : t))
+          : s.tabs.filter((t) => t.id !== id)
         const viewports = { ...s.viewports }
-        delete viewports[id]
-        const fallback = sibling[Math.max(0, i - 1)].id
+        if (!keep) delete viewports[id]
+        const remaining = sibling.filter((t) => t.id !== id)
+        const fallback = remaining[Math.max(0, i - 1)].id
         const activeTabId = s.activeTabId === id ? fallback : s.activeTabId
         return { tabs: markSeen(tabs, activeTabId), activeTabId, viewports, activeTabByChar: { ...s.activeTabByChar, [tab.charId]: activeTabId } }
       }),
     setViewport: (tabId, vp) => set((s) => ({ viewports: { ...s.viewports, [tabId]: vp } })),
 
-    setPromptInsert: (index) => patchActive(() => ({ promptInsert: index == null ? undefined : index })),
     setSlotStart: (n) => patchActive(() => ({ slotStart: Math.max(1, Math.floor(n) || 1) })),
     addSlot: () => patchActive((t) => ({ slots: [...t.slots, newSlot()] })),
     updateSlot: (id, patch) => patchActive((t) => ({ slots: t.slots.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
@@ -505,20 +551,55 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
       set({ presets: await presetApi.listPresets().catch(() => []) })
     },
     applyPreset: async (filename) => {
-      // 활성 캐릭터에 이미 그 프리셋 탭이 열려 있으면 그 탭으로 복귀. 없으면 새 탭.
+      // 활성 캐릭터에 이미 그 프리셋 탭이 열려 있으면 그 탭으로 복귀. 닫힌(보존된) 탭이 있으면
+      // 복원 — 슬롯은 파일 최신 내용으로 동기화하되 slotId를 보존해 기존 결과 프리뷰가 살아난다.
       const s0 = get()
       const existing = s0.tabs.find((t) => t.presetFilename === filename && t.charId === s0.activeCharId)
-      if (existing) { get().switchTab(existing.id); return }
+      if (existing && !existing.closed) { get().switchTab(existing.id); return }
+      if (existing) {
+        const p = await presetApi.getPreset(filename).catch(() => null)
+        set((s) => ({
+          tabs: markSeen(s.tabs.map((t) => {
+            if (t.id !== existing.id) return t
+            let slots = t.slots
+            if (p) {
+              const fileSlots = p.slots ?? []
+              const synced: Slot[] = fileSlots.map((fsl, i) => {
+                const ex = t.slots[i]
+                return ex
+                  ? { ...ex, name: fsl.name, prompt: fsl.prompt, promptH: fsl.promptH }
+                  : { id: uid(), name: fsl.name, prompt: fsl.prompt, locked: false, promptH: fsl.promptH }
+              })
+              const extras = t.slots.slice(fileSlots.length).filter((sl) => t.results.some((r) => r.slotId === sl.id))
+              slots = [...synced, ...extras]
+            }
+            return { ...t, closed: false, ...(p ? { name: p.name } : {}), slots: slots.length ? slots : t.slots }
+          }), existing.id),
+          activeTabId: existing.id,
+          activeTabByChar: { ...s.activeTabByChar, [s.activeCharId]: existing.id },
+        }))
+        return
+      }
       const p = await presetApi.getPreset(filename)
       // 새 탭은 잠금 기본값을 전부 해제(잠금은 생성 제외용 세션 컨트롤 — 프리셋 내용으로 취급하지 않음).
       const slots = (p.slots ?? []).map((sl) => ({ id: uid(), name: sl.name, prompt: sl.prompt, locked: false, promptH: sl.promptH }))
       set((s) => {
+        const collapsed = Object.fromEntries(slots.map((sl) => [sl.id, true] as const))
+        // 변경 없는 New tab에서 열었으면 새 탭 대신 그 탭을 프리셋으로 대체.
+        const cur = s.tabs.find((t) => t.id === s.activeTabId)
+        if (cur && cur.charId === s.activeCharId && isPristineTab(cur)) {
+          return {
+            tabs: s.tabs.map((t) => (t.id === cur.id ? { ...t, name: p.name, presetFilename: filename, slots } : t)),
+            activeTabByChar: { ...s.activeTabByChar, [s.activeCharId]: cur.id },
+            slotCollapsed: { ...s.slotCollapsed, ...collapsed },
+          }
+        }
         const tab = newTab(s.activeCharId, p.name, filename, slots)
         // 슬롯을 모두 접힌 상태로 시작.
         return {
           tabs: [...s.tabs, tab], activeTabId: tab.id,
           activeTabByChar: { ...s.activeTabByChar, [s.activeCharId]: tab.id },
-          slotCollapsed: { ...s.slotCollapsed, ...Object.fromEntries(slots.map((sl) => [sl.id, true] as const)) },
+          slotCollapsed: { ...s.slotCollapsed, ...collapsed },
         }
       })
     },
@@ -581,8 +662,21 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
     removePreset: async (filename) => {
       await presetApi.deletePreset(filename)
       await get().loadPresetList()
-      // 프리셋이 사라진 탭은 무제 탭으로 전환(슬롯·결과는 유지).
-      set((s) => ({ tabs: s.tabs.map((t) => (t.presetFilename === filename ? { ...t, presetFilename: null } : t)) }))
+      // 열린 탭은 무제 탭으로 전환(슬롯·결과는 유지), 닫힌 보존 탭은 제거(보이지 않는 고아 방지).
+      // 이 프리셋 한정 변형도 전 캐릭터에서 정리.
+      set((s) => ({
+        tabs: s.tabs
+          .filter((t) => !(t.presetFilename === filename && t.closed))
+          .map((t) => (t.presetFilename === filename ? { ...t, presetFilename: null } : t)),
+        characters: s.characters.map((c) => {
+          const drop = (m?: Record<string, string>) => {
+            if (!m || !(filename in m)) return m
+            const { [filename]: _x, ...rest } = m
+            return rest
+          }
+          return { ...c, positiveOverrides: drop(c.positiveOverrides), negativeOverrides: drop(c.negativeOverrides) }
+        }),
+      }))
     },
 
     // 활성 탭의 잠그지 않은 슬롯을 큐에 '덧붙인다'(교체 아님 → 오른쪽으로 누적). 생성 중에도
@@ -599,16 +693,22 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
       tab.slots.forEach((slot, idx) => {
         if (slot.locked) return
         const cat = slotCategory(slot, slotStart + idx, s.excludeSlotNumber)
+        // 이 프리셋 탭에 한정 변형(overrides)이 있으면 그걸 base 프롬프트로 사용.
+        const ovPositive = tab.presetFilename ? char.positiveOverrides?.[tab.presetFilename] : undefined
+        const ovNegative = tab.presetFilename ? char.negativeOverrides?.[tab.presetFilename] : undefined
+        const mergedPositive = insertSlotPrompt(ovPositive ?? char.base.positive, slot.prompt ?? '')
         const reqBase: GenerationParams = {
           ...char.base,
-          positive: mergePositive(char.base.positive, slot.prompt ?? '', tab.promptInsert),
           filenamePrefix: [folder, charFolder, cat].filter(Boolean).join('/'),
           save: { format: s.format, quality: s.quality },
         }
         for (let r = 0; r < Math.max(1, s.countPerSlot); r++) {
-          // 시드도 큐에 넣는 시점에 확정: 랜덤이면 결과마다 새 시드, 아니면 Base의 seed 고정.
+          // 시드·와일드카드(#이름)도 큐에 넣는 시점에 확정: 결과마다 개별 추첨/새 시드.
           const seed = s.randomizeSeed ? randomSeed() : char.base.seed
-          additions.push({ id: uid(), slotId: slot.id, slotIndex: idx, promptId: null, seed: null, status: 'idle', imageUrls: [], req: { ...reqBase, seed } })
+          additions.push({
+            id: uid(), slotId: slot.id, slotIndex: idx, promptId: null, seed: null, status: 'idle', imageUrls: [],
+            req: { ...reqBase, positive: resolveWildcards(mergedPositive), negative: resolveWildcards(ovNegative ?? char.base.negative), seed },
+          })
         }
       })
       if (additions.length === 0) return
@@ -759,6 +859,8 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
     excludeSlotNumber: s.excludeSlotNumber,
     randomizeSeed: s.randomizeSeed,
     slotCollapsed: s.slotCollapsed,
+    pvSelByChar: s.pvSelByChar,
+    nvSelByChar: s.nvSelByChar,
     presetOrder: s.presetOrder,
   }),
 }))

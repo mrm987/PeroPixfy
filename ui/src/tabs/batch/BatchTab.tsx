@@ -56,7 +56,7 @@ export function BatchTab() {
 
   const slots = active?.slots ?? []
   const results = active?.results ?? []
-  const charTabs = tabs.filter((t) => t.charId === activeCharId)
+  const charTabs = tabs.filter((t) => t.charId === activeCharId && !t.closed) // 닫힌(보존) 프리셋 탭은 숨김
   const activeSlots = slots.filter((sl) => !sl.locked).length
   const total = results.length
   const done = results.filter((r) => r.status === 'done').length
@@ -205,7 +205,7 @@ export function BatchTab() {
                 )}
                 {characters.length > 1 && (
                   <button className="char-tab-close" title={t('Delete character')}
-                    onClick={(e) => { e.stopPropagation(); if (confirm(t("Delete character '{name}'? (its tabs and results are removed too)", { name: c.name }))) removeCharacter(c.id) }}>✕</button>
+                    onClick={(e) => { e.stopPropagation(); if (confirm(t("Delete character '{name}'? (its tabs and result previews are removed — image files on disk are kept)", { name: c.name }))) removeCharacter(c.id) }}>✕</button>
                 )}
               </div>
             ))}

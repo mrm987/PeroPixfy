@@ -46,6 +46,7 @@ export interface StyleRecord {
   tags: string
   notes: string
   nsfw: number
+  trigger_meta?: string // JSON {triggers, order} — 저장 시점의 트리거 뱃지 상태(적용 시 복원)
   loras?: StyleLoraRef[]
 }
 
@@ -164,6 +165,7 @@ export interface CreateStylePayload {
   height: number
   loras: { lora_rel_path: string; display_name?: string; strength: number; enabled: boolean }[]
   image?: { filename: string; subfolder: string; type: string }
+  trigger_meta?: string
 }
 
 export const createStyle = (payload: CreateStylePayload) => post('styles/create', payload)

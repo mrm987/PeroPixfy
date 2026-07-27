@@ -1,10 +1,10 @@
-import { Fragment, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useT } from '../../i18n'
 import { NumberField, SelectField } from '../../components/controls'
 import { Section } from '../../components/Section'
 import { TagAutocompleteTextarea } from '../../tags/TagAutocompleteTextarea'
 import { ParamsPanel } from '../workbench/ParamsPanel'
-import { activeCharOf, activeTabOf, sortPresets, tokenizePrompt, useBatch, type ImageFormat } from '../../stores/batch'
+import { activeTabOf, sortPresets, useBatch, type ImageFormat } from '../../stores/batch'
 
 const pad3 = (n: number) => String(n).padStart(3, '0')
 
@@ -13,30 +13,14 @@ export function BatchSlotPanel() {
   const t = useT()
   const s = useBatch()
   const tab = useBatch(activeTabOf)
-  const basePositive = useBatch((st) => activeCharOf(st)?.base.positive ?? '')
   const slots = tab?.slots ?? []
-  // base positive를 콤마·마침표 경계로 토큰화(병합 로직과 동일). 마침표도 삽입 경계가 됨.
-  const toks = tokenizePrompt(basePositive)
-  const n = toks.length
-  const hasBase = basePositive.trim() !== ''
   const allCollapsed = slots.length > 0 && slots.every((x) => s.slotCollapsed[x.id])
   const allLocked = slots.length > 0 && slots.every((x) => x.locked)
-  const insertSel = tab?.promptInsert == null || tab.promptInsert >= n ? n : tab.promptInsert
-  const [dragOver, setDragOver] = useState<number | null>(null)
   const [presetOpen, setPresetOpen] = useState(false)
   const [presetDrag, setPresetDrag] = useState<number | null>(null)
   const [presetOver, setPresetOver] = useState<number | null>(null)
   const [slotDrag, setSlotDrag] = useState<number | null>(null)
   const [slotOver, setSlotOver] = useState<number | null>(null)
-  const insertSummary = insertSel >= n ? t('at end') : t('before "{tag}"', { tag: (toks[insertSel]?.text || '').trim() })
-
-  // 드래그해 옮기는 단일 'slot prompt' 블록 (현재 삽입 위치에 인라인 표시).
-  const slotBlock = () => (
-    <span className="insert-block" draggable
-      title={t('Drag onto a tag (or click a tag) to move where the slot prompt goes')}
-      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', 'slot') }}
-      onDragEnd={() => setDragOver(null)}>{t('▸ slot prompt')}</span>
-  )
   const curFilename = tab?.presetFilename ?? null
   const curName = tab?.name ?? ''
   const { format, quality, countPerSlot, excludeSlotNumber, presets, presetOrder } = s
@@ -64,36 +48,7 @@ export function BatchSlotPanel() {
 
   return (
     <div className="batch-slot-panel">
-      {/* base positive를 원본 그대로(쉼표·공백·개행 보존) 읽기전용 표시 + 단일 'slot prompt' 블록을
-          드래그/클릭으로 옮겨 삽입 위치 지정(기본=끝). 접고펴기. */}
-      <Section id="batch-insert" title={t('Base positive · slot prompt position')} summary={hasBase ? insertSummary : t('empty')}>
-        {!hasBase ? (
-          <p className="notice">{t('Base positive is empty — each slot prompt is used as-is.')}</p>
-        ) : (
-          <div className="insert-text">
-            {toks.map((tok, i) => (
-              <Fragment key={i}>
-                {insertSel === i && slotBlock()}
-                <span className={`ins-tok${dragOver === i ? ' over' : ''}`}
-                  title={t('Click (or drop the block) to insert the slot prompt before this')}
-                  onClick={() => s.setPromptInsert(i)}
-                  onDragOver={(e) => { e.preventDefault(); setDragOver(i) }}
-                  onDragLeave={() => setDragOver((d) => (d === i ? null : d))}
-                  onDrop={() => { s.setPromptInsert(i); setDragOver(null) }}>{tok.text}</span>
-                {tok.delim && <span className="ins-comma">{tok.delim}</span>}
-              </Fragment>
-            ))}
-            {insertSel >= n && slotBlock()}
-            <span className={`ins-end${dragOver === n ? ' over' : ''}`}
-              title={t('Insert at the end (default)')}
-              onClick={() => s.setPromptInsert(null)}
-              onDragOver={(e) => { e.preventDefault(); setDragOver(n) }}
-              onDragLeave={() => setDragOver((d) => (d === n ? null : d))}
-              onDrop={() => { s.setPromptInsert(null); setDragOver(null) }}>{t('⏎end')}</span>
-          </div>
-        )}
-      </Section>
-
+      {/* 슬롯 프롬프트 삽입 위치는 Base 포지티브의 @slot 칩으로 지정한다(트리거워드와 동일 방식). */}
       {/* 슬롯 에디터 — 섹션 전체 접기(헤더 클릭) + 개별 슬롯 접기(각 슬롯 헤더 클릭) */}
       <Section id="slots" title={t('Slots')}>
       {/* 프리셋 드롭다운 — 선택/순서변경(드래그)/이름변경/복제/삭제/새로 만들기를 리스트 안에서. 편집은 자동저장. */}
@@ -132,12 +87,12 @@ export function BatchSlotPanel() {
         <button className="slots-headbtn"
           title={allCollapsed ? t('Expand all slots') : t('Collapse all slots')}
           onClick={() => s.setSlotsCollapsed(slots.map((x) => x.id), !allCollapsed)}>
-          {allCollapsed ? t('▸ Expand all') : t('▾ Collapse all')}
+          {allCollapsed ? '▸ all' : '▾ all'}
         </button>
         <button className="slots-headbtn lockall"
           title={allLocked ? t('Unlock all slots') : t('Lock all slots (exclude from generation)')}
           onClick={() => s.setAllSlotsLocked(!allLocked)}>
-          {allLocked ? t('🔓 Unlock all') : t('🔒 Lock all')}
+          {allLocked ? '🔓 all' : '🔒 all'}
         </button>
         <label className="slot-start" title={t('Slot numbering start')}>{t('Start')}
           <input type="number" min={1} value={tab?.slotStart ?? 1}

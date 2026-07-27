@@ -1,9 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { formatCount, loadTags, searchTags, tagsLoaded, type TagEntry } from './tagData'
+import { searchWildcardEntries } from './wildcards'
 
 export const CATEGORY_LABEL: Record<string, string> = {
   general: 'general', artist: 'artist', character: 'character', copyright: 'copyright', meta: 'meta',
+  wildcard: 'wildcard',
 }
 
 // 삽입 시 언더바를 띄어쓰기로 변환. 단 ^_^ / >_< 같은 이모티콘의 _, 그리고 score_9 등
@@ -125,7 +127,17 @@ export function TagAutocompleteTextarea({ value, onChange, rows, placeholder, cl
     const cursorPos = ta.selectionStart
     // 연속 스페이스 2개면 자동완성 종료.
     if (cursorPos >= 2 && ta.value.substring(cursorPos - 2, cursorPos) === '  ') return close()
-    const { word } = getCurrentWord(ta.value, cursorPos)
+    const { word, fullStart } = getCurrentWord(ta.value, cursorPos)
+    // #이름 와일드카드 — 단어 바로 앞이 #이면 정의된 풀 이름을 제안(빈 단어=전체 목록).
+    if (ta.value[fullStart - 1] === '#' && !word.includes(' ')) {
+      const wc = searchWildcardEntries(word)
+      if (wc.length === 0) return close()
+      setResults(wc)
+      setSel(0)
+      setPos(computeDropdownPos(ta))
+      setOpen(true)
+      return
+    }
     const searchWord = word.replace(/ /g, '_') // 스페이스 → 언더바 (Danbooru 포맷)
     if (searchWord.length < 2) return close()
     const found = searchTags(searchWord)
@@ -148,7 +160,8 @@ export function TagAutocompleteTextarea({ value, onChange, rows, placeholder, cl
   }
 
   // 선택한 태그를 커서 위치에 삽입. 뒤에 ', ' 접미사(이미 콤마가 있으면 생략).
-  const insertTag = (tagValue: string) => {
+  // 와일드카드(풀 이름)는 언더바를 그대로 유지해야 #이름 토큰이 성립한다.
+  const insertTag = (tag: TagEntry) => {
     const ta = ref.current
     if (!ta) return
     const { start, end, fullStart } = getCurrentWord(value, ta.selectionStart)
@@ -157,7 +170,7 @@ export function TagAutocompleteTextarea({ value, onChange, rows, placeholder, cl
     if (end < value.length && value[end] === ',') {
       suffix = end + 1 < value.length && value[end + 1] !== ' ' ? ' ' : ''
     }
-    const insertText = leadingSpaces + underscoresToSpaces(tagValue) + suffix
+    const insertText = leadingSpaces + (tag.type === 'wildcard' ? tag.value : underscoresToSpaces(tag.value)) + suffix
     const newValue = value.substring(0, fullStart) + insertText + value.substring(end)
     pendingCursor.current = fullStart + insertText.length
     lastValue.current = newValue
@@ -188,7 +201,7 @@ export function TagAutocompleteTextarea({ value, onChange, rows, placeholder, cl
     else if (e.key === 'Enter') {
       e.preventDefault()
       const t = results[sel]
-      if (t) { suppress.current = true; insertTag(t.value); setTimeout(() => { suppress.current = false }, 100) }
+      if (t) { suppress.current = true; insertTag(t); setTimeout(() => { suppress.current = false }, 100) }
     } else if (e.key === 'Escape') { e.preventDefault(); close() }
   }
 
@@ -217,7 +230,7 @@ export function TagAutocompleteTextarea({ value, onChange, rows, placeholder, cl
           style={{ left: pos.left, top: pos.top, maxWidth: pos.maxWidth }}>
           {results.map((t, i) => (
             <div key={t.value + i} className={`tag-ac-item${i === sel ? ' selected' : ''}`}
-              onMouseDown={(e) => { e.preventDefault(); insertTag(t.value) }}
+              onMouseDown={(e) => { e.preventDefault(); insertTag(t) }}
               onMouseMove={() => setSel(i)}>
               <span className="tag-ac-name" title={t.label}>{t.label}</span>
               <span className={`tag-ac-badge ${t.type}`}>{CATEGORY_LABEL[t.type] ?? t.type}</span>

@@ -705,6 +705,7 @@ async def api_style_create(request):
         seed=int(data.get("seed") or 0),
         steps=int(data.get("steps") or 0),
         cfg=float(data.get("cfg") or 0),
+        trigger_meta=data.get("trigger_meta") or "",
         loras=loras,
     )
     if data.get("tags"):

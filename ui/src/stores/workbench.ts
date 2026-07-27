@@ -9,6 +9,9 @@ import {
 import { fetchSettings } from '../api/settings'
 import { buildGraph } from '../workflow/builder'
 import { insertTriggers } from '../tags/promptTags'
+import { normPath, splitCsv } from '../tags/triggers'
+import { resolveWildcards } from '../tags/wildcards'
+import { useLibrary } from './library'
 import { ANIMA_DEFAULTS, defaultFilenamePrefix } from '../workflow/defaults'
 import type { GenerationParams, LoraEntry } from '../workflow/types'
 
@@ -366,12 +369,32 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => {
   // 기록(자동 트리거워드 기능 이전의 옛날 이미지 또는 off로 생성)은 기능을 끄고 평문으로 불러온다
   // — 안 그러면 빈 칩이 붙고 로라 트리거 상태와 어긋나 이상해진다.
   restore: (params) => {
-    const { positiveTemplate, ...rest } = params
+    const { positiveTemplate, triggerOrder: recOrder, ...rest } = params
     const tokenSrc = positiveTemplate && /@triggers/i.test(positiveTemplate)
       ? positiveTemplate
       : (/@triggers/i.test(rest.positive) ? rest.positive : null)
     if (tokenSrc) {
-      set({ triggerBadges: true, params: { ...rest, positive: tokenSrc } })
+      const trig = (rest.triggers ?? []).filter(Boolean)
+      // 기록된 전체 뱃지 순서가 있으면 그대로, 없으면(구 기록) 켜진 단어 순서로 복원.
+      set({ triggerBadges: true, triggerOrder: recOrder ?? trig.map((w) => w.toLowerCase()), params: { ...rest, positive: tokenSrc } })
+      // 기록 시점의 트리거 on/off도 로라 라이브러리(disabled_triggers)에 복원한다 — 안 그러면
+      // TriggerBadges가 '현재' 전역 상태로 triggers를 다시 계산해 덮어써 결과가 달라진다.
+      const lib = useLibrary.getState()
+      const want = new Set(trig.map((w) => w.toLowerCase()))
+      for (const le of rest.loras) {
+        if (!le.enabled) continue
+        const rec = lib.loras.find((l) => normPath(l.rel_path) === normPath(le.relPath))
+        if (!rec) continue
+        const off = new Set(splitCsv(rec.disabled_triggers).map((w) => w.toLowerCase()))
+        for (const w of splitCsv(rec.trigger_words)) {
+          const k = w.toLowerCase()
+          const shouldOn = want.has(k)
+          if (shouldOn !== !off.has(k)) void lib.toggleTriggerDisabled(rec.rel_path, k, !shouldOn)
+        }
+      }
+    } else if (positiveTemplate) {
+      // 와일드카드(#이름)만 있고 @triggers는 없던 기록 — 원문 프롬프트로 복원(직접 입력 모드).
+      set({ triggerBadges: false, params: { ...rest, positive: positiveTemplate, triggers: [] } })
     } else {
       const positive = rest.positive.replace(/@triggers/gi, '').replace(/,\s*,/g, ', ').replace(/^[\s,]+|[\s,]+$/g, '')
       set({ triggerBadges: false, params: { ...rest, positive, triggers: [] } })
@@ -428,9 +451,14 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => {
     // UI 스택(params)은 그대로 두고, 실제 제출/기록 그래프(graphParams)에서만 뺀다.
     const valid = availableLoras.length ? new Set(availableLoras) : null
     const skipped = valid ? finalParams.loras.filter((l) => l.enabled && !valid.has(l.relPath)) : []
-    const graphParams = valid
-      ? { ...finalParams, loras: finalParams.loras.filter((l) => valid.has(l.relPath)) }
-      : finalParams
+    // 와일드카드(#이름)는 제출 직전에 해석 — 에디터(params)에는 원문이 남고,
+    // 그래프/기록에는 이번에 추출된 값이 들어간다.
+    const graphParams = {
+      ...finalParams,
+      positive: resolveWildcards(finalParams.positive),
+      negative: resolveWildcards(finalParams.negative),
+      ...(valid ? { loras: finalParams.loras.filter((l) => valid.has(l.relPath)) } : {}),
+    }
     set({
       params: finalParams,
       error: null,
@@ -439,13 +467,17 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => {
         : null,
     })
     // 기록/스타일 참고용: positive의 @triggers를 실제 트리거워드로 치환해 저장하되, 무손실
-    // 복원을 위해 토큰 원형(positiveTemplate)도 함께 보관. (제출 그래프는 graphParams로 그대로.)
+    // 복원을 위해 원형(positiveTemplate — @triggers 토큰·#와일드카드 원문)도 함께 보관.
+    // (제출 그래프는 graphParams로 그대로.)
     const trig = (graphParams.triggers ?? []).filter(Boolean).join(', ')
     const hasToken = /@triggers/i.test(graphParams.positive)
+    const hadWildcards = graphParams.positive !== finalParams.positive
     const storeParams = {
       ...graphParams,
       positive: insertTriggers(graphParams.positive, trig),
-      ...(hasToken ? { positiveTemplate: graphParams.positive } : {}),
+      ...(hasToken || hadWildcards ? { positiveTemplate: finalParams.positive } : {}),
+      // 뱃지 전체 순서(꺼진 단어 포함)도 기록 — 복원 시 재정렬 없이 그대로 되돌리기 위함.
+      ...(hasToken ? { triggerOrder: get().triggerOrder } : {}),
     }
     try {
       const promptId = await submitPrompt(buildGraph(graphParams))

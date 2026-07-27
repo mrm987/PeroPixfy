@@ -38,6 +38,8 @@ export interface GenerationParams {
   // 기록 전용: positive를 실제 트리거워드로 치환해 저장할 때(참고/스타일용), 무손실 복원을 위해
   // @triggers 토큰이 든 원본 positive를 함께 보관. 불러올(restore) 때 칩 버전으로 되돌리는 데 사용.
   positiveTemplate?: string
+  // 기록 전용: 생성 시점의 트리거 뱃지 전체 순서(꺼진 단어 위치 포함, 소문자). 복원 시 재정렬 방지.
+  triggerOrder?: string[]
   seed: number
   steps: number
   cfg: number

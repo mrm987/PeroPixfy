@@ -5,8 +5,8 @@ import {
   setDisabledTriggers, setFavorite, startCheckUpdates, startScan, updateLora, updateStyle,
   type LoraEditableFields, type LoraRecord, type ScanState, type StyleRecord, type UpdateState,
 } from '../api/library'
-import { reTokenize } from '../tags/promptTags'
-import { activeTriggerWords, collectTriggers } from '../tags/triggers'
+import { findTagRun, reTokenize } from '../tags/promptTags'
+import { collectTriggers, normPath, splitCsv } from '../tags/triggers'
 import type { LoraEntry } from '../workflow/types'
 import { activeCharOf, useBatch } from './batch'
 import { useUi } from './ui'
@@ -229,11 +229,36 @@ export const useLibrary = create<LibraryState>()(persist((set, get) => {
         useBatch.getState().setCharBase(patch) // Multi base는 평문(칩 미사용)
       } else {
         // Single에서 자동 트리거워드가 켜져 있으면, 스타일에 박힌 실제 트리거워드 자리를
-        // @triggers 칩으로 되돌린다(적용 로라들로 트리거워드를 계산해 위치 복원). 빌더가 그
-        // 자리에 다시 트리거워드를 넣으므로 중복되지 않는다.
+        // @triggers 칩으로 되돌린다(빌더가 그 자리에 다시 넣으므로 중복되지 않는다).
         if (wb.triggerBadges) {
-          const trig = activeTriggerWords(collectTriggers(loras, get().loras, wb.triggerOrder)).join(', ')
-          patch.positive = reTokenize(style.positive_prompt, trig)
+          // 칩 자리는 저장된 프롬프트에서 직접 찾는다 — 이 스타일 로라들이 제공하는 트리거워드만
+          // 연속으로 이어진 최장 구간이 곧 @triggers가 있던 자리다. (전역 triggerOrder는 활성
+          // 로라 기준으로 계속 정리되므로, 순서를 이어붙여 찾는 방식은 신뢰할 수 없다.)
+          const known = collectTriggers(loras, get().loras, []).info
+          const run = findTagRun(style.positive_prompt, (tag) => known.has(tag.toLowerCase()))
+          // on/off·순서는 스타일의 스냅샷(trigger_meta)이 있으면 그것으로, 없으면(구 스타일)
+          // 찾은 구간 그대로 복원한다.
+          let meta: { triggers?: string[]; order?: string[] } | null = null
+          try { meta = style.trigger_meta ? JSON.parse(style.trigger_meta) : null } catch { meta = null }
+          const trigWords = (meta?.triggers ?? run?.words ?? []).filter(Boolean)
+          if (trigWords.length) {
+            wb.setTriggerOrder(meta?.order?.length ? meta.order : trigWords.map((w) => w.toLowerCase()))
+            const want = new Set(trigWords.map((w) => w.toLowerCase()))
+            for (const le of loras) {
+              if (!le.enabled) continue
+              const rec = get().loras.find((l) => normPath(l.rel_path) === normPath(le.relPath))
+              if (!rec) continue
+              const off = new Set(splitCsv(rec.disabled_triggers).map((w) => w.toLowerCase()))
+              for (const w of splitCsv(rec.trigger_words)) {
+                const k = w.toLowerCase()
+                const shouldOn = want.has(k)
+                if (shouldOn !== !off.has(k)) void get().toggleTriggerDisabled(rec.rel_path, k, !shouldOn)
+              }
+            }
+          }
+          patch.positive = run
+            ? style.positive_prompt.slice(0, run.start) + '@triggers' + style.positive_prompt.slice(run.end)
+            : reTokenize(style.positive_prompt, '') // 트리거워드가 없는 프롬프트 → 끝에 칩만
         }
         wb.set(patch)
       }
