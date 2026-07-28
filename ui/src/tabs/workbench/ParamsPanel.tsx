@@ -204,8 +204,12 @@ export function ParamsPanel({ width, embedded = false, variant, flat = false }: 
     ).then(([unet, clip, vae, lora, sampler, upscale, spectrum, usdu]) => {
       const loraList = enumValues(lora, 'lora_name')
       const unetList = enumValues(unet, 'unet_name')
+      const upscalerList = enumValues(upscale, 'model_name')
       useWorkbench.getState().setAvailableLoras(loraList) // 생성 시 미설치 LoRA 검증용
       useWorkbench.getState().setAvailableUnets(unetList) // 스타일 적용 시 미설치 모델 검증용
+      // 제출 직전 hires 보정용 — 이 패널이 열려 있지 않은 대상(Multi의 비활성 캐릭터 등)도
+      // 생성 시 이 목록으로 채워진다.
+      useWorkbench.setState({ availableUpscalers: upscalerList })
       setMeta({
         unets: unetList,
         clips: enumValues(clip, 'clip_name'),

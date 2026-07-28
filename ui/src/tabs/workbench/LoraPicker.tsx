@@ -8,11 +8,18 @@ const short = (s: string) => norm(s).split('/').pop()!.replace(/\.(safetensors|c
 
 type PreviewState = { url: string | null; video: boolean; x: number; y: number } | null
 
-// 호버한 요소 오른쪽에 220px 프리뷰. 화면 밖이면 왼쪽으로 뒤집는다.
-function placeBox(rect: DOMRect, size = 220): { x: number; y: number } {
+// 프리뷰는 이미지 비율을 따라가므로 실제 크기는 로드 전에 알 수 없다. 그래서
+// 배치는 CSS가 허용하는 최대 크기(테두리 2px 포함)를 기준으로 잡는다 —
+// 어떤 비율이 와도 화면 밖으로 나가거나 잘리지 않는다.
+const PREVIEW_MAX_W = 284
+const PREVIEW_MAX_H = 384
+
+// 호버한 요소 오른쪽에 프리뷰. 오른쪽이 모자라면 왼쪽으로 뒤집는다.
+function placeBox(rect: DOMRect): { x: number; y: number } {
   let x = rect.right + 8
-  if (x + size > window.innerWidth) x = Math.max(8, rect.left - size - 8)
-  const y = Math.min(Math.max(rect.top - 16, 8), window.innerHeight - size - 8)
+  if (x + PREVIEW_MAX_W > window.innerWidth) x = Math.max(8, rect.left - PREVIEW_MAX_W - 8)
+  const bottomLimit = Math.max(8, window.innerHeight - PREVIEW_MAX_H - 8)
+  const y = Math.min(Math.max(rect.top - 16, 8), bottomLimit)
   return { x, y }
 }
 

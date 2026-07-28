@@ -4,7 +4,7 @@ import { checkFilesExist, deleteQueued, fetchOutputs, interrupt, parseViewUrl, s
 import { completeGeneration, deleteGeneration, failGeneration, recordGeneration } from '../api/gallery'
 import * as presetApi from '../api/presets'
 import { resolveWildcards } from '../tags/wildcards'
-import { buildGraph } from '../workflow/builder'
+import { buildGraph, resolveUpscaleModel } from '../workflow/builder'
 import { ANIMA_DEFAULTS } from '../workflow/defaults'
 import type { GenerationParams } from '../workflow/types'
 import { useWorkbench } from './workbench'
@@ -261,7 +261,10 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
     const params: GenerationParams = next.req ?? { ...(activeCharOf(s)?.base ?? useWorkbench.getState().params), seed: randomSeed() }
     patchResult(tab.id, next.id, { status: 'queued', seed: params.seed })
     try {
-      const promptId = await submitPrompt(buildGraph(params))
+      // 큐에 넣을 때 고정한 req는 그 시점 base의 사본이라, 활성이 아닌 캐릭터의 base처럼
+      // 업스케일 모델이 비어 있는 경우가 있다. 제출 직전에 설치된 모델로 맞춘다.
+      const graphParams = resolveUpscaleModel(params, useWorkbench.getState().availableUpscalers)
+      const promptId = await submitPrompt(buildGraph(graphParams))
       patchResult(tab.id, next.id, { promptId })
       await recordGeneration(promptId, params, 'multi')
     } catch {

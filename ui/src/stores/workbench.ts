@@ -7,7 +7,7 @@ import {
   starGeneration, type GenerationRecord,
 } from '../api/gallery'
 import { fetchSettings } from '../api/settings'
-import { buildGraph } from '../workflow/builder'
+import { buildGraph, resolveUpscaleModel } from '../workflow/builder'
 import { insertTriggers } from '../tags/promptTags'
 import { normPath, splitCsv } from '../tags/triggers'
 import { resolveWildcards } from '../tags/wildcards'
@@ -72,6 +72,7 @@ interface WorkbenchState {
   flashLora: string | null
   availableLoras: string[] // ComfyUI에 실제 설치된 LoRA 목록 (검증용)
   availableUnets: string[] // ComfyUI에 실제 설치된 UNet/체크포인트 목록 (스타일 적용 검증용)
+  availableUpscalers: string[] // 설치된 업스케일 모델 (hires 제출 직전 보정용)
   notice: string | null
   singleOutput: string // Single 저장 폴더(상대=output 하위 / 절대=자유). 옵션 모달에서 설정.
   format: 'png' | 'jpg' | 'webp' // Single 저장 포맷 (Multi 배치 설정과 동일, 세션 지속).
@@ -191,6 +192,7 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => {
   flashLora: null,
   availableLoras: [],
   availableUnets: [],
+  availableUpscalers: [],
   notice: null,
   singleOutput: '',
   format: 'png',
@@ -236,10 +238,13 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => {
   // 재요청해 검증용 목록을 갱신한다. (실패 시엔 기존 목록을 덮어쓰지 않음 — 전부 미설치로
   // 표시되는 사고 방지.)
   refreshAvailable: async () => {
-    const [lora, unet] = await Promise.all([fetchNodeInfo('LoraLoaderModelOnly'), fetchNodeInfo('UNETLoader')])
-    const patch: Partial<Pick<WorkbenchState, 'availableLoras' | 'availableUnets'>> = {}
+    const [lora, unet, upscale] = await Promise.all([
+      fetchNodeInfo('LoraLoaderModelOnly'), fetchNodeInfo('UNETLoader'), fetchNodeInfo('UpscaleModelLoader'),
+    ])
+    const patch: Partial<Pick<WorkbenchState, 'availableLoras' | 'availableUnets' | 'availableUpscalers'>> = {}
     if (lora) patch.availableLoras = enumValues(lora, 'lora_name')
     if (unet) patch.availableUnets = enumValues(unet, 'unet_name')
+    if (upscale) patch.availableUpscalers = enumValues(upscale, 'model_name')
     if (Object.keys(patch).length) set(patch)
   },
   setNotice: (notice) => set({ notice }),
@@ -369,7 +374,15 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => {
   // 기록(자동 트리거워드 기능 이전의 옛날 이미지 또는 off로 생성)은 기능을 끄고 평문으로 불러온다
   // — 안 그러면 빈 칩이 붙고 로라 트리거 상태와 어긋나 이상해진다.
   restore: (params) => {
-    const { positiveTemplate, triggerOrder: recOrder, ...rest } = params
+    // ★기록에 없는 신규 필드는 기본값으로 백필한다 — merge()·activate()와 같은 처리.
+    // 여기만 빠져 있었다. restore는 params를 통째로 갈아끼우므로, 백필이 없으면 그 필드가 생기기
+    // 전의 기록을 재사용했을 때 필드가 상태에서 아예 사라진다 — 기본값으로 돌아가는 게 아니라
+    // 키가 없어지고, 이후 생성 기록에도 빠진 채 저장된다. 화면은 폴백값으로 멀쩡히 보이므로
+    // 눈치채기 어렵고, "무엇으로 뽑았는지"가 기록에서 조용히 소실된다.
+    // (실제 사고: 파라미터를 하나 추가한 뒤 이전 기록을 재사용했더니 그 키가 통째로 날아갔고,
+    //  이어서 돌린 비교 실험이 의도한 값이 아닌 폴백값으로 실행됐다.)
+    const { positiveTemplate, triggerOrder: recOrder, ...recorded } = params
+    const rest = { ...ANIMA_DEFAULTS, ...recorded }
     const tokenSrc = positiveTemplate && /@triggers/i.test(positiveTemplate)
       ? positiveTemplate
       : (/@triggers/i.test(rest.positive) ? rest.positive : null)
@@ -438,7 +451,7 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => {
   },
 
   generate: async () => {
-    const { params, randomizeSeed, availableLoras, singleOutput, format, quality } = get()
+    const { params, randomizeSeed, availableLoras, availableUpscalers, singleOutput, format, quality } = get()
     // 현재 표시된 시드로 생성한다 (WYSIWYG). randomize 모드면 생성을 제출한 '뒤'에
     // 다음 회차용 시드를 새로 뽑는다 (ComfyUI control_after_generate=randomize와 동일).
     // save 설정을 넣어 PeroPixSaveImage로 저장 → 절대경로(자유 폴더)도 지원.
@@ -453,12 +466,14 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => {
     const skipped = valid ? finalParams.loras.filter((l) => l.enabled && !valid.has(l.relPath)) : []
     // 와일드카드(#이름)는 제출 직전에 해석 — 에디터(params)에는 원문이 남고,
     // 그래프/기록에는 이번에 추출된 값이 들어간다.
-    const graphParams = {
+    // 설치된 업스케일 모델로 맞춰 준다(빈 값·지워진 모델 이름). LoRA 필터와 같은 이유 —
+    // 환경에 맞추는 보정이라 UI 상태는 두고 제출 그래프에서만 정리한다.
+    const graphParams = resolveUpscaleModel({
       ...finalParams,
       positive: resolveWildcards(finalParams.positive),
       negative: resolveWildcards(finalParams.negative),
       ...(valid ? { loras: finalParams.loras.filter((l) => valid.has(l.relPath)) } : {}),
-    }
+    }, availableUpscalers)
     set({
       params: finalParams,
       error: null,

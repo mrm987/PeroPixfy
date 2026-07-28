@@ -9,6 +9,27 @@ import type { ApiGraph, ApiNode, GenerationParams } from './types'
  * them — the API format has no bypass concept. Node IDs are deterministic
  * ("unet", "lora_0", "sampler", ...) so graphs are easy to diff.
  */
+/**
+ * 제출 직전 업스케일 모델 보정.
+ *
+ * ★ hires.upscaleModel의 기본값은 빈 문자열이고, 값을 채워 주는 것은 ParamsPanel의
+ * 자동 선택뿐이다. 그런데 그 자동 선택은 **지금 편집 중인 대상**(Single의 params,
+ * Multi의 활성 캐릭터 base)에만 적용된다. 그래서 Multi에서 활성이 아닌 캐릭터로
+ * 생성하거나, 목록이 로드되기 전에 큐에 넣은 요청은 빈 값 그대로 빌더에 도달해
+ * "no upscale model" 로 실패했다.
+ *
+ * 설치된 모델 중 무엇을 쓸지는 창작 결정이 아니라 환경에 맞추는 일이므로, 설치되지 않은
+ * LoRA를 제출 직전에 빼는 것과 같은 자리에서 함께 정리한다. 저장된 이름이 더 이상 설치돼
+ * 있지 않은 경우(모델을 지웠거나 이름이 바뀐 경우)도 여기서 걸러진다.
+ * Anima는 애니 계열이라 anime/ultrasharp 이름을 우선한다(ParamsPanel의 자동 선택과 동일).
+ */
+export function resolveUpscaleModel(p: GenerationParams, available: string[]): GenerationParams {
+  if (!p.hires?.enabled || !available.length) return p
+  if (p.hires.upscaleModel && available.includes(p.hires.upscaleModel)) return p
+  const pick = available.find((m) => /anime|ultrasharp/i.test(m)) ?? available[0]
+  return { ...p, hires: { ...p.hires, upscaleModel: pick } }
+}
+
 export function buildGraph(p: GenerationParams): ApiGraph {
   const g: ApiGraph = {}
   g['unet'] = { class_type: 'UNETLoader', inputs: { unet_name: p.unet, weight_dtype: 'default' } }
@@ -181,7 +202,9 @@ export function buildGraph(p: GenerationParams): ApiGraph {
   } else if (p.hires?.enabled) {
     // 업스케일 모델로 키운 뒤(모델 고유 배율) 목표 배율(scale × 원본)로 리사이즈 → 재샘플.
     // 2배 모델로 키우고 1.5배로 줄여 KSampler를 돌리면 GPU 부하를 줄일 수 있다.
-    if (!p.hires.upscaleModel) throw new Error('hires: no upscale model selected')
+    if (!p.hires.upscaleModel) {
+      throw new Error('hires: no upscale model installed — put one in ComfyUI/models/upscale_models')
+    }
     g['decode_base'] = { class_type: 'VAEDecode', inputs: { samples: ['sampler', 0], vae: ['vae', 0] } }
     g['upmodel'] = { class_type: 'UpscaleModelLoader', inputs: { model_name: p.hires.upscaleModel } }
     if (p.hires.method === 'usdu') {
