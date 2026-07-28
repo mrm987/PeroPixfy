@@ -12,6 +12,10 @@ registry's changelog field, so:
   newlines, so bullets and line breaks end up as one run-on line. Use ` · ` to separate
   points instead.
 
+## 1.5.0
+
+LoRA cards rebuilt around the preview image — filename on a single line, trigger words and buttons only on hover, so far more cards fit on screen · Favourites and in-stack are filters now instead of pinned sections, so cards stay where you found them as you add and remove LoRAs · Styles can be favourited too · Tag weights without typing brackets: Alt+arrows, Alt+wheel or Alt+drag on any prompt field, Alt+middle-click to clear, and selecting several tags wraps them in one weight · The same controls work on LoRA strength, which now accepts negative values and can be cleared · Fixed Ultimate SD Upscale failing with "no upscale model selected" · Fixed reusing an older generation silently dropping parameters added since · Removed the CivitAI update check. Full details in the commit history.
+
 ## 1.4.0
 
 Wildcards: write #name in a prompt and a random line from that pool is used on every generation — with a built-in editor and autocomplete · The slot prompt insertion point is now a draggable @slot chip inside Base positive, replacing the separate position picker · Preset-only Base prompts in Multi: give a character a different positive or negative for just one preset tab · Closing a preset tab now keeps its finished results, and reopening restores them · Loading a past image or applying a style now restores trigger words exactly as they were · Various fixes. Full details in the commit history.
