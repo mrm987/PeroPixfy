@@ -286,6 +286,8 @@ export const ko: Record<string, string> = {
 
   // LoRA 스택/피커
   'LoRAs ({n}/{m})': '로라 ({n}/{m})',
+  'This is the LoRA stack — the ⧉ filter in the Library shows only these':
+    '여기가 로라 스택 — 라이브러리의 ⧉ 필터를 켜면 이 목록의 로라만 보입니다',
   'Trigger words': '트리거워드',
   'Auto trigger words': '자동 트리거워드',
   'Off: type trigger words directly in the prompt': 'off: 트리거워드를 프롬프트에 직접 입력',

@@ -192,7 +192,15 @@ button:disabled { opacity: 0.4; cursor: default; }
 
 .install-hint { font-size: 11px; color: var(--muted); background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; line-height: 1.4; }
 .install-hint code { font-size: 10.5px; background: var(--bg); padding: 3px 6px; border-radius: 4px; word-break: break-all; user-select: all; }
+/* 태그 가중치 가로 드래그 중 — 커서를 숨기고 텍스트 선택을 막는다.
+   포인터 잠금이 걸리면 커서는 어차피 고정되지만, 잠금이 거부되는 환경에서도
+   드래그가 선택으로 새지 않게 한다. */
+body.weight-scrubbing, body.weight-scrubbing * { cursor: none !important; user-select: none !important; }
+
 .lora-stack { display: flex; flex-direction: column; gap: 4px; }
+/* 스택 제목 — 라이브러리의 '스택만' 필터와 같은 ⧉ 아이콘을 앞에 붙여 둘을 잇는다 */
+.lora-stack-label { display: flex; align-items: center; gap: 5px; }
+.lora-stack-label .pi { font-size: 11px; opacity: 0.75; }
 /* 자동 트리거워드 on/off — 체크박스+제목 한 줄, 체크 시 같은 줄에 삽입위치(@triggers) 인라인 */
 .trig-feature { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-top: 6px; }
 .trig-feature-toggle { font-size: 11px; color: var(--muted); padding-bottom: 0; }
@@ -253,7 +261,11 @@ button:disabled { opacity: 0.4; cursor: default; }
 .lora-drag:active { cursor: grabbing; }
 .lora-row.dragging { opacity: 0.45; }
 .lora-row.drag-over { outline: 2px dashed var(--accent); outline-offset: -2px; border-radius: 4px; }
-.lora-row.disabled select, .lora-row.disabled input[type="number"] { opacity: 0.45; }
+/* 강도 칸은 type="text"다(음수·빈칸 편집을 위해 — LoraStack의 StrengthInput 주석 참고).
+   그래서 흐리게 처리할 대상을 타입이 아니라 클래스로 고른다. 체크박스까지 흐려지면
+   꺼진 행을 다시 켤 수단이 안 보이게 되므로 input 전체를 잡으면 안 된다. */
+.lora-row.disabled select, .lora-row.disabled .lora-strength { opacity: 0.45; }
+.lora-strength { text-align: right; min-width: 0; }
 .lora-row select { min-width: 0; }
 .add-lora { align-self: flex-start; }
 
@@ -287,13 +299,21 @@ button:disabled { opacity: 0.4; cursor: default; }
 .lora-picker-item:hover { background: rgba(255, 255, 255, 0.06); }
 .lora-picker-item.active { background: #2a2640; }
 .lora-picker-empty { color: var(--muted); padding: 8px; font-size: 12px; }
+/* 프리뷰 상자는 고정 정사각이 아니라 이미지 비율을 따라간다 — 로라 썸네일은
+   세로가 긴 것이 대부분이라 정사각에 cover로 채우면 위아래가 잘려 나갔다.
+   상자에 크기를 주지 않고 미디어의 max-width/height만 묶어 두면, 상자가
+   실제 이미지 크기에 맞춰지므로 여백 없이 전체가 보인다. */
 .lora-hover-preview {
-  position: fixed; z-index: 12001; width: 220px; height: 220px;
+  position: fixed; z-index: 12001; line-height: 0;
   background: #111; border: 2px solid var(--accent); border-radius: 8px;
   overflow: hidden; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6); pointer-events: none;
 }
-.lora-hover-preview img, .lora-hover-preview video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.lora-hover-empty { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 12px; }
+.lora-hover-preview img, .lora-hover-preview video {
+  display: block; width: auto; height: auto;
+  max-width: 280px; max-height: 380px; object-fit: contain;
+}
+/* 썸네일이 없을 때만 고정 크기 — 안내 문구를 담을 최소 상자가 필요하다. */
+.lora-hover-empty { width: 200px; height: 120px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 12px; line-height: 1.4; }
 
 .toggle-advanced {
   background: none;

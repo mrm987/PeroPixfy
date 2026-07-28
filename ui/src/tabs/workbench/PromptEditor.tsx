@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useT } from '../../i18n'
 import { useWorkbench } from '../../stores/workbench'
 import { placeTokenAt, snapTokenOffset } from '../../tags/promptTags'
+import { adjustWeight, clearWeight, shiftOffset, type WeightEdit } from '../../tags/tagWeight'
 import { CATEGORY_LABEL, getCurrentWord, scrollParent, underscoresToSpaces } from '../../tags/TagAutocompleteTextarea'
 import { formatCount, loadTags, searchTags, tagsLoaded, type TagEntry } from '../../tags/tagData'
 import { searchWildcardEntries } from '../../tags/wildcards'
@@ -415,6 +416,119 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
     return { node: el, offset: kids.length }
   }
 
+  // ── 태그 가중치 (Alt + 방향키 / 휠 / 가로 드래그 / 휠클릭) ──────────────
+  // 전부 value(문자열) 공간에서 계산한다 — 칩(@triggers)은 토큰 문자열로 세므로
+  // 칩이 섞여 있어도 offset이 어긋나지 않는다.
+  const WEIGHT_STEP = 0.05
+  const SCRUB_PX = 4 // 이만큼 끌 때마다 한 단계
+
+  // 현재 선택(collapsed면 캐럿)의 value 기준 [from, to].
+  const selValueRange = (): { from: number; to: number } | null => {
+    const el = ref.current
+    const s = window.getSelection()
+    if (!el || !s || s.rangeCount === 0 || !el.contains(s.anchorNode)) return null
+    const r = s.getRangeAt(0)
+    const a = valueOffsetOf(r.startContainer, r.startOffset)
+    const b = valueOffsetOf(r.endContainer, r.endOffset)
+    return a <= b ? { from: a, to: b } : { from: b, to: a }
+  }
+
+  const valueOffsetFromPoint = (x: number, y: number): number | null => {
+    const el = ref.current
+    const range = caretRangeFromPoint(x, y)
+    if (!el || !range || !el.contains(range.startContainer)) return null
+    return valueOffsetOf(range.startContainer, range.startOffset)
+  }
+
+  // 마우스 조작의 대상: 선택이 있고 그 안을 가리켰으면 선택 전체, 아니면 가리킨 지점.
+  const pointTarget = (x: number, y: number): { from: number; to: number } | null => {
+    const point = valueOffsetFromPoint(x, y)
+    if (point == null) return null
+    const sel = selValueRange()
+    if (sel && sel.from !== sel.to && point >= sel.from - 1 && point <= sel.to + 1) return sel
+    return { from: point, to: point }
+  }
+
+  const setSelRange = (from: number, to: number) => {
+    const a = locateValueOffset(from)
+    const b = locateValueOffset(to)
+    const s = window.getSelection()
+    if (!s) return
+    const r = document.createRange()
+    try { r.setStart(a.node, a.offset); r.setEnd(b.node, b.offset) } catch { return }
+    s.removeAllRanges(); s.addRange(r)
+  }
+
+  // keepSel=true → 조절한 구간을 다시 선택(키보드). false → 원래 커서를 그대로 둔다(마우스).
+  // 마우스 경로에서도 텍스트 길이가 변하면 커서가 밀리므로 변경 지점 기준으로 따라 옮긴다.
+  const applyEdit = (edit: WeightEdit | null, keepSel: boolean, history: boolean) => {
+    if (!edit) return
+    const before = selValueRange()
+    buildDom(edit.text)
+    if (keepSel) setSelRange(edit.span.start, edit.span.start + edit.newLen)
+    else if (before) {
+      setSelRange(shiftOffset(before.from, edit.span, edit.newLen),
+        shiftOffset(before.to, edit.span, edit.newLen))
+    }
+    onChange(edit.text)
+    // 드래그·휠 연속 조작은 한 단계로 뭉친다 — 스텝마다 쌓으면 Ctrl+Z가 무의미해진다.
+    pushHistory(!history)
+  }
+
+  const bumpWeight = (from: number, to: number, delta: number, keepSel: boolean, history = false) => {
+    applyEdit(adjustWeight(serialize(true), from, to, delta), keepSel, history)
+  }
+
+  // Alt + 가로 드래그. 포인터를 잠가 커서를 고정·숨김 — 잠기면 아무리 끌어도 화면을 벗어나지
+  // 않는다. 잠금이 거부되면 위치 기반으로 동작하므로 화면 끝에서 멈춘다(그 경우 휠을 쓰면 된다).
+  const scrub = useRef<{ from: number; to: number; dx: number; acc: number } | null>(null)
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      const sc = scrub.current
+      if (!sc) return
+      sc.dx += e.movementX || 0
+      const steps = Math.trunc(sc.dx / SCRUB_PX)
+      if (steps !== sc.acc) {
+        bumpWeight(sc.from, sc.to, (steps - sc.acc) * WEIGHT_STEP, false)
+        sc.acc = steps
+      }
+    }
+    const onUp = () => {
+      if (!scrub.current) return
+      scrub.current = null
+      document.body.classList.remove('weight-scrubbing')
+      if (document.pointerLockElement) document.exitPointerLock()
+      pushHistory() // 드래그 한 번 = undo 한 단계
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ★ 네이티브 리스너로 직접 붙인다. React의 onWheel은 wheel을 passive로 등록하므로
+  // preventDefault()가 무시되고, Alt+휠이 가중치를 바꾸면서 스크롤까지 같이 된다.
+  // 핸들러는 ref를 거쳐 호출해 항상 최신 클로저(value·onChange)를 보게 한다.
+  const wheelHandler = useRef<(e: WheelEvent) => void>(() => {})
+  wheelHandler.current = (e: WheelEvent) => {
+    if (!e.altKey) return
+    const t = pointTarget(e.clientX, e.clientY)
+    if (!t) return
+    e.preventDefault()
+    bumpWeight(t.from, t.to, e.deltaY < 0 ? WEIGHT_STEP : -WEIGHT_STEP, false)
+  }
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const h = (e: WheelEvent) => wheelHandler.current(e)
+    el.addEventListener('wheel', h, { passive: false })
+    return () => el.removeEventListener('wheel', h)
+  }, [])
+
   // Backspace/Delete 직접 처리 — 칩(토큰)은 절대 지우지 않고 그 외 한 글자만 지운다(개행을
   // 지우면 윗줄과 합쳐짐). 직접 DOM을 고치고 히스토리를 적립한다(브라우저 칩-삭제 quirk 회피).
   const manualDelete = (forward: boolean) => {
@@ -437,6 +551,15 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     heal() // 비정상 구조면 먼저 복구 — 먹통 행에서 Del/방향키/편집이 다시 되게
+    // Alt + ↑/↓ — 커서가 놓인 태그(또는 선택한 태그 전부)의 가중치.
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      const r = selValueRange()
+      if (r) {
+        e.preventDefault()
+        bumpWeight(r.from, r.to, e.key === 'ArrowUp' ? WEIGHT_STEP : -WEIGHT_STEP, true)
+        return
+      }
+    }
     // 자체 undo/redo (Ctrl+Z / Ctrl+Shift+Z·Ctrl+Y) — 직접 DOM 편집이라 네이티브 undo 미동작.
     if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'z' || e.key === 'Z' || e.key === 'y' || e.key === 'Y')) {
       e.preventDefault()
@@ -491,6 +614,26 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
   // 커서가 에디터를 벗어나도 패널이 따라 스크롤돼 에디터가 위로 밀려 사라지던 문제 방지.
   // (칩 드래그는 별도 처리하므로 제외.)
   const onMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Alt + 휠클릭(가운데 버튼) — 가중치를 통째로 벗긴다.
+    if (e.altKey && e.button === 1) {
+      const t = pointTarget(e.clientX, e.clientY)
+      if (t) {
+        e.preventDefault()
+        applyEdit(clearWeight(serialize(true), t.from, t.to), false, true)
+        return
+      }
+    }
+    // Alt + 좌클릭 드래그 — 가로로 훑어 가중치 조절.
+    if (e.altKey && e.button === 0) {
+      const t = pointTarget(e.clientX, e.clientY)
+      if (t) {
+        e.preventDefault()
+        scrub.current = { from: t.from, to: t.to, dx: 0, acc: 0 }
+        document.body.classList.add('weight-scrubbing')
+        try { ref.current?.requestPointerLock?.() } catch { /* 잠금 불가 — 위치 기반으로 동작 */ }
+        return
+      }
+    }
     if (isChip(e.target as Node)) return
     const sc = scrollParent(ref.current)
     if (!sc) return
@@ -631,6 +774,8 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
         onKeyDown={onKeyDown}
         onClick={onClick}
         onMouseDown={onMouseDown}
+        // 가운데 버튼의 브라우저 기본 동작(자동 스크롤·X11 붙여넣기) 차단.
+        onAuxClick={(e) => { if (e.altKey && e.button === 1) e.preventDefault() }}
         onPaste={onPaste}
         onMouseUp={onMouseUp}
         onDragStart={onDragStart}

@@ -1,7 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { formatCount, loadTags, searchTags, tagsLoaded, type TagEntry } from './tagData'
+import { adjustWeight, clearWeight, shiftOffset, type WeightEdit } from './tagWeight'
 import { searchWildcardEntries } from './wildcards'
+
+const WEIGHT_STEP = 0.05
+const SCRUB_PX = 4 // 이만큼 끌 때마다 한 단계
 
 export const CATEGORY_LABEL: Record<string, string> = {
   general: 'general', artist: 'artist', character: 'character', copyright: 'copyright', meta: 'meta',
@@ -195,6 +199,15 @@ export function TagAutocompleteTextarea({ value, onChange, rows, placeholder, cl
   }, [sel, open])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Alt + ↑/↓ 는 자동완성 목록 이동보다 우선한다 — 드롭다운이 떠 있어도 가중치를 만진다.
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      const t = targetRange()
+      if (t) {
+        e.preventDefault()
+        bumpWeight(t.from, t.to, e.key === 'ArrowUp' ? WEIGHT_STEP : -WEIGHT_STEP)
+        return
+      }
+    }
     if (!open || results.length === 0) return
     if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(s + 1, results.length - 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)) }
@@ -205,9 +218,126 @@ export function TagAutocompleteTextarea({ value, onChange, rows, placeholder, cl
     } else if (e.key === 'Escape') { e.preventDefault(); close() }
   }
 
+  // ── 태그 가중치 (Alt + 방향키 / 휠 / 가로 드래그 / 휠클릭) ──────────────
+  // 프롬프트 에디터(PromptEditor)와 같은 조작을 이 textarea에도 붙인다 — 이 컴포넌트가
+  // 네거티브 프롬프트, Multi 탭의 슬롯 프롬프트, 직접입력 모드의 포지티브를 모두 담당한다.
+
+  // 조절 후 되돌릴 선택 범위. 기존 pendingCursor와 달리 포커스를 뺏지 않는다 —
+  // 휠로 만질 때 다른 곳에 있던 포커스를 가져오면 타이핑 흐름이 끊긴다.
+  const pendingSel = useRef<{ from: number; to: number } | null>(null)
+  useLayoutEffect(() => {
+    if (pendingSel.current && ref.current) {
+      const p = pendingSel.current
+      pendingSel.current = null
+      ref.current.setSelectionRange(p.from, p.to)
+    }
+  }, [value])
+
+  // 마우스 좌표 → 문자 offset. 브라우저가 textarea 내부 위치를 주지 않으면 null이고,
+  // 그때는 호출부가 현재 커서/선택으로 물러선다.
+  const offsetFromPoint = (x: number, y: number): number | null => {
+    const ta = ref.current
+    if (!ta) return null
+    const d = document as Document & {
+      caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null
+    }
+    const p = d.caretPositionFromPoint?.(x, y)
+    if (p && (p.offsetNode === ta || ta.contains(p.offsetNode))) return p.offset
+    return null
+  }
+
+  // 조작 대상. 좌표를 알면 그 지점(단 선택 안을 가리켰으면 선택 전체), 모르면 현재 선택/커서.
+  const targetRange = (x?: number, y?: number): { from: number; to: number } | null => {
+    const ta = ref.current
+    if (!ta) return null
+    const s = ta.selectionStart
+    const e = ta.selectionEnd
+    if (x != null && y != null) {
+      const p = offsetFromPoint(x, y)
+      if (p != null) return s !== e && p >= s - 1 && p <= e + 1 ? { from: s, to: e } : { from: p, to: p }
+    }
+    return { from: s, to: e }
+  }
+
+  const applyEdit = (edit: WeightEdit | null) => {
+    const ta = ref.current
+    if (!edit || !ta) return
+    const from = shiftOffset(ta.selectionStart, edit.span, edit.newLen)
+    const to = shiftOffset(ta.selectionEnd, edit.span, edit.newLen)
+    pendingSel.current = { from, to }
+    lastValue.current = edit.text
+    onChange(edit.text)
+    close()
+  }
+
+  const bumpWeight = (from: number, to: number, delta: number) =>
+    applyEdit(adjustWeight(value, from, to, delta))
+
+  // 휠은 네이티브 리스너 + passive:false 로 붙인다. React의 onWheel은 passive라
+  // preventDefault()가 무시되고, 값이 바뀌면서 패널까지 같이 스크롤된다.
+  const live = useRef({ bumpWeight, targetRange, value })
+  live.current = { bumpWeight, targetRange, value }
+  useEffect(() => {
+    const ta = ref.current
+    if (!ta) return
+    const onWheel = (e: WheelEvent) => {
+      if (!e.altKey) return
+      const t = live.current.targetRange(e.clientX, e.clientY)
+      if (!t) return
+      e.preventDefault()
+      live.current.bumpWeight(t.from, t.to, e.deltaY < 0 ? WEIGHT_STEP : -WEIGHT_STEP)
+    }
+    ta.addEventListener('wheel', onWheel, { passive: false })
+    return () => ta.removeEventListener('wheel', onWheel)
+  }, [])
+
+  // Alt + 가로 드래그 — 포인터를 잠가 커서를 고정·숨기고 4px마다 한 단계.
+  const scrub = useRef<{ from: number; to: number; dx: number; acc: number } | null>(null)
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      const sc = scrub.current
+      if (!sc) return
+      sc.dx += e.movementX || 0
+      const steps = Math.trunc(sc.dx / SCRUB_PX)
+      if (steps !== sc.acc) {
+        live.current.bumpWeight(sc.from, sc.to, (steps - sc.acc) * WEIGHT_STEP)
+        sc.acc = steps
+      }
+    }
+    const onUp = () => {
+      if (!scrub.current) return
+      scrub.current = null
+      document.body.classList.remove('weight-scrubbing')
+      if (document.pointerLockElement) document.exitPointerLock()
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [])
+
   // 드래그로 텍스트 선택 시 textarea 내부만 스크롤되게 하고, 패널(스크롤 조상)은 고정한다.
   // (커서가 textarea를 벗어나면 패널이 따라 스크롤돼 textarea가 위로 밀려 사라지던 문제 방지.)
-  const onMouseDown = () => {
+  const onMouseDown = (e: React.MouseEvent<HTMLTextAreaElement>) => {
+    if (e.altKey) {
+      const t = targetRange(e.clientX, e.clientY)
+      if (t) {
+        if (e.button === 1) { // 휠클릭 — 가중치 제거
+          e.preventDefault()
+          applyEdit(clearWeight(value, t.from, t.to))
+          return
+        }
+        if (e.button === 0) { // 좌클릭 드래그 — 훑어서 조절
+          e.preventDefault()
+          scrub.current = { from: t.from, to: t.to, dx: 0, acc: 0 }
+          document.body.classList.add('weight-scrubbing')
+          try { ref.current?.requestPointerLock?.() } catch { /* 잠금 불가 — 위치 기반으로 동작 */ }
+          return
+        }
+      }
+    }
     const sc = scrollParent(ref.current)
     if (!sc) return
     const top = sc.scrollTop
