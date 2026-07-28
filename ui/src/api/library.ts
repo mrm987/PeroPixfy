@@ -17,8 +17,6 @@ export interface LoraRecord {
   ctime: number
   updated_at: number
   style_count: number
-  latest_version_id: number
-  latest_version_name: string
 }
 
 export interface StyleLoraRef {
@@ -46,6 +44,7 @@ export interface StyleRecord {
   tags: string
   notes: string
   nsfw: number
+  favorite: number
   trigger_meta?: string // JSON {triggers, order} — 저장 시점의 트리거 뱃지 상태(적용 시 복원)
   loras?: StyleLoraRef[]
 }
@@ -57,14 +56,6 @@ export interface ScanState {
   current: string
 }
 
-export interface UpdateState {
-  checking: boolean
-  done: number
-  total: number
-  updates: number
-  errors: number
-}
-
 /** 사용자 편집 가능 필드 (서버 UPDATABLE 화이트리스트와 동일). */
 export type LoraEditableFields = Partial<
   Pick<LoraRecord, 'name' | 'trigger_words' | 'civitai_url' | 'base_model' | 'base_category' | 'nsfw'>
@@ -73,13 +64,6 @@ export type LoraEditableFields = Partial<
 export type StyleEditableFields = Partial<
   Pick<StyleRecord, 'name' | 'notes' | 'tags' | 'positive_prompt' | 'negative_prompt' | 'nsfw'>
 >
-
-/** civitai_url의 modelVersionId와 latest_version_id가 다르면 새 버전 있음. */
-export function hasUpdate(l: LoraRecord): boolean {
-  if (!l.latest_version_id || !l.civitai_url) return false
-  const m = l.civitai_url.match(/modelVersionId=(\d+)/)
-  return !!m && Number(m[1]) !== l.latest_version_id
-}
 
 async function post(path: string, body: unknown): Promise<Record<string, unknown>> {
   const res = await fetch(`${BASE}/${path}`, {
@@ -124,13 +108,6 @@ export async function startScan(force = false): Promise<void> {
 
 export async function fetchScanStatus(): Promise<ScanState> {
   return (await fetch(`${BASE}/scan-status`)).json()
-}
-
-export const startCheckUpdates = (relPaths?: string[]) =>
-  post('check-updates', relPaths ? { rel_paths: relPaths } : {})
-
-export async function fetchUpdateStatus(): Promise<UpdateState> {
-  return (await fetch(`${BASE}/check-updates/status`)).json()
 }
 
 export async function uploadThumb(relPath: string, file: File): Promise<void> {

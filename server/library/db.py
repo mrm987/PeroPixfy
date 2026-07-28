@@ -22,7 +22,6 @@ COLUMNS = [
     "local_thumb", "base_model", "base_category", "nsfw", "trigger_candidates",
     "disabled_triggers",
     "source", "user_edited", "scanned", "favorite",
-    "latest_version_id", "latest_version_name", "latest_published_at",
     "updated_at",
 ]
 
@@ -73,10 +72,6 @@ def init(db_path):
             c.execute("ALTER TABLE loras ADD COLUMN base_category TEXT DEFAULT ''")
         if "ctime" not in cols:
             c.execute("ALTER TABLE loras ADD COLUMN ctime REAL DEFAULT 0")
-        if "latest_version_id" not in cols:
-            c.execute("ALTER TABLE loras ADD COLUMN latest_version_id INTEGER DEFAULT 0")
-            c.execute("ALTER TABLE loras ADD COLUMN latest_version_name TEXT DEFAULT ''")
-            c.execute("ALTER TABLE loras ADD COLUMN latest_published_at TEXT DEFAULT ''")
         if "thumb_source_url" not in cols:
             # Holds the original CivitAI image URL (kept verbatim) so the
             # lightbox can lazily fetch a larger variant of the SAME image
@@ -122,6 +117,7 @@ def init(db_path):
                 tags TEXT DEFAULT '',
                 nsfw INTEGER DEFAULT 0,
                 trigger_meta TEXT DEFAULT '',
+                favorite INTEGER DEFAULT 0,
                 created_at REAL
             )
         """)
@@ -147,6 +143,9 @@ def init(db_path):
         # 트리거워드 상태 스냅샷(JSON: {triggers, order}) — 적용 시 뱃지 on/off·순서 복원용
         if "trigger_meta" not in style_cols:
             c.execute("ALTER TABLE styles ADD COLUMN trigger_meta TEXT DEFAULT ''")
+        # 즐겨찾기 — 로라와 같은 개념(목록 상단 고정이 아니라 ★ 필터용 플래그)
+        if "favorite" not in style_cols:
+            c.execute("ALTER TABLE styles ADD COLUMN favorite INTEGER DEFAULT 0")
         c.execute("""
             CREATE TABLE IF NOT EXISTS style_loras (
                 style_id INTEGER NOT NULL,
@@ -315,15 +314,6 @@ def set_ctime(rel_path, ctime):
         c.execute("UPDATE loras SET ctime=? WHERE rel_path=?", (ctime, rel_path))
 
 
-def set_update_info(rel_path, latest_version_id, latest_version_name, latest_published_at):
-    """Store the newest CivitAI version info for a row, written by the
-    Check Updates action. Doesn't touch user_edited."""
-    with _LOCK, _conn() as c:
-        c.execute("""UPDATE loras SET latest_version_id=?, latest_version_name=?,
-                     latest_published_at=? WHERE rel_path=?""",
-                  (latest_version_id, latest_version_name, latest_published_at, rel_path))
-
-
 def delete_row(rel_path):
     """Drop a row completely. Called by the Delete action after the file on
     disk has been removed."""
@@ -440,6 +430,14 @@ def update_style(style_id, fields):
     vals.append(style_id)
     with _LOCK, _conn() as c:
         c.execute(f"UPDATE styles SET {', '.join(sets)} WHERE id=?", vals)
+
+
+def set_style_favorite(style_id, fav):
+    """Toggle a style's favorite flag. Separate from update_style for the same
+    reason as the LoRA one — favoriting isn't a content edit."""
+    with _LOCK, _conn() as c:
+        c.execute("UPDATE styles SET favorite=? WHERE id=?",
+                  (1 if fav else 0, style_id))
 
 
 def delete_style(style_id):

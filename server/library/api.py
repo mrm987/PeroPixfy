@@ -154,58 +154,6 @@ threading.Thread(target=_migrate_bg, daemon=True).start()
 _scan_state = {"scanning": False, "done": 0, "total": 0, "current": ""}
 _scan_lock = threading.Lock()
 
-_update_state = {"checking": False, "done": 0, "total": 0, "updates": 0, "errors": 0}
-_update_lock = threading.Lock()
-
-
-def _parse_civitai_ids(url):
-    """Returns (model_id, version_id) parsed from a civitai_url, else (0, 0)."""
-    if not url:
-        return 0, 0
-    mm = re.search(r"/models/(\d+)", url)
-    mv = re.search(r"modelVersionId=(\d+)", url)
-    return (int(mm.group(1)) if mm else 0,
-            int(mv.group(1)) if mv else 0)
-
-
-def _run_check_updates(targets=None):
-    """If `targets` is a non-empty list of rel_paths, only those rows are
-    checked. Otherwise all CivitAI-matched rows are checked. The frontend uses
-    this to scope checks to favorites or in-workflow LoRAs."""
-    try:
-        rows = [r for r in db.get_all() if r.get("civitai_url")]
-        if targets:
-            ts = set(targets)
-            rows = [r for r in rows if r["rel_path"] in ts]
-        _update_state["total"] = len(rows)
-        # Cache per model_id: same model can have multiple versions installed.
-        seen = {}
-        for r in rows:
-            model_id, current_version_id = _parse_civitai_ids(r["civitai_url"])
-            if not model_id:
-                _update_state["done"] += 1
-                continue
-            if model_id not in seen:
-                info = civitai.lookup_model(model_id)
-                seen[model_id] = info
-                if info is civitai.TRANSIENT:
-                    _update_state["errors"] += 1
-                time.sleep(0.2)
-            else:
-                info = seen[model_id]
-            if isinstance(info, dict):
-                latest_id = info["latest_version_id"]
-                db.set_update_info(r["rel_path"], latest_id,
-                                   info["latest_version_name"],
-                                   info["latest_published_at"])
-                if latest_id and current_version_id and latest_id != current_version_id:
-                    _update_state["updates"] += 1
-            _update_state["done"] += 1
-    except Exception as e:
-        print(f"[Style-Manager] check-updates error: {e}")
-    finally:
-        _update_state["checking"] = False
-
 UPDATABLE = ("name", "trigger_words", "civitai_url",
              "thumb_url", "thumb_type", "nsfw", "base_model", "base_category")
 
@@ -266,28 +214,6 @@ async def api_update(request):
     fields = {k: data[k] for k in UPDATABLE if k in data}
     db.update_user(rel, fields)
     return web.json_response({"ok": True, "lora": db.get_one(rel)})
-
-
-@routes.post("/peropixfy/api/library/check-updates")
-async def api_check_updates(request):
-    targets = None
-    if request.body_exists:
-        try:
-            data = await request.json()
-            targets = data.get("rel_paths") or None
-        except Exception:
-            pass
-    with _update_lock:
-        if _update_state["checking"]:
-            return web.json_response({"started": False, "reason": "already running"})
-        _update_state.update(checking=True, done=0, total=0, updates=0, errors=0)
-    threading.Thread(target=_run_check_updates, args=(targets,), daemon=True).start()
-    return web.json_response({"started": True})
-
-
-@routes.get("/peropixfy/api/library/check-updates/status")
-async def api_check_updates_status(request):
-    return web.json_response(_update_state)
 
 
 @routes.post("/peropixfy/api/library/delete")
@@ -612,6 +538,16 @@ async def api_style_update(request):
         return web.json_response({"ok": False, "error": "id required"}, status=400)
     db.update_style(sid, {k: data[k] for k in db.STYLE_USER_FIELDS if k in data})
     return web.json_response({"ok": True, "style": db.get_style(sid)})
+
+
+@routes.post("/peropixfy/api/library/styles/favorite")
+async def api_style_favorite(request):
+    data = await request.json()
+    sid = data.get("id")
+    if not sid:
+        return web.json_response({"ok": False, "error": "id required"}, status=400)
+    db.set_style_favorite(sid, bool(data.get("favorite")))
+    return web.json_response({"ok": True})
 
 
 @routes.post("/peropixfy/api/library/styles/delete")

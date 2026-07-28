@@ -42,10 +42,19 @@ const STYLE = `
 .lm-mode-btn.active + .lm-mode-btn::before,
 .lm-mode-btn + .lm-mode-btn.active::before { background:transparent; }
 .lm-mode-panel { flex:1; display:flex; flex-direction:column; min-height:0; }
-/* In split view both mode-panels are visible; add a divider between them so
-   the boundary is obvious. The selector targets only the SECOND panel that
-   follows another panel (i.e. when both are shown). */
-.lm-mode-panel + .lm-mode-panel { border-top:2px solid var(--border-color,#4e4e4e); }
+/* Divider between the two panels in split view.
+   ★ Driven by a class set in setMode(), NOT by an adjacent-sibling selector
+   on .lm-mode-panel — hiding a panel with display:none leaves it in the DOM,
+   so the sibling selector still matched in single-panel mode and drew a
+   divider above a panel with nothing above it.
+   ★ Fixed bright colour, not var(--border-color, #4e4e4e): the divider runs
+   between a near-black card gutter above and the next panel's toolbar below,
+   and at #4e4e4e it disappeared into the gutter. Unlike the card border,
+   nothing competes with this line, so raising the contrast reads as structure
+   rather than noise. The shadow is what separates it from the dark gutter — a
+   line alone still looked like part of the background. */
+.lm-mode-panel.lm-split-below { border-top:2px solid #8b93a1;
+  box-shadow:0 -6px 14px rgba(0,0,0,.55); }
 /* In split view, shrink the styles panel to its content (capped at half the
    viewport) so an empty/short gallery doesn't reserve a big blank area.
    The LoRA panel keeps flex:1 and absorbs the rest of the space.
@@ -147,13 +156,8 @@ const STYLE = `
   100% { box-shadow:0 0 0 0 rgba(251,191,36,0); }
 }
 .lm-card.lm-flash { animation:lm-flash 1.6s ease-out; }
-/* Used-in-styles badge on LoRA cards: small purple chip, clickable to jump
-   back to Styles filtered by this LoRA. */
-.lm-chip.styles-badge { background:rgba(168,85,247,.12); border-color:#7e22ce;
-  color:#d8b4fe; cursor:pointer; }
-.lm-chip.styles-badge:hover { background:rgba(168,85,247,.22); border-color:#a855f7; }
 /* Make Style-card LoRA chips visibly clickable when they ARE in the library */
-.lm-chip:not(.missing):not(.ckpt):not(.tag):not(.empty):not(.styles-badge) {
+.lm-chip:not(.missing):not(.ckpt):not(.tag):not(.empty) {
   cursor:pointer;
 }
 .lm-chip.missing { cursor:default; }
@@ -226,34 +230,34 @@ const STYLE = `
 .lm-btn.danger:hover { background:#7f1d1d; color:#fff; border-color:#7f1d1d; }
 .lm-meta { color:var(--p-text-muted-color,#9ca3af); font-size:11px; }
 .lm-progress { height:3px; background:var(--p-primary-color,#3b82f6); width:0%; transition:width .2s; }
-.lm-scroll { flex:1; overflow-y:auto; padding:8px; }
+/* ★ Near-black gutter. The cards are saturated preview images, so the gap
+   between them is what defines their edges — the darker the gutter, the more
+   the artwork reads as a discrete card floating on it (the reason photo
+   galleries sit on black). Kept off the toolbar and header, which stay panel-
+   coloured as chrome; only the area the cards are laid out on goes dark. */
+.lm-scroll { flex:1; overflow-y:auto; padding:8px; background:#0d0d10; }
+/* gap is the separator here, not the card border — it's the width of the dark
+   gutter showing between two preview images. Widening it past 8px was tried
+   and reverted: it cost density without buying separation. */
 .lm-grid { display:grid; gap:8px;
   grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); align-content:start; }
-/* Compact list view: each card becomes a single horizontal row with a small
-   thumbnail on the left and the full card body (all chips, triggers, badges,
-   actions) on the right. Hover the thumbnail for a floating enlarged preview.
-   Goal: same information density per card as grid mode, but rows pack much
-   tighter so more LoRAs/styles fit per screen. */
+/* Compact list view — STYLES TAB ONLY. (The LoRA tab is thumbnail-only: a
+   LoRA is recognized by its preview image, and filenames like
+   "p1ct01_v1_epoch20" carry no information, so a text row was near-useless
+   there. Style names are user-written, so rows still work.) Each card becomes
+   a single horizontal row with a small thumbnail on the left and the card body
+   on the right; hover the thumbnail for a floating enlarged preview. */
 .lm-grid.list-mode { grid-template-columns:1fr; gap:3px; }
 .lm-grid.list-mode .lm-card { display:grid;
   grid-template-columns:44px minmax(0,1fr); align-items:start;
   padding:4px 76px 4px 6px; gap:8px; overflow:visible; position:relative; }
-.lm-grid.list-mode .lm-thumb-wrap,
 .lm-grid.list-mode .lm-style-thumb-wrap { width:44px; height:44px;
   padding-top:0; flex:none; border-radius:4px; background:transparent; }
-.lm-grid.list-mode .lm-thumb,
 .lm-grid.list-mode .lm-style-thumb { border-radius:4px; cursor:zoom-in; }
 .lm-grid.list-mode .lm-noimg { font-size:18px; }
-/* Thumb-overlay tags (NSFW, ACTIVE/IN WORKFLOW, favorite star) shrink so
-   they don't overflow the 44px thumb. They still render — same info as
-   grid view, just smaller. */
-.lm-grid.list-mode .lm-nsfw-tag,
-.lm-grid.list-mode .lm-wf-tag { font-size:7px; padding:0 3px;
-  letter-spacing:.2px; }
-.lm-grid.list-mode .lm-wf-tags { bottom:1px; left:1px; gap:1px; }
-.lm-grid.list-mode .lm-nsfw-tag { top:1px; left:1px; }
-.lm-grid.list-mode .lm-fav { width:14px; height:14px; font-size:9px;
-  top:1px; right:1px; }
+/* NSFW tag shrinks so it doesn't overflow the 44px thumb. */
+.lm-grid.list-mode .lm-nsfw-tag { font-size:7px; padding:0 3px;
+  letter-spacing:.2px; top:1px; left:1px; }
 .lm-grid.list-mode .lm-reveal { font-size:8px; padding:0; line-height:1; }
 .lm-grid.list-mode .lm-body { padding:0; gap:3px; min-width:0; }
 /* Actions floated to the card's right edge — vertically centered, horizontal
@@ -271,64 +275,59 @@ const STYLE = `
 .lm-hover-preview.show { display:block; }
 /* The preview's child is a cloned thumb-wrap. Override the grid-mode
    aspect-ratio padding trick so the wrap fills the preview, and let the
-   absolutely-positioned badges inside (NSFW, ACTIVE/IN WORKFLOW, favorite)
-   render at their default sizes (list-mode shrinkers don't reach here). */
-.lm-hover-preview .lm-thumb-wrap,
+   absolutely-positioned badges inside (NSFW) render at their default sizes
+   (list-mode shrinkers don't reach here). */
 .lm-hover-preview .lm-style-thumb-wrap {
   position:relative; width:100%; height:100%; padding-top:0; }
 .lm-hover-preview img, .lm-hover-preview video { width:100%; height:100%;
   object-fit:cover; display:block; }
-.lm-section { display:flex; align-items:center; gap:5px; font-size:11px; font-weight:600;
-  color:var(--p-text-muted-color,#9ca3af); padding:4px 2px; }
-.lm-section.fav { color:#f5c518; }
-.lm-section.rest { margin-top:10px; border-top:1px solid var(--border-color,#4e4e4e); padding-top:8px; }
+/* Empty-result note — without it a filter that matches nothing just shows a
+   blank panel and reads as a bug. */
+.lm-empty { color:var(--p-text-muted-color,#9ca3af); font-size:12px;
+  text-align:center; padding:24px 8px; line-height:1.6; }
+/* ★ filter reads in the favorite colour when on, so it's not confused with
+   the other (blue) toggles. */
+.lm-btn.lm-fav-btn.active { background:#f5c518; color:#111; border-color:#f5c518; }
+.lm-btn[disabled] { opacity:.4; cursor:default; }
+.lm-btn[disabled]:hover { border-color:var(--border-color,#4e4e4e); }
+/* ★ Card separation comes from the DARK SCROLL BACKGROUND (see .lm-scroll),
+   not from this border. Brightening the border was tried and reverted: a card
+   is almost entirely its preview image, and those images are saturated, so a
+   1px line competes with the artwork's own edge and loses — it only added
+   visual noise. A near-black gutter behind the cards is what actually makes
+   them read as separate objects. */
 .lm-card { background:var(--comfy-menu-bg,#353535); border:1px solid var(--border-color,#4e4e4e);
   border-radius:8px; overflow:hidden; display:flex; flex-direction:column; }
+/* Stack membership is shown by the BORDER ALONE — there used to be an
+   ACTIVE / IN STACK text badge saying the same thing twice. The stack grey is
+   deliberately a fixed, bright value rather than --p-text-muted-color: with
+   the badge gone the border is the only signal, and the muted grey sat too
+   close to the card's own border colour to read. */
 .lm-card.active { box-shadow:0 0 0 2px var(--p-primary-color,#3b82f6); }
-.lm-card.in-wf { box-shadow:0 0 0 2px var(--p-text-muted-color,#6b7280); }
-/* workflow tags sit at the bottom-left of the thumbnail, mirroring NSFW
-   (top-left). When both Active and In workflow apply, ACTIVE stacks above
-   IN WORKFLOW. */
-.lm-wf-tags { position:absolute; bottom:4px; left:4px; display:flex;
-  flex-direction:column; gap:2px; align-items:flex-start; }
-.lm-wf-tag { color:#fff; font-size:9px; font-weight:700; letter-spacing:.4px;
-  padding:1px 5px; border-radius:4px; background:var(--p-text-muted-color,#6b7280); }
-.lm-wf-tag.active { background:var(--p-primary-color,#3b82f6); }
+.lm-card.in-wf { box-shadow:0 0 0 2px #9aa3b2; }
 /* padding-top % gives a reliable 3:4 box: it's based on the element's WIDTH,
    so the height is always definite regardless of flex/grid context (unlike
    aspect-ratio, which can collapse to 0 for a flex item here). */
 .lm-thumb-wrap { position:relative; width:100%; padding-top:133.33%; background:#111; overflow:hidden; }
 .lm-thumb { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
 .lm-thumb.blur { filter:blur(14px); }
+/* ★ Uniform dim over every preview — a black SHEET whose opacity animates, not
+   a brightness() filter on the image. Animating a filter makes the browser
+   re-run the filter and re-scale the source bitmap every frame, and on a 300px
+   preview squeezed into a ~140px box that resampling shimmers. Opacity is
+   composited only: the image is rasterized once and never touched again.
+   Placed right after the media in DOM order, so the star / NSFW tag / hover
+   chips appended later paint above it without needing z-index. */
+.lm-dim { position:absolute; inset:0; background:#000; opacity:.13;
+  transition:opacity .14s ease; pointer-events:none; }
+.lm-card:hover .lm-dim, .lm-card:focus-visible .lm-dim,
+.lm-card.lm-pinned .lm-dim { opacity:0; }
 .lm-noimg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
   color:var(--p-text-muted-color,#9ca3af); font-size:24px; }
 .lm-nsfw-tag { position:absolute; top:4px; left:4px; background:#b91c1c; color:#fff;
   font-size:9px; padding:1px 5px; border-radius:4px; }
 .lm-err-tag { position:absolute; bottom:4px; right:4px; background:#d97706; color:#fff;
   font-size:9px; font-weight:700; padding:1px 5px; border-radius:4px; cursor:help; }
-.lm-update-tag { position:absolute; bottom:4px; right:4px; background:#16a34a; color:#fff;
-  font-size:9px; font-weight:700; padding:1px 5px; border-radius:4px; cursor:help; }
-/* Match the muted meta colour by default — old LoRAs may have lingering
-   "N updates" indefinitely so a permanent blue highlight is too noisy. */
-.lm-update-link { color:inherit; cursor:pointer; text-decoration:none; margin-left:4px; }
-.lm-update-link:hover { color:var(--p-primary-color,#3b82f6); text-decoration:underline; }
-/* filter on — full blue + underline so user sees they're in a filtered view */
-.lm-update-link.active { color:var(--p-primary-color,#3b82f6); text-decoration:underline; }
-
-/* small dropdown menu used by the Check Updates split button */
-.lm-popmenu { position:absolute; top:calc(100% + 4px); right:0;
-  background:var(--comfy-menu-bg,#353535); border:1px solid var(--border-color,#4e4e4e);
-  border-radius:6px; padding:4px; box-shadow:0 6px 18px rgba(0,0,0,.4);
-  z-index:60; min-width:160px; display:none; }
-.lm-popmenu-item { padding:6px 10px; cursor:pointer; font-size:12px; border-radius:4px;
-  white-space:nowrap; }
-.lm-popmenu-item:hover { background:rgba(255,255,255,.06); }
-.lm-popmenu-item[disabled] { opacity:.4; cursor:default; }
-.lm-popmenu-item[disabled]:hover { background:transparent; }
-.lm-popmenu-header { padding:6px 10px 4px; font-size:10px; font-weight:600;
-  color:var(--p-text-muted-color,#9ca3af); letter-spacing:.3px;
-  border-bottom:1px solid var(--border-color,#4e4e4e); margin-bottom:2px;
-  pointer-events:none; text-transform:uppercase; }
 .lm-reveal { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
   cursor:pointer; color:#fff; font-size:11px; background:rgba(0,0,0,.35); }
 .lm-fav { position:absolute; top:4px; right:4px; width:22px; height:22px; border-radius:50%;
@@ -355,6 +354,67 @@ const STYLE = `
   color:var(--fg-color,#fff); }
 .lm-iconbtn:hover { border-color:var(--p-primary-color,#3b82f6); }
 .lm-iconbtn[disabled] { opacity:.35; cursor:default; }
+
+/* ── LoRA card: thumbnail + a single name line ─────────────────────────────
+   Everything else (trigger words, action buttons) rides ON TOP of the
+   thumbnail on hover, so the card's height never changes and the grid never
+   reflows. Picking a LoRA is a visual act — the filenames are codes like
+   "p1ct01_v1_epoch20" — so the thumbnail gets the space and the text gets one
+   line. What stays visible regardless: the star, the NSFW tag, the border,
+   and the "used in N styles" count (see .lm-uses). */
+.lm-oneline { display:flex; align-items:baseline; gap:5px; padding:5px 7px; min-width:0; }
+.lm-oneline .lm-name { font-size:11.5px; display:block; -webkit-line-clamp:none;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0; }
+.lm-oneline .lm-base { font-size:9px; white-space:nowrap; max-width:45%;
+  overflow:hidden; text-overflow:ellipsis; }
+/* Top-left badge rail: NSFW tag and the style-usage count sit side by side.
+   ★ Both must survive hover. The usage badge is CLICKABLE (it filters the
+   Styles tab by this LoRA), so parking it where the action strip or the
+   trigger chips appear made it unreachable exactly when the pointer was over
+   the card. The rail wraps, and stops short of the star's corner. */
+.lm-toptags { position:absolute; top:4px; left:4px; right:30px; display:flex;
+  flex-wrap:wrap; gap:3px; align-items:flex-start; }
+.lm-toptags .lm-nsfw-tag { position:static; }
+/* Style-usage count — the one piece of body text promoted onto the thumbnail.
+   For a LoRA with no preview image it's the only clue to what it is
+   ("what did I make with this before?"). */
+.lm-uses { background:rgba(17,17,17,.85);
+  color:#d8b4fe; border:1px solid #7e22ce; font-size:9px; font-weight:600;
+  padding:1px 5px; border-radius:4px; cursor:pointer; }
+.lm-uses:hover { background:rgba(126,34,206,.4); }
+.lm-hover-actions { position:absolute; left:4px; right:4px; bottom:4px; display:flex; gap:3px;
+  opacity:0; transform:translateY(4px); pointer-events:none;
+  transition:opacity .14s ease, transform .14s ease; }
+.lm-card:hover .lm-hover-actions, .lm-card:focus-visible .lm-hover-actions,
+.lm-card.lm-pinned .lm-hover-actions { opacity:1; transform:none; pointer-events:auto; }
+.lm-hover-actions .lm-iconbtn { background:rgba(17,17,17,.92); }
+/* Chips stack directly ABOVE the action strip, growing upward. The top corners
+   belong to the NSFW tag and the favourite star — putting chips there collided
+   with both. bottom:30px clears the 22px button row plus its margin. */
+.lm-hover-trig { position:absolute; left:4px; right:4px; bottom:30px; display:flex;
+  flex-wrap:wrap; gap:3px; opacity:0; pointer-events:none; transition:opacity .14s ease; }
+.lm-card:hover .lm-hover-trig, .lm-card:focus-visible .lm-hover-trig,
+.lm-card.lm-pinned .lm-hover-trig { opacity:1; pointer-events:auto; }
+.lm-hover-trig .lm-chip { background:rgba(17,17,17,.92); }
+/* The scan-failed tag sits bottom-right, under the action strip, so it steps
+   aside while the overlay is up. The NSFW tag (top-left) and the star
+   (top-right) no longer collide with anything and stay put. */
+.lm-card:hover .lm-err-tag, .lm-card:focus-visible .lm-err-tag,
+.lm-card.lm-pinned .lm-err-tag { opacity:0; }
+.lm-err-tag { transition:opacity .14s ease; }
+.lm-chip.lm-more { border-color:#6b7280; color:var(--p-text-muted-color,#9ca3af); font-weight:700; }
+/* Overflow popover — lives at document.body level so a LoRA with 20 trigger
+   words isn't constrained by a 140px card. */
+.lm-trigpop { position:fixed; z-index:11400; max-width:280px; display:none;
+  flex-wrap:wrap; gap:4px; padding:8px; border-radius:7px;
+  background:#1b1b1b; border:1px solid var(--p-primary-color,#3b82f6);
+  box-shadow:0 10px 30px rgba(0,0,0,.55); }
+.lm-trigpop.show { display:flex; }
+.lm-trigpop-head { width:100%; color:var(--p-text-muted-color,#9ca3af); font-size:9px;
+  text-transform:uppercase; letter-spacing:.08em; font-weight:700; margin-bottom:2px; }
+@media (prefers-reduced-motion: reduce) {
+  .lm-hover-actions, .lm-hover-trig, .lm-err-tag, .lm-dim { transition:none; }
+}
 /* edit modal */
 .lm-overlay { position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:11000;
   display:flex; align-items:center; justify-content:center; }
@@ -405,11 +465,6 @@ const api = {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ rel_path: rel }),
   }).then(r => r.json()),
-  checkUpdates: (relPaths) => fetch("/peropixfy/api/library/check-updates", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ rel_paths: relPaths || null }),
-  }).then(r => r.json()),
-  checkUpdatesStatus: () => fetch("/peropixfy/api/library/check-updates/status").then(r => r.json()),
   uploadThumb: (rel, file) => {
     const fd = new FormData();
     fd.append("rel_path", rel);
@@ -428,6 +483,10 @@ const api = {
   styleDelete: (id) => fetch("/peropixfy/api/library/styles/delete", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id }),
+  }).then(r => r.json()),
+  styleFavorite: (id, fav) => fetch("/peropixfy/api/library/styles/favorite", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, favorite: fav }),
   }).then(r => r.json()),
   styleWorkflow: (id) => fetch(`/peropixfy/api/library/styles/workflow?id=${id}`).then(r => r.json()),
 };
@@ -545,6 +604,17 @@ let filter = "";
 // substring search.
 let exactLoraKey = null;
 let selectedBases = new Set();
+// ★ / IN STACK are FILTERS, never sort keys. Sorting by them made the list
+// reshuffle every time a LoRA was added to or removed from the stack, so a
+// card's position could never be memorized — and favorites grew until they
+// owned the whole first screen. Session-only (not persisted): starting a
+// session inside a filtered view looks like missing LoRAs.
+let favOnlyFilter = false;
+let stackOnlyFilter = false;
+let styleFavOnlyFilter = false;      // 스타일 탭의 ★ 필터 (로라와 독립)
+let favBtnEl = null;
+let stackBtnEl = null;
+let styleFavBtnEl = null;
 let filterBtnEl = null;
 let filterPanelEl = null;
 let filterOutsideBound = false;
@@ -553,19 +623,34 @@ const LM_PREFS_KEY = "peropix.library.prefs";
 let _libPrefs = {};
 try { _libPrefs = JSON.parse(localStorage.getItem(LM_PREFS_KEY) || "{}"); } catch (e) { _libPrefs = {}; }
 function saveLibPrefs() {
-  try { localStorage.setItem(LM_PREFS_KEY, JSON.stringify({ nsfwBlur, sortMode })); } catch (e) { /* ignore */ }
+  try {
+    localStorage.setItem(LM_PREFS_KEY, JSON.stringify({ nsfwBlur, sortMode, mode: preferredMode }));
+  } catch (e) { /* ignore */ }
 }
 let nsfwBlur = _libPrefs.nsfwBlur !== undefined ? !!_libPrefs.nsfwBlur : true;
 // 사용자가 개별로 블러 해제한 카드(rel_path) 기억 — 재정렬/재렌더(스택 추가 등) 후에도
 // 다시 블러되지 않게 한다. 세션 한정(persist 안 함). 블러를 다시 ON 하면 비운다.
 const _revealedNsfw = new Set();
 let pollTimer = null;
-let sortMode = _libPrefs.sortMode || "default";   // "default" | "name" | "date"
+// "name" | "date" | "styleuse". The old "default" mode floated stack members
+// to the top; it's gone, so a stored "default" migrates to "date".
+let sortMode = _libPrefs.sortMode && _libPrefs.sortMode !== "default"
+  ? _libPrefs.sortMode : "date";
 // Three modes: "both" (split view), "loras", "styles".
-// Always start in split view on tab entry — the layout is the headline UX
-// and shouldn't be hidden behind a stale single-mode preference from a
-// prior session. Mode switches within the session are still honored.
-let currentMode = "both";
+// ★ Restored from the last MANUAL choice (the mode bar), not just kept for the
+// session. This used to force "both" on every entry so a stale single-mode
+// preference couldn't hide the split layout; in practice a user who works in
+// one tab had to re-pick it every time the app reloaded, which cost more than
+// the split view's discoverability was worth. Programmatic mode changes —
+// cross-reference jumps, the style-drop handler — deliberately do NOT persist,
+// so a temporary detour can't become the startup state.
+const LM_MODES = ["both", "styles", "loras"];
+let currentMode = LM_MODES.includes(_libPrefs.mode) ? _libPrefs.mode : "both";
+// What gets persisted. Tracked separately from currentMode because a jump or a
+// style drop moves currentMode temporarily — and saveLibPrefs() also fires for
+// unrelated settings (sort, NSFW blur), which would otherwise snapshot that
+// temporary mode as the startup preference.
+let preferredMode = currentMode;
 // Tracks an active cross-reference jump. Holding the previous mode lets the
 // user toggle the jump button to restore whatever layout they had before.
 // Shape: {key: string, prevMode: "both"|"loras"|"styles"} | null
@@ -638,6 +723,10 @@ function setMode(mode) {
   if (stylesPanelEl) {
     stylesPanelEl.classList.toggle("lm-compact", mode === "both");
   }
+  // Divider only exists when there is actually a panel above this one.
+  if (lorasPanelEl) {
+    lorasPanelEl.classList.toggle("lm-split-below", mode === "both");
+  }
   if (modeBarEl) {
     for (const b of modeBarEl.querySelectorAll(".lm-mode-btn")) {
       // In split view no button is active — that's the visual cue that
@@ -666,6 +755,8 @@ function buildModeBar() {
     btn.onclick = () => {
       activeJump = null;
       setMode(currentMode === mode ? "both" : mode);
+      preferredMode = currentMode;   // 이 버튼을 누른 것만이 "직접 고른" 모드다
+      saveLibPrefs();
     };
     sw.appendChild(btn);
   }
@@ -741,8 +832,12 @@ function buildStylesPanel() {
   refreshBtn.onclick = () => refreshStyles();
   row.appendChild(refreshBtn);
 
-  // View density toggle (per-tab — Styles and LoRAs each have their own mode).
-  row.appendChild(makeViewToggleButton("styles"));
+  // ★ filter — same behaviour as the LoRA tab's (own flag, own count).
+  row.appendChild(makeFilterToggleButton("styleFav"));
+  // View density toggle — Styles only. The LoRA tab has no list view: a LoRA
+  // is identified by its preview image, and filenames like "p1ct01_v1_epoch20"
+  // say nothing, so a text row carried almost no information there.
+  row.appendChild(makeViewToggleButton());
   // NSFW blur toggle — shared state with the LoRA tab's button.
   row.appendChild(makeBlurButton());
 
@@ -841,13 +936,11 @@ function setWrapBlur(wrap, blurred, innerSel) {
   }
 }
 
-// View density — "grid" (large thumbnails, default) or "list" (small
-// thumbnails + text-focused rows, hover to enlarge). Tracked per-tab so the
-// user can have, e.g., Styles in list mode while LoRAs stay in grid mode.
-// CSS does the heavy lifting via .lm-grid.list-mode; we just sync the class
-// on every grid inside the matching panel.
+// View density for the STYLES tab — "grid" (large thumbnails, default) or
+// "list" (small thumbnails + text-focused rows, hover to enlarge). CSS does
+// the heavy lifting via .lm-grid.list-mode; we just sync the class on every
+// grid inside the Styles panel.
 let styleViewMode = "grid";
-let loraViewMode = "grid";
 
 // Singleton floating preview overlay. Lives at document.body level so it
 // escapes the scroll container's overflow clipping (CSS-only scale was
@@ -866,7 +959,7 @@ function showHoverPreview(wrap, mediaEl) {
   }
   hoverPreviewEl.innerHTML = "";
   // Clone the whole wrap (not just the media) so NSFW / ACTIVE / IN WORKFLOW
-  // / favorite / update / scan-failed badges all ride along into the preview.
+  // / favorite / scan-failed badges all ride along into the preview.
   // The preview's CSS overrides aspect-ratio + positioning so the wrap fills
   // the floating 240x240 box.
   const cloneWrap = wrap.cloneNode(true);
@@ -914,32 +1007,72 @@ function attachThumbHover(wrap) {
   wrap.addEventListener("mouseleave", hideHoverPreview);
 }
 
-function makeViewToggleButton(tab) {
-  const mode = tab === "styles" ? styleViewMode : loraViewMode;
+function makeViewToggleButton() {
   const b = document.createElement("button");
   b.type = "button";
-  b.className = "lm-btn lm-view-btn" + (mode === "list" ? " active" : "");
-  b.innerHTML = `<i class="pi ${mode === "list" ? "pi-th-large" : "pi-list"}"></i>`;
-  b.title = mode === "list" ? "Switch to thumbnail view" : "Switch to compact list view";
-  b.onclick = () => {
-    const cur = tab === "styles" ? styleViewMode : loraViewMode;
-    setViewMode(tab, cur === "list" ? "grid" : "list");
-  };
+  b.className = "lm-btn lm-view-btn" + (styleViewMode === "list" ? " active" : "");
+  b.innerHTML = `<i class="pi ${styleViewMode === "list" ? "pi-th-large" : "pi-list"}"></i>`;
+  b.title = styleViewMode === "list" ? "Switch to thumbnail view" : "Switch to compact list view";
+  b.onclick = () => setViewMode(styleViewMode === "list" ? "grid" : "list");
   return b;
 }
 
-function setViewMode(tab, mode) {
-  const panel = tab === "styles" ? stylesPanelEl : lorasPanelEl;
-  if (tab === "styles") styleViewMode = mode;
-  else loraViewMode = mode;
-  if (!panel) return;
-  for (const btn of panel.querySelectorAll(".lm-view-btn")) {
+function setViewMode(mode) {
+  styleViewMode = mode;
+  if (!stylesPanelEl) return;
+  for (const btn of stylesPanelEl.querySelectorAll(".lm-view-btn")) {
     btn.className = "lm-btn lm-view-btn" + (mode === "list" ? " active" : "");
     btn.innerHTML = `<i class="pi ${mode === "list" ? "pi-th-large" : "pi-list"}"></i>`;
     btn.title = mode === "list" ? "Switch to thumbnail view" : "Switch to compact list view";
   }
-  for (const g of panel.querySelectorAll(".lm-grid")) {
+  for (const g of stylesPanelEl.querySelectorAll(".lm-grid")) {
     g.classList.toggle("list-mode", mode === "list");
+  }
+}
+
+// ★ / IN STACK filter toggles. These replace what used to be a Favorites
+// SECTION pinned above everything and a sort rank that floated stack members
+// to the top — both of which moved cards around under the user. Counts come
+// from the full library (not the filtered view) so the number doesn't jump
+// when the filter is switched on.
+function makeFilterToggleButton(kind) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.onclick = () => {
+    if (kind === "fav") { favOnlyFilter = !favOnlyFilter; renderGrid(); }
+    else if (kind === "stack") { stackOnlyFilter = !stackOnlyFilter; renderGrid(); }
+    else { styleFavOnlyFilter = !styleFavOnlyFilter; renderStylesGrid(); }
+  };
+  if (kind === "fav") favBtnEl = b;
+  else if (kind === "stack") stackBtnEl = b;
+  else styleFavBtnEl = b;
+  return b;
+}
+
+// Never disable a toggle while its filter is ON — that would trap the user in
+// an empty view with no way back (e.g. unfavoriting the last favorite).
+function _paintFilterBtn(btn, cls, icon, count, on, titleOn, titleOff) {
+  btn.className = "lm-btn " + cls + (on ? " active" : "");
+  btn.innerHTML = `<i class="pi ${icon}"></i> ${count}`;
+  btn.title = on ? titleOn : titleOff;
+  btn.disabled = count === 0 && !on;
+}
+
+function refreshFilterButtons() {
+  if (favBtnEl) {
+    _paintFilterBtn(favBtnEl, "lm-fav-btn", "pi-star-fill",
+      loras.filter(l => l.favorite).length, favOnlyFilter,
+      "Show all LoRAs", "Show favorites only");
+  }
+  if (stackBtnEl) {
+    _paintFilterBtn(stackBtnEl, "lm-stack-btn", "pi-clone",
+      loras.filter(l => l.inWorkflow).length, stackOnlyFilter,
+      "Show all LoRAs", "Show only LoRAs in the Workbench stack");
+  }
+  if (styleFavBtnEl) {
+    _paintFilterBtn(styleFavBtnEl, "lm-fav-btn", "pi-star-fill",
+      styles.filter(s => s.favorite).length, styleFavOnlyFilter,
+      "Show all styles", "Show favorite styles only");
   }
 }
 
@@ -1188,6 +1321,7 @@ function styleMatches(s) {
     }
     return false;
   }
+  if (styleFavOnlyFilter && !s.favorite) return false;
   // AND-mode tag filter — every selected tag must be present on the style.
   if (selectedStyleTags.size > 0) {
     const tags = new Set(parseTags(s.tags));
@@ -1241,6 +1375,12 @@ function buildFilterBar() {
   return bar;
 }
 
+async function toggleStyleFavorite(s) {
+  s.favorite = s.favorite ? 0 : 1;
+  renderStylesGrid();               // repaint the star + the ★ filter count
+  await api.styleFavorite(s.id, s.favorite);
+}
+
 function renderStylesGrid() {
   if (!stylesGridEl || !stylesScrollEl) return;
   // The filter bar lives in the scroll area (above the grid) so it disappears
@@ -1251,6 +1391,7 @@ function renderStylesGrid() {
   if (bar) stylesScrollEl.insertBefore(bar, stylesGridEl);
 
   stylesGridEl.innerHTML = "";
+  refreshFilterButtons();
   if (!styles.length) {
     const empty = document.createElement("div");
     empty.className = "lm-styles-placeholder";
@@ -1266,10 +1407,15 @@ function renderStylesGrid() {
   if (!visible.length) {
     const empty = document.createElement("div");
     empty.className = "lm-styles-placeholder";
+    // The ★ filter can empty the grid with no search text at all, so don't
+    // claim the search term is what excluded everything.
+    const desc = styleFilter
+      ? `No styles match "${styleFilter.replace(/[<>&]/g, "")}".`
+      : "No style matches the current filters.";
     empty.innerHTML = `
       <div class="icon"><i class="pi pi-search"></i></div>
       <div class="title">No matches</div>
-      <div class="desc">No styles match "${styleFilter.replace(/[<>&]/g, "")}".</div>
+      <div class="desc">${desc}</div>
     `;
     stylesGridEl.appendChild(empty);
     return;
@@ -1375,6 +1521,14 @@ function makeStyleCard(s) {
     tag.textContent = "NSFW";
     wrap.appendChild(tag);
   }
+  // Favorite star — same affordance as the LoRA card (top-right of the thumb),
+  // and likewise a filter flag, not a pin that reorders the grid.
+  const fav = document.createElement("div");
+  fav.className = "lm-fav" + (s.favorite ? " on" : "");
+  fav.innerHTML = `<i class="pi ${s.favorite ? "pi-star-fill" : "pi-star"}"></i>`;
+  fav.title = s.favorite ? "Remove from favorites" : "Add to favorites";
+  fav.onclick = (e) => { e.stopPropagation(); toggleStyleFavorite(s); };
+  wrap.appendChild(fav);
   attachThumbHover(wrap);
   card.appendChild(wrap);
 
@@ -1675,18 +1829,6 @@ function openStyleEdit(s) {
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 }
-let updateOnlyFilter = false;
-let updateCheckTimer = null;
-
-// hasUpdate: latest_version_id (set by Check Updates) differs from the current
-// version embedded in civitai_url. If either is missing, no update info → false.
-function hasUpdate(l) {
-  if (!l.latest_version_id) return false;
-  const m = (l.civitai_url || "").match(/modelVersionId=(\d+)/);
-  if (!m) return false;
-  return l.latest_version_id !== parseInt(m[1], 10);
-}
-
 function triggerList(l) {
   return (l.trigger_words || "").split(",").map(s => s.trim()).filter(Boolean);
 }
@@ -1699,7 +1841,8 @@ function matches(l) {
   // Cross-reference jump: strict rel_path equality, ignores all other filters
   // so the panel shows exactly the one LoRA that was jumped to.
   if (exactLoraKey) return l.rel_path === exactLoraKey;
-  if (updateOnlyFilter && !hasUpdate(l)) return false;
+  if (favOnlyFilter && !l.favorite) return false;
+  if (stackOnlyFilter && !l.inWorkflow) return false;
   if (selectedBases.size > 0 &&
       !selectedBases.has(itemKey(categoryOf(l), l.base_model || ""))) return false;
   if (!filter) return true;
@@ -1900,6 +2043,11 @@ function makeThumb(l) {
     el.className = "lm-thumb";
     el.draggable = false; // 썸네일 드래그 금지 — 스타일 드롭존 오발동 방지
     wrap.appendChild(el);
+    // Dim sheet goes in immediately after the media: everything appended after
+    // this (badges, star, hover overlays) paints above it by DOM order alone.
+    const dim = document.createElement("div");
+    dim.className = "lm-dim";
+    wrap.appendChild(dim);
     // Initial blur applied via setWrapBlur so the global toggle path and the
     // first-render path stay in sync.
     if (nsfwBlur && l.nsfw && !_revealedNsfw.has(l.rel_path)) setWrapBlur(wrap, true, ".lm-thumb");
@@ -1931,12 +2079,27 @@ function makeThumb(l) {
     no.innerHTML = `<i class="pi pi-image"></i>`;
     wrap.appendChild(no);
   }
+  // Top-left rail — NSFW tag and the style-usage count, side by side. Both
+  // stay put through hover; the usage badge is a button (jumps to the Styles
+  // tab filtered by this LoRA) and has to stay clickable while the pointer is
+  // on the card, which rules out the corners the overlays use.
+  const topTags = document.createElement("div");
+  topTags.className = "lm-toptags";
   if (l.nsfw) {
     const tag = document.createElement("span");
     tag.className = "lm-nsfw-tag";
     tag.textContent = "NSFW";
-    wrap.appendChild(tag);
+    topTags.appendChild(tag);
   }
+  if (l.style_count && l.style_count > 0) {
+    const uses = document.createElement("span");
+    uses.className = "lm-uses";
+    uses.textContent = `${l.style_count} style${l.style_count !== 1 ? "s" : ""}`;
+    uses.title = "Click to filter Styles tab by this LoRA";
+    uses.onclick = (e) => { e.stopPropagation(); jumpToStylesUsingLora(l.rel_path); };
+    topTags.appendChild(uses);
+  }
+  if (topTags.children.length) wrap.appendChild(topTags);
   // Scan-failed marker: hash was computed but CivitAI lookup hit a transient
   // error (5xx/timeout/network), so the row stays scanned=0. Hitting Scan
   // again — or Rescan in the edit dialog — will retry.
@@ -1946,29 +2109,6 @@ function makeThumb(l) {
     err.textContent = "⚠ SCAN FAILED";
     err.title = "CivitAI lookup failed (server error or timeout).\nClick Scan to retry, or open the edit dialog and use Rescan.";
     wrap.appendChild(err);
-  } else if (hasUpdate(l)) {
-    const up = document.createElement("span");
-    up.className = "lm-update-tag";
-    up.textContent = "⬆ UPDATE";
-    up.title = `Newer version available: ${l.latest_version_name || "unknown"}`;
-    wrap.appendChild(up);
-  }
-  if (l.active || l.inWorkflow) {
-    const tags = document.createElement("div");
-    tags.className = "lm-wf-tags";
-    if (l.active) {
-      const at = document.createElement("span");
-      at.className = "lm-wf-tag active";
-      at.textContent = "ACTIVE";
-      tags.appendChild(at);
-    }
-    if (l.inWorkflow) {
-      const wt = document.createElement("span");
-      wt.className = "lm-wf-tag";
-      wt.textContent = "IN STACK";
-      tags.appendChild(wt);
-    }
-    wrap.appendChild(tags);
   }
   const fav = document.createElement("div");
   fav.className = "lm-fav" + (l.favorite ? " on" : "");
@@ -1976,44 +2116,124 @@ function makeThumb(l) {
   fav.title = l.favorite ? "Remove from favorites" : "Add to favorites";
   fav.onclick = (e) => { e.stopPropagation(); toggleFavorite(l); };
   wrap.appendChild(fav);
-  attachThumbHover(wrap);
   return wrap;
 }
 
 async function toggleFavorite(l) {
   l.favorite = l.favorite ? 0 : 1;
-  renderGrid();                     // move card between sections immediately
+  renderGrid();                     // repaint the star + the ★ filter count
   await api.favorite(l.rel_path, l.favorite);
 }
 
-const TRIGGER_LIMIT = 1;
+// How many trigger chips fit on the thumbnail before the rest collapse into
+// a "+N" chip. The chips overlay a ~140px card, so this is a layout limit,
+// not a preference.
+const TRIGGER_INLINE = 3;
 
-function triggerChip(t) {
+function triggerChip(t, after) {
   const chip = document.createElement("span");
   chip.className = "lm-chip";
   chip.textContent = t;
   chip.title = "Click to copy";
   // 프롬프트에 바로 이어 붙일 수 있도록 뒤에 쉼표를 달아 복사한다.
-  chip.onclick = () => copy(t + ", ");
+  chip.onclick = (e) => { e.stopPropagation(); copy(t + ", "); if (after) after(); };
   return chip;
 }
 
-// Show only the first few triggers; collapse the rest behind an expander.
-// (CivitAI trainedWords can include dozens of tags and long caption phrases.)
-// Per-LoRA expanded state survives renderGrid() rebuilds (search input, blur
-// toggle, etc.) — same rationale as styleLoraExpanded above.
-const loraTriggerExpanded = new Map();
-function renderTriggers(wrap, words, expanded, loraKey) {
-  if (loraKey != null) loraTriggerExpanded.set(loraKey, !!expanded);
+// Trigger chips shown over the thumbnail on hover. CivitAI trainedWords can
+// run to dozens of tags, so only the first few are inline and the rest open
+// in a popover — the card must never grow or the grid reflows under the
+// cursor. The popover is document-level so its size is independent of the card.
+function renderTriggers(wrap, words) {
   wrap.innerHTML = "";
-  const shown = expanded ? words : words.slice(0, TRIGGER_LIMIT);
-  shown.forEach(t => wrap.appendChild(triggerChip(t)));
-  if (words.length > TRIGGER_LIMIT) {
-    const tog = document.createElement("span");
-    tog.className = "lm-chip lm-toggle";
-    tog.textContent = expanded ? "Collapse ▲" : `+${words.length - TRIGGER_LIMIT} more ▼`;
-    tog.onclick = (e) => { e.stopPropagation(); renderTriggers(wrap, words, !expanded, loraKey); };
-    wrap.appendChild(tog);
+  words.slice(0, TRIGGER_INLINE).forEach(t => wrap.appendChild(triggerChip(t)));
+  const rest = words.length - TRIGGER_INLINE;
+  if (rest > 0) {
+    const more = document.createElement("span");
+    more.className = "lm-chip lm-more";
+    more.textContent = `+${rest}`;
+    more.title = `Show all ${words.length} trigger words`;
+    more.onclick = (e) => { e.stopPropagation(); openTriggerPopover(more, words); };
+    wrap.appendChild(more);
+  }
+}
+
+let trigPopEl = null;
+let trigPopCard = null;     // the card the open popover belongs to
+let trigPopBound = false;
+// How far the cursor may stray from the card+popover pair before it closes.
+// Generous enough that the gap between the two doesn't count as leaving.
+const TRIGPOP_SLACK = 70;
+
+function openTriggerPopover(anchor, words) {
+  if (!trigPopEl) {
+    trigPopEl = document.createElement("div");
+    trigPopEl.className = "lm-trigpop";
+    document.body.appendChild(trigPopEl);
+  }
+  trigPopEl.innerHTML = "";
+  const head = document.createElement("div");
+  head.className = "lm-trigpop-head";
+  head.textContent = `Trigger words · ${words.length}`;
+  trigPopEl.appendChild(head);
+  // Copying is the whole point of the list, so a copy finishes the errand —
+  // the popover closes itself instead of being dismissed by hand.
+  words.forEach(t => trigPopEl.appendChild(triggerChip(t, closeTriggerPopover)));
+  trigPopEl.classList.add("show");
+  // The card can't stay :hover once the cursor moves onto the popover (which
+  // is a document-level sibling), so pin it: the overlay it's showing is what
+  // the popover was opened from, and it vanishing mid-read is disorienting.
+  trigPopCard = anchor.closest(".lm-card");
+  if (trigPopCard) trigPopCard.classList.add("lm-pinned");
+  // Measure after showing so the flip-to-fit uses the real size.
+  const r = anchor.getBoundingClientRect();
+  const p = trigPopEl.getBoundingClientRect();
+  let left = r.left;
+  if (left + p.width > window.innerWidth - 8) left = window.innerWidth - p.width - 8;
+  let top = r.bottom + 6;
+  if (top + p.height > window.innerHeight - 8) top = Math.max(8, r.top - p.height - 6);
+  trigPopEl.style.left = `${Math.max(8, left)}px`;
+  trigPopEl.style.top = `${top}px`;
+  if (!trigPopBound) {
+    // mousedown only dismisses when the click lands OUTSIDE both the popover
+    // and its card — clicking the popover's own background must not close it
+    // (and must not drop the card's pinned state either).
+    document.addEventListener("mousedown", (e) => {
+      if (!trigPopEl || !trigPopEl.classList.contains("show")) return;
+      if (trigPopEl.contains(e.target)) return;
+      if (trigPopCard && trigPopCard.contains(e.target)) return;
+      closeTriggerPopover();
+    });
+    // Walking away closes it. Distance is measured to the nearest edge of
+    // either box, so travelling between the card and the popover is free.
+    document.addEventListener("mousemove", (e) => {
+      if (!trigPopEl || !trigPopEl.classList.contains("show")) return;
+      const d = Math.min(
+        _distanceToRect(e.clientX, e.clientY, trigPopEl.getBoundingClientRect()),
+        trigPopCard ? _distanceToRect(e.clientX, e.clientY, trigPopCard.getBoundingClientRect()) : Infinity,
+      );
+      if (d > TRIGPOP_SLACK) closeTriggerPopover();
+    });
+    trigPopBound = true;
+  }
+}
+
+// 0 inside the rect, otherwise the straight-line distance to its nearest edge.
+function _distanceToRect(x, y, r) {
+  const dx = Math.max(r.left - x, 0, x - r.right);
+  const dy = Math.max(r.top - y, 0, y - r.bottom);
+  return Math.hypot(dx, dy);
+}
+
+function closeTriggerPopover() {
+  if (trigPopEl) trigPopEl.classList.remove("show");
+  if (trigPopCard) {
+    trigPopCard.classList.remove("lm-pinned");
+    // Clicking the +N chip focuses the card (it's tabbable), and a focused
+    // card would keep its overlay up after the popover goes away. Drop the
+    // focus so closing really does return the card to its resting state.
+    if (trigPopCard.contains(document.activeElement)) document.activeElement.blur();
+    trigPopCard = null;
   }
 }
 
@@ -2083,7 +2303,9 @@ function jumpToLora(relPath) {
   _beginJump(key);
   setMode("both");
   selectedBases.clear();
-  updateOnlyFilter = false;
+  // Clear the narrowing toggles too — a jump must always be able to reach its
+  // target, even if the target isn't a favorite / isn't in the stack.
+  favOnlyFilter = stackOnlyFilter = false;
   // Show the bare name in the search box for visual context, but the actual
   // match key is the full rel_path — strict equality via exactLoraKey.
   exactLoraKey = relPath;
@@ -2157,61 +2379,32 @@ function makeCard(l) {
   const card = document.createElement("div");
   card.className = "lm-card" + (l.active ? " active" : (l.inWorkflow ? " in-wf" : ""));
   card.dataset.relPath = l.rel_path || "";
-  card.appendChild(makeThumb(l));
-
-  const body = document.createElement("div");
-  body.className = "lm-body";
-
-  // Card shows the FILENAME (sans extension), not the CivitAI title — same
-  // post can have multiple versions with identical names, only the filename
-  // distinguishes them. The CivitAI name is still in l.name for the edit
-  // dialog + search.
-  const name = document.createElement("div");
-  name.className = "lm-name";
-  name.textContent = (l.file_name || l.rel_path || "").replace(/\.(safetensors|ckpt|pt)$/i, "");
-  name.title = l.name ? `${l.name}\n${l.rel_path}` : l.rel_path;
-  body.appendChild(name);
-
-  const baseLabel = l.base_model || l.base_category;
-  const base = document.createElement("div");
-  base.className = "lm-base";
-  base.textContent = baseLabel || "No base model info";
-  body.appendChild(base);
+  // Keyboard users get the same reveal as hover. The CSS keys off
+  // :focus-visible, NOT :focus-within — a mouse click also focuses this card,
+  // and :focus-within would then leave the overlay stuck open after the click.
+  card.tabIndex = 0;
+  const thumb = makeThumb(l);
 
   const triggers = triggerList(l);
-  const wrap = document.createElement("div");
-  wrap.className = "lm-triggers";
   if (triggers.length) {
-    renderTriggers(wrap, triggers, loraTriggerExpanded.get(l.rel_path) || false, l.rel_path);
-  } else {
-    const none = document.createElement("span");
-    none.className = "lm-chip empty";
-    none.textContent = "No trigger words found";
-    wrap.appendChild(none);
-  }
-  body.appendChild(wrap);
-
-  // "Used in N styles" badge — clickable, jumps to Styles tab filtered to
-  // this LoRA. Hidden when count is 0 to avoid clutter.
-  if (l.style_count && l.style_count > 0) {
-    const refWrap = document.createElement("div");
-    refWrap.className = "lm-triggers";
-    const badge = document.createElement("span");
-    badge.className = "lm-chip styles-badge";
-    badge.textContent = `Used in ${l.style_count} style${l.style_count !== 1 ? "s" : ""}`;
-    badge.title = "Click to filter Styles tab by this LoRA";
-    badge.onclick = (e) => { e.stopPropagation(); jumpToStylesUsingLora(l.rel_path); };
-    refWrap.appendChild(badge);
-    body.appendChild(refWrap);
+    const trigWrap = document.createElement("div");
+    trigWrap.className = "lm-hover-trig";
+    renderTriggers(trigWrap, triggers);
+    thumb.appendChild(trigWrap);
   }
 
+  // Actions overlay the bottom of the thumbnail instead of claiming a row in
+  // the body — that's what keeps the card down to thumbnail + one line.
   const actions = document.createElement("div");
-  actions.className = "lm-actions";
+  actions.className = "lm-hover-actions";
   const allTriggers = triggers.join(", ");
   const _inStack = !!l.inWorkflow;
   const _loraLabel = (l.file_name || l.rel_path || "").replace(/\.(safetensors|ckpt|pt)$/i, "");
-  actions.appendChild(iconBtn(
-    _inStack ? "pi pi-minus" : "pi pi-plus",
+  const act = (icon, title, fn, disabled) => {
+    const b = iconBtn(icon, title, (e) => { if (e) e.stopPropagation(); fn(); }, disabled);
+    actions.appendChild(b);
+  };
+  act(_inStack ? "pi pi-minus" : "pi pi-plus",
     _inStack ? "Remove from the Workbench LoRA stack" : "Add to the Workbench LoRA stack",
     () => {
       if (_inStack) {
@@ -2221,14 +2414,31 @@ function makeCard(l) {
         lmOpts.onAddLora(l.rel_path);
         toast("Added to stack: " + _loraLabel);
       }
-    }));
-  actions.appendChild(iconBtn("pi pi-copy", "Copy all triggers", () => copy(allTriggers), !allTriggers));
-  actions.appendChild(iconBtn("pi pi-external-link", "Open on CivitAI",
-    () => window.open(l.civitai_url, "_blank"), !l.civitai_url));
-  actions.appendChild(iconBtn("pi pi-pencil", "Edit", () => openEdit(l)));
-  body.appendChild(actions);
+    });
+  act("pi pi-copy", "Copy all triggers", () => copy(allTriggers), !allTriggers);
+  act("pi pi-external-link", "Open on CivitAI",
+    () => window.open(l.civitai_url, "_blank"), !l.civitai_url);
+  act("pi pi-pencil", "Edit", () => openEdit(l));
+  thumb.appendChild(actions);
+  card.appendChild(thumb);
 
-  card.appendChild(body);
+  // Single text line: filename left, base model right. The FILENAME (not the
+  // CivitAI title) identifies the card — the same post can ship several
+  // versions under one title, and only the filename tells them apart. Full
+  // name + path live in the tooltip since the line truncates.
+  const line = document.createElement("div");
+  line.className = "lm-oneline";
+  const name = document.createElement("div");
+  name.className = "lm-name";
+  name.textContent = _loraLabel;
+  name.title = l.name ? `${l.name}\n${l.rel_path}` : l.rel_path;
+  const base = document.createElement("div");
+  base.className = "lm-base";
+  const baseLabel = l.base_model || l.base_category;
+  base.textContent = baseLabel || "—";
+  base.title = baseLabel || "No base model info";
+  line.append(name, base);
+  card.appendChild(line);
   return card;
 }
 
@@ -2249,52 +2459,29 @@ let searchInputEl = null;
 // Styles toolbar's search input — same purpose as searchInputEl, for the
 // reverse jump (LoRA card → Styles tab filtered by that LoRA).
 let stylesSearchInputEl = null;
-// Check-updates split-button menu + its wrapper — kept at module scope (not as
-// closure locals) so the single global outside-click listener always targets
-// the CURRENT menu, even after the panel is unmounted/remounted. ComfyUI's
-// sidebar rarely re-rendered, but PeroPixComfy's drawer opens/closes often.
-let checkMenuEl = null;
-let checkWrapEl = null;
 
 function makeGrid(list) {
   const g = document.createElement("div");
   g.className = "lm-grid";
-  if (loraViewMode === "list") g.classList.add("list-mode");
   list.forEach(l => g.appendChild(makeCard(l)));
   return g;
 }
 
-function sectionHeader(text, cls) {
-  const h = document.createElement("div");
-  h.className = "lm-section " + cls;
-  h.textContent = text;
-  return h;
-}
-
-// Within each section, float active → in-workflow → rest to the top.
-// Array.sort is stable since ES2019 so the rest preserve alphabetical order.
-function workflowRank(l) { return l.active ? 0 : (l.inWorkflow ? 1 : 2); }
-function sortByWorkflow(list) {
-  return [...list].sort((a, b) => workflowRank(a) - workflowRank(b));
-}
-
+// ★ Sorting depends ONLY on the chosen sort key — never on stack membership
+// or favorite. A card keeps its position while LoRAs are added to / removed
+// from the stack, so the spot you found it in stays the spot it's in. Those
+// two live as toolbar filters instead; the card still shows its ACTIVE /
+// IN STACK badge and star in place.
 function sortLoras(list) {
-  // Default mode keeps the 3-rank ordering (active → inWorkflow → rest).
-  if (sortMode === "default") return sortByWorkflow(list);
-
-  // Name/date modes use a BINARY workflow rank (in-workflow vs not), so
-  // active and inWorkflow-only cards share the top bucket and the chosen
-  // sort applies across them. Otherwise alphabetical/date order gets broken
-  // up by the active/inWorkflow sub-distinction.
-  let secondary;
+  let cmp;
   if (sortMode === "name") {
-    secondary = (a, b) =>
+    cmp = (a, b) =>
       (a.file_name || a.rel_path || "").toLowerCase()
         .localeCompare((b.file_name || b.rel_path || "").toLowerCase());
   } else if (sortMode === "styleuse") {
     // 스타일에 많이 쓰인 순 — style_count(각 로라가 등장하는 스타일 수) 내림차순.
     // 동수면 이름순으로 안정 정렬.
-    secondary = (a, b) => {
+    cmp = (a, b) => {
       const d = (b.style_count || 0) - (a.style_count || 0);
       if (d) return d;
       return (a.file_name || a.rel_path || "").toLowerCase()
@@ -2302,13 +2489,9 @@ function sortLoras(list) {
     };
   } else {  // date
     const key = l => l.ctime || l.updated_at || 0;
-    secondary = (a, b) => key(b) - key(a);
+    cmp = (a, b) => key(b) - key(a);
   }
-  return [...list].sort((a, b) => {
-    const ar = a.inWorkflow ? 0 : 1;
-    const br = b.inWorkflow ? 0 : 1;
-    return ar !== br ? ar - br : secondary(a, b);
-  });
+  return [...list].sort(cmp);
 }
 
 // FLIP 재정렬 애니메이션 — 카드를 옛 위치로 순간이동시켰다가 원위치로 트랜지션해 슬라이드시킨다.
@@ -2350,44 +2533,28 @@ function renderGrid(animate = false, focus = null) {
     ? new Map([...scrollEl.querySelectorAll(".lm-card[data-rel-path]")].map((c) => [c.dataset.relPath, c.getBoundingClientRect()]))
     : null;
   const focusSet = focus && focus.length ? new Set(focus) : null;
+  // The popover is anchored to a chip inside a card we're about to destroy.
+  closeTriggerPopover();
   scrollEl.innerHTML = "";
-  const visible = loras.filter(matches);
-  const favs = sortLoras(visible.filter(l => l.favorite));
-  const rest = sortLoras(visible.filter(l => !l.favorite));
-  if (favs.length) {
-    scrollEl.appendChild(sectionHeader(`★ Favorites ${favs.length}`, "fav"));
-    scrollEl.appendChild(makeGrid(favs));
-  }
-  if (rest.length) {
-    if (favs.length) scrollEl.appendChild(sectionHeader(`All ${rest.length}`, "rest"));
-    scrollEl.appendChild(makeGrid(rest));
+  // One flat grid — favorites are no longer split into their own section that
+  // claimed the top of the list (with enough of them, newly added LoRAs were
+  // always pushed below the fold). Use the ★ toolbar filter to see them alone.
+  const visible = sortLoras(loras.filter(matches));
+  if (visible.length) {
+    scrollEl.appendChild(makeGrid(visible));
+  } else if (loras.length) {
+    const note = document.createElement("div");
+    note.className = "lm-empty";
+    note.textContent = favOnlyFilter || stackOnlyFilter || selectedBases.size || filter
+      ? "No LoRA matches the current filters."
+      : "No LoRAs found.";
+    scrollEl.appendChild(note);
   }
   if (oldRects) _flipFrom(oldRects, focusSet);
+  refreshFilterButtons();
   if (metaEl) {
     const scanned = loras.filter(l => l.source === "civitai").length;
-    const updates = loras.filter(hasUpdate).length;
-    metaEl.innerHTML = "";
-    metaEl.appendChild(document.createTextNode(
-      `${visible.length}/${loras.length} shown · ${scanned} matched`
-    ));
-    if (updates > 0) {
-      metaEl.appendChild(document.createTextNode(" · "));
-      const link = document.createElement("a");
-      link.className = "lm-update-link";
-      link.textContent = `${updates} update${updates > 1 ? "s" : ""}`;
-      link.title = updateOnlyFilter ? "Show all" : "Show only LoRAs with updates available";
-      link.href = "#";
-      if (updateOnlyFilter) link.classList.add("active");
-      link.onclick = (e) => {
-        e.preventDefault();
-        updateOnlyFilter = !updateOnlyFilter;
-        renderGrid();
-      };
-      metaEl.appendChild(link);
-    } else if (updateOnlyFilter) {
-      // safety: if no updates and filter was on, turn it off
-      updateOnlyFilter = false;
-    }
+    metaEl.textContent = `${visible.length}/${loras.length} shown · ${scanned} matched`;
   }
 }
 
@@ -2620,34 +2787,6 @@ async function doScan(force) {
   if (r.started) startPolling();
 }
 
-function pollUpdateCheck(btn) {
-  if (updateCheckTimer) clearInterval(updateCheckTimer);
-  btn.disabled = true;
-  const origHtml = btn.innerHTML;
-  btn.innerHTML = `<i class="pi pi-spin pi-spinner"></i>`;
-  updateCheckTimer = setInterval(async () => {
-    const s = await api.checkUpdatesStatus();
-    if (s.checking && s.total > 0 && metaEl) {
-      metaEl.textContent = `Checking updates ${s.done}/${s.total}...`;
-    }
-    if (!s.checking) {
-      clearInterval(updateCheckTimer);
-      updateCheckTimer = null;
-      btn.disabled = false;
-      btn.innerHTML = origHtml;
-      // toast result with wording that distinguishes 0-updates from failure
-      let msg;
-      if (s.total === 0) msg = "Nothing to check (no CivitAI-matched LoRAs)";
-      else if (s.errors === s.total) msg = "Update check failed · CivitAI unreachable";
-      else if (s.errors > 0) msg = `Checked: ${s.updates} update${s.updates !== 1 ? "s" : ""} · ${s.errors} error${s.errors !== 1 ? "s" : ""}`;
-      else if (s.updates === 0) msg = "Update check complete · all up to date";
-      else msg = `Found ${s.updates} update${s.updates !== 1 ? "s" : ""}`;
-      toast(msg);
-      await refresh();   // pull latest_version_id into the cards
-    }
-  }, 1000);
-}
-
 // --- main render (called by the sidebar tab) -------------------------------
 function buildPanel(el) {
   injectStyle();
@@ -2740,7 +2879,7 @@ function buildPanel(el) {
   const sortSel = document.createElement("select");
   sortSel.className = "lm-sort";
   sortSel.title = "Sort";
-  [["default", "Default"], ["name", "Name (A-Z)"], ["date", "Recently added"], ["styleuse", "Most used in styles"]]
+  [["date", "Recently added"], ["name", "Name (A-Z)"], ["styleuse", "Most used in styles"]]
     .forEach(([v, t]) => {
       const o = document.createElement("option");
       o.value = v; o.textContent = t;
@@ -2757,85 +2896,12 @@ function buildPanel(el) {
   scanBtn.onclick = (e) => doScan(e.shiftKey);
   row2.appendChild(scanBtn);
 
-  // Check Updates as a split-button: click → opens scope menu (all / favorites
-  // / in-workflow). Each scope triggers /check-updates with a filtered list.
-  const checkWrap = document.createElement("div");
-  checkWrap.style.position = "relative";
-  const checkBtn = document.createElement("button");
-  checkBtn.type = "button";
-  checkBtn.className = "lm-btn";
-  checkBtn.innerHTML = `<i class="pi pi-sync"></i> Check <span style="font-size:9px;opacity:.6">▾</span>`;
-  checkBtn.title = "Check CivitAI for new LoRA versions";
-
-  const checkMenu = document.createElement("div");
-  checkMenu.className = "lm-popmenu";
-  checkMenuEl = checkMenu;
-  checkWrapEl = checkWrap;
-  const header = document.createElement("div");
-  header.className = "lm-popmenu-header";
-  header.textContent = "Check for updates";
-  checkMenu.appendChild(header);
-
-  const startCheck = async (targets) => {
-    checkMenu.style.display = "none";
-    if (checkBtn.disabled) return;
-    const r = await api.checkUpdates(targets);
-    if (r.started) pollUpdateCheck(checkBtn);
-    else toast(r.reason || "Already running");
-  };
-
-  const scopes = [
-    ["all",       "All",                () => null],
-    ["favorites", "Favorites only",     () => loras.filter(l => l.favorite && l.civitai_url).map(l => l.rel_path)],
-    ["workflow",  "In-stack only",      () => loras.filter(l => l.inWorkflow && l.civitai_url).map(l => l.rel_path)],
-  ];
-  const menuItems = {};
-  for (const [id, label, getter] of scopes) {
-    const item = document.createElement("div");
-    item.className = "lm-popmenu-item";
-    item.textContent = label;
-    item.onclick = (e) => {
-      e.stopPropagation();
-      if (item.hasAttribute("disabled")) return;
-      const targets = getter();
-      if (targets !== null && targets.length === 0) {
-        toast(id === "favorites" ? "No CivitAI-matched favorites" : "No CivitAI-matched LoRAs in stack");
-        checkMenu.style.display = "none";
-        return;
-      }
-      startCheck(targets);
-    };
-    menuItems[id] = item;
-    checkMenu.appendChild(item);
-  }
-
-  checkBtn.onclick = (e) => {
-    e.stopPropagation();
-    if (checkBtn.disabled) return;
-    const opening = checkMenu.style.display !== "block";
-    // refresh disabled state for menu items based on current data
-    const favCount = loras.filter(l => l.favorite && l.civitai_url).length;
-    const wfCount  = loras.filter(l => l.inWorkflow && l.civitai_url).length;
-    menuItems.favorites.toggleAttribute("disabled", favCount === 0);
-    menuItems.workflow.toggleAttribute("disabled", wfCount === 0);
-    checkMenu.style.display = opening ? "block" : "none";
-  };
-
-  // close on outside click — one global listener, looks up current menu dynamically
-  if (!window.__lmCheckMenuBound) {
-    document.addEventListener("mousedown", (e) => {
-      if (!checkMenuEl || !checkMenuEl.parentElement) return;
-      if (checkMenuEl.style.display !== "block") return;
-      if (!checkWrapEl || !checkWrapEl.contains(e.target)) checkMenuEl.style.display = "none";
-    });
-    window.__lmCheckMenuBound = true;
-  }
-
-  checkWrap.append(checkBtn, checkMenu);
-  row2.appendChild(checkWrap);
-
-  // View density toggle (per-tab — Styles and LoRAs each have their own mode).
-  row2.appendChild(makeViewToggleButton("loras"));
+  // Favorites / in-stack narrowing lives here as filters (they used to be a
+  // pinned section and a sort rank). refreshFilterButtons() fills in the
+  // labels and counts on every render.
+  row2.appendChild(makeFilterToggleButton("fav"));
+  row2.appendChild(makeFilterToggleButton("stack"));
+  refreshFilterButtons();
   // NSFW blur toggle — placed at the right end to match the Styles toolbar.
   row2.appendChild(makeBlurButton());
 
@@ -2884,7 +2950,8 @@ function buildPanel(el) {
 // search text, sort, and view mode survive opening/closing the drawer.
 export function mountLibrary(container, opts = {}) {
   lmOpts = { onApplyStyle: () => {}, onAddLora: () => {}, onRemoveLora: () => {}, onLorasRefreshed: () => {}, ...opts };
-  if (opts.initialMode) currentMode = opts.initialMode;
+  // initialMode는 ?drawer= 쿼리로 강제할 때만 넘어온다. 없으면 저장된 선택을 그대로 쓴다.
+  if (opts.initialMode) currentMode = preferredMode = opts.initialMode;
   destroyLibrary();              // tear down any previous instance first
   buildPanel(container);
   return { setStack, refresh, refreshStyles, destroy: destroyLibrary };
@@ -2892,14 +2959,13 @@ export function mountLibrary(container, opts = {}) {
 
 function destroyLibrary() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-  if (updateCheckTimer) { clearInterval(updateCheckTimer); updateCheckTimer = null; }
+  closeTriggerPopover();
   if (cachedRoot && cachedRoot.parentNode) cachedRoot.remove();
   cachedRoot = null;
   // Null the element refs so a late async callback (a slow fetch resolving
   // after unmount) can't paint into a detached tree.
   stylesGridEl = stylesScrollEl = scrollEl = metaEl = progressEl = null;
-  filterBtnEl = filterPanelEl = null;
+  filterBtnEl = filterPanelEl = favBtnEl = stackBtnEl = styleFavBtnEl = null;
   searchInputEl = stylesSearchInputEl = null;
   stylesPanelEl = lorasPanelEl = modeBarEl = sidebarRootEl = null;
-  checkMenuEl = checkWrapEl = null;
 }

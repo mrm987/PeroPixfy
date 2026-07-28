@@ -2,10 +2,12 @@ import { useT } from '../i18n'
 import { useUi } from '../stores/ui'
 import { LibraryView } from '../library/LibraryView'
 
-// ?drawer=loras / ?drawer=styles 으로 초기 모드 지정 가능 (기본 both = split).
-const dockInitialMode = ((): 'both' | 'styles' | 'loras' => {
+// ?drawer=loras / ?drawer=styles 으로 초기 모드를 강제할 수 있다.
+// ★ 쿼리가 없으면 undefined를 넘겨 엔진이 마지막으로 고른 모드를 복원하게 둔다.
+// 여기서 'both'를 넘기면 그 복원을 매번 덮어써 저장이 무의미해진다.
+const dockInitialMode = ((): 'styles' | 'loras' | undefined => {
   const v = new URLSearchParams(location.search).get('drawer')
-  return v === 'loras' || v === 'styles' ? v : 'both'
+  return v === 'loras' || v === 'styles' ? v : undefined
 })()
 
 /**

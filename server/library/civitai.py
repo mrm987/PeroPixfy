@@ -44,41 +44,6 @@ def lookup_by_hash(sha256, timeout=20):
     return TRANSIENT
 
 
-def lookup_model(model_id):
-    """Fetch the model (not version) endpoint to find the newest version.
-    Returns: dict {latest_version_id, latest_version_name, latest_published_at}
-    on success, None for 404/empty, TRANSIENT on 5xx/timeout/network."""
-    if not model_id:
-        return None
-    url = f"https://civitai.com/api/v1/models/{model_id}"
-    for attempt in range(2):
-        try:
-            r = requests.get(url, headers=HEADERS, timeout=20)
-        except requests.RequestException:
-            return TRANSIENT
-        if r.status_code == 429 and attempt == 0:
-            time.sleep(2)
-            continue
-        if r.status_code == 404:
-            return None
-        if r.status_code != 200:
-            return TRANSIENT
-        try:
-            data = r.json()
-        except ValueError:
-            return None
-        versions = data.get("modelVersions") or []
-        if not versions:
-            return None
-        latest = versions[0]  # API returns versions in descending date order
-        return {
-            "latest_version_id": int(latest.get("id") or 0),
-            "latest_version_name": latest.get("name") or "",
-            "latest_published_at": latest.get("publishedAt") or "",
-        }
-    return TRANSIENT
-
-
 def _pick_preview(images):
     """Prefer the first still image; fall back to the first item (may be video)."""
     if not images:

@@ -1,9 +1,9 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import {
-  fetchLoras, fetchScanStatus, fetchStyles, fetchUpdateStatus,
-  setDisabledTriggers, setFavorite, startCheckUpdates, startScan, updateLora, updateStyle,
-  type LoraEditableFields, type LoraRecord, type ScanState, type StyleRecord, type UpdateState,
+  fetchLoras, fetchScanStatus, fetchStyles,
+  setDisabledTriggers, setFavorite, startScan, updateLora, updateStyle,
+  type LoraEditableFields, type LoraRecord, type ScanState, type StyleRecord,
 } from '../api/library'
 import { findTagRun, reTokenize } from '../tags/promptTags'
 import { collectTriggers, normPath, splitCsv } from '../tags/triggers'
@@ -29,14 +29,12 @@ interface LibraryState {
   // 필터
   category: string
   favOnly: boolean
-  updatesOnly: boolean
   sort: LoraSort
   tagFilter: string[] // 스타일 태그 AND 필터
   styleLoraFilter: string | null // 이 로라를 쓰는 스타일만 (크로스 점프)
   loraExactFilter: string | null // 이 로라만 강조 (크로스 점프)
   // 백그라운드 작업 상태
   scan: ScanState | null
-  update: UpdateState | null
 
   setMode: (m: LibMode) => void
   setStyleView: (v: ViewMode) => void
@@ -44,7 +42,6 @@ interface LibraryState {
   setNsfwBlur: (v: boolean) => void
   setCategory: (v: string) => void
   setFavOnly: (v: boolean) => void
-  setUpdatesOnly: (v: boolean) => void
   setSort: (v: LoraSort) => void
   toggleTag: (tag: string) => void
   jumpToStylesUsing: (relPath: string) => void
@@ -57,7 +54,6 @@ interface LibraryState {
   saveLora: (relPath: string, fields: LoraEditableFields) => Promise<void>
   renameStyle: (id: number, name: string) => Promise<void>
   rescan: (force?: boolean) => Promise<void>
-  checkUpdates: () => Promise<void>
   applyStyle: (style: StyleRecord) => void
   addLoraToWorkbench: (relPath: string) => void
   removeLoraFromWorkbench: (relPath: string) => void
@@ -66,13 +62,13 @@ interface LibraryState {
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 export const useLibrary = create<LibraryState>()(persist((set, get) => {
-  // 스캔/업데이트 체크가 도는 동안 1초 간격으로 상태 폴링, 끝나면 목록 새로고침
+  // 스캔이 도는 동안 1초 간격으로 상태 폴링, 끝나면 목록 새로고침
   const startPolling = () => {
     if (pollTimer) return
     pollTimer = setInterval(async () => {
-      const [scan, update] = await Promise.all([fetchScanStatus(), fetchUpdateStatus()])
-      set({ scan, update })
-      if (!scan.scanning && !update.checking) {
+      const scan = await fetchScanStatus()
+      set({ scan })
+      if (!scan.scanning) {
         clearInterval(pollTimer!)
         pollTimer = null
         get().load()
@@ -93,13 +89,11 @@ export const useLibrary = create<LibraryState>()(persist((set, get) => {
     nsfwBlur: true,
     category: '',
     favOnly: false,
-    updatesOnly: false,
     sort: 'recent',
     tagFilter: [],
     styleLoraFilter: null,
     loraExactFilter: null,
     scan: null,
-    update: null,
 
     setMode: (mode) => set({ mode }),
     setStyleView: (styleView) => set({ styleView }),
@@ -107,7 +101,6 @@ export const useLibrary = create<LibraryState>()(persist((set, get) => {
     setNsfwBlur: (nsfwBlur) => set({ nsfwBlur }),
     setCategory: (category) => set({ category }),
     setFavOnly: (favOnly) => set({ favOnly }),
-    setUpdatesOnly: (updatesOnly) => set({ updatesOnly }),
     setSort: (sort) => set({ sort }),
     toggleTag: (tag) =>
       set((s) => ({
@@ -162,11 +155,6 @@ export const useLibrary = create<LibraryState>()(persist((set, get) => {
 
     rescan: async (force = false) => {
       await startScan(force)
-      startPolling()
-    },
-
-    checkUpdates: async () => {
-      await startCheckUpdates()
       startPolling()
     },
 
@@ -298,6 +286,6 @@ export const useLibrary = create<LibraryState>()(persist((set, get) => {
   name: 'peropix.library',
   partialize: (s) => ({
     mode: s.mode, styleView: s.styleView, loraView: s.loraView, nsfwBlur: s.nsfwBlur,
-    category: s.category, favOnly: s.favOnly, updatesOnly: s.updatesOnly, sort: s.sort,
+    category: s.category, favOnly: s.favOnly, sort: s.sort,
   }),
 }))
