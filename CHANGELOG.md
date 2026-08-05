@@ -12,6 +12,10 @@ registry's changelog field, so:
   newlines, so bullets and line breaks end up as one run-on line. Use ` · ` to separate
   points instead.
 
+## 1.5.1
+
+Sending a Single result to a Multi character no longer bakes the LoRA trigger words into the prompt as plain text — the @triggers chip keeps its place, order and on/off state, so the words are no longer inserted twice when the character has automatic trigger words on · Wildcard names in Korean and other non-Latin scripts now work: #이름 is recognised as a pool heading, replaced on generation, and offered in autocomplete. Full details in the commit history.
+
 ## 1.5.0
 
 LoRA cards rebuilt around the preview image — filename on a single line, trigger words and buttons only on hover, so far more cards fit on screen · Favourites and in-stack are filters now instead of pinned sections, so cards stay where you found them as you add and remove LoRAs · Styles can be favourited too · Tag weights without typing brackets: Alt+arrows, Alt+wheel or Alt+drag on any prompt field, Alt+middle-click to clear, and selecting several tags wraps them in one weight · The same controls work on LoRA strength, which now accepts negative values and can be cleared · Fixed Ultimate SD Upscale failing with "no upscale model selected" · Fixed reusing an older generation silently dropping parameters added since · Removed the CivitAI update check. Full details in the commit history.
