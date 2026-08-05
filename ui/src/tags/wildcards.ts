@@ -19,7 +19,10 @@ export function parseWildcardDoc(text: string): Record<string, string[]> {
     const line = rawLine.replace(/\r$/, '').replace(/(^|\s)\/\/.*$/, '$1')
     const trimmed = line.trim()
     if (!trimmed) continue
-    const header = trimmed.match(/^#([A-Za-z0-9_]+)$/) // 단독 #이름 → 섹션 헤더
+    // 단독 #이름 → 섹션 헤더. 이름은 유니코드 글자/숫자/밑줄 — 한글 이름도 쓸 수 있다.
+    // (ASCII 전용이던 시절엔 #머리색이 헤더로 안 잡혀 풀이 만들어지지 않았고, 그 줄 자체가
+    //  바로 위 풀의 후보로 섞여 들어갔다.)
+    const header = trimmed.match(/^#([\p{L}\p{N}_]+)$/u)
     if (header) {
       current = header[1].toLowerCase()
       out[current] ||= []
@@ -39,8 +42,9 @@ export function parseWildcardDoc(text: string): Record<string, string[]> {
  */
 export function resolveWildcards(text: string, depth = 0): string {
   if (!text || depth > 20) return text
-  // (?<![A-Za-z0-9_]) : source#tag 처럼 단어에 붙은 #은 건드리지 않는다
-  return text.replace(/(?<![A-Za-z0-9_])#([A-Za-z0-9_]+)/g, (m, name: string) => {
+  // (?<![\p{L}\p{N}_]) : source#tag 처럼 단어에 붙은 #은 건드리지 않는다
+  // ★정규식은 매 호출 새로 만든다(리터럴) — 아래 재귀가 같은 g 정규식의 lastIndex를 건드리면 안 된다.
+  return text.replace(/(?<![\p{L}\p{N}_])#([\p{L}\p{N}_]+)/gu, (m, name: string) => {
     const pool = pools[name.toLowerCase()]
     if (!pool || pool.length === 0) return m
     const pick = pool[Math.floor(Math.random() * pool.length)]
@@ -51,7 +55,7 @@ export function resolveWildcards(text: string, depth = 0): string {
 /** 텍스트에 정의된 풀을 가리키는 #이름 토큰이 있는가 (히스토리 템플릿 보존 판단용). */
 export function hasWildcards(text: string): boolean {
   if (!text || !text.includes('#')) return false
-  for (const m of text.matchAll(/(?<![A-Za-z0-9_])#([A-Za-z0-9_]+)/g)) {
+  for (const m of text.matchAll(/(?<![\p{L}\p{N}_])#([\p{L}\p{N}_]+)/gu)) {
     if (pools[m[1].toLowerCase()]?.length) return true
   }
   return false

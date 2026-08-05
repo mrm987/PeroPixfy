@@ -94,13 +94,36 @@ const withTriggerToken = (p: string): string => {
 }
 const withoutTriggerToken = (p: string): string =>
   (p || '').replace(/@triggers/gi, '').replace(/,\s*,/g, ', ').replace(/^[\s,]+|[\s,]+$/g, '')
-// 임의 params(예: Single 결과)를 캐릭터 base로 정규화 — Multi는 t2i 전용이라 소스/마스크 제거.
-// 트리거 기능은 캐릭터가 off로 시작하므로 @triggers 토큰과 triggers를 제거(프롬프트에 리터럴 '@triggers'가
-// 남거나 빌더가 옛 트리거를 끝에 붙이는 걸 방지). 캐릭터에서 켜면 그때 토큰/트리거가 다시 채워진다.
-const baseFromParams = (p: GenerationParams): GenerationParams => ({
-  ...p, mode: 't2i', sourceImage: undefined, maskImage: undefined,
-  positive: withoutTriggerToken(p.positive), triggers: [],
-})
+// 프리셋 한정 변형도 base와 같은 토큰 상태로 맞춘다(on이면 토큰 보장, off면 제거).
+const syncOverrideTokens = (m: Record<string, string> | undefined, on: boolean) =>
+  m ? Object.fromEntries(Object.entries(m).map(([f, p]) => [f, (on ? withTriggerToken : withoutTriggerToken)(p)])) : m
+// 임의 params(예: Single 결과)를 캐릭터로 정규화 — Multi는 t2i 전용이라 소스/마스크 제거.
+// ★트리거 칩 상태를 그대로 승계한다. Single 기록의 positive는 트리거워드가 이미 치환된 평문이고,
+// 토큰 원형(#와일드카드 원문 포함)은 positiveTemplate에 따로 있다 — 토큰이 있는 쪽을 base.positive로
+// 쓰고 뱃지 기능도 켠다. 평문만 옮기던 예전 방식은 트리거워드가 본문에 텍스트로 박힌 채 남고,
+// 받는 캐릭터의 뱃지가 켜져 있으면 빌더가 끝에 한 번 더 붙여 중복됐다.
+// 토큰이 어디에도 없으면(=싱글에서 트리거 관리 off) 평문 그대로 두고 뱃지도 off.
+const charFromParams = (
+  p: GenerationParams,
+  fallbackOrder?: string[],
+): Pick<Character, 'base' | 'triggerBadges' | 'triggerOrder'> => {
+  const { positiveTemplate, triggerOrder, ...rest } = p // 기록 전용 필드는 캐릭터 base에 남기지 않는다
+  const tokenized = /@triggers/i.test(rest.positive)
+    ? rest.positive
+    : positiveTemplate && /@triggers/i.test(positiveTemplate)
+      ? positiveTemplate
+      : null
+  const triggers = rest.triggers ?? []
+  return {
+    base: {
+      ...rest, mode: 't2i', sourceImage: undefined, maskImage: undefined,
+      positive: tokenized ?? withoutTriggerToken(rest.positive),
+      triggers: tokenized ? triggers : [],
+    },
+    triggerBadges: !!tokenized,
+    triggerOrder: tokenized ? (triggerOrder ?? fallbackOrder ?? triggers.map((w) => w.toLowerCase())) : [],
+  }
+}
 const charLabel = (n: number) => `char${String(n).padStart(2, '0')}`
 // 새 캐릭터는 Single처럼 자동 트리거 기능을 켠 채로 시작(@triggers 토큰 보장).
 const newCharacter = (name: string): Character => {
@@ -401,9 +424,7 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
         characters: s.characters.map((c) => {
           if (c.id !== s.activeCharId) return c
           const patch = on ? withTriggerToken : withoutTriggerToken
-          const positiveOverrides = c.positiveOverrides
-            ? Object.fromEntries(Object.entries(c.positiveOverrides).map(([f, p]) => [f, patch(p)]))
-            : c.positiveOverrides
+          const positiveOverrides = syncOverrideTokens(c.positiveOverrides, on)
           return { ...c, triggerBadges: on, positiveOverrides, base: { ...c.base, positive: patch(c.base.positive), triggers: on ? c.base.triggers : [] } }
         }),
       })),
@@ -444,21 +465,30 @@ export const useBatch = create<BatchState>()(persist((set, get) => {
       })),
     // 현재 Single(workbench) 설정을 활성 캐릭터 base로 복사한다. Multi는 t2i 전용이라
     // 모드는 t2i로 고정하고 i2i/inpaint 전용 소스·마스크는 가져오지 않는다.
+    // 트리거 뱃지 순서는 params가 아니라 workbench 스토어에 있으므로 따로 넘긴다.
     importBaseFromWorkbench: () => {
-      const wb = useWorkbench.getState().params
+      const wb = useWorkbench.getState()
+      const next = charFromParams(wb.params, wb.triggerOrder)
       set((s) => ({
-        characters: s.characters.map((c) => (c.id === s.activeCharId ? { ...c, base: baseFromParams(wb) } : c)),
+        characters: s.characters.map((c) =>
+          c.id === s.activeCharId
+            ? { ...c, ...next, positiveOverrides: syncOverrideTokens(c.positiveOverrides, !!next.triggerBadges) }
+            : c),
       }))
     },
     // 특정 캐릭터의 base를 주어진 params로 지정(Single 결과 → 캐릭터로 설정).
     setCharacterBase: (charId, params) =>
       set((s) => ({
-        characters: s.characters.map((c) => (c.id === charId ? { ...c, base: baseFromParams(params) } : c)),
+        characters: s.characters.map((c) => {
+          if (c.id !== charId) return c
+          const next = charFromParams(params)
+          return { ...c, ...next, positiveOverrides: syncOverrideTokens(c.positiveOverrides, !!next.triggerBadges) }
+        }),
       })),
     // 주어진 params로 새 캐릭터를 만든다(활성 캐릭터는 그대로 — Single에서 호출).
     addCharacterFromParams: (params) =>
       set((s) => {
-        const char: Character = { id: uid(), name: charLabel(s.characters.length + 1), base: baseFromParams(params) }
+        const char: Character = { id: uid(), name: charLabel(s.characters.length + 1), ...charFromParams(params) }
         const tab = newTab(char.id)
         return {
           characters: [...s.characters, char],

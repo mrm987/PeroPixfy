@@ -28,7 +28,10 @@ export const underscoresToSpaces = (tag: string) => {
 // 검색은 커서 앞부분만 쓰고, 교체 범위는 단어 뒤 공백까지 흡수한다.
 export function getCurrentWord(value: string, cursorPos: number) {
   // 어퍼스트로피(')도 태그 문자 — another's, girls' 등(단부루 태그 911개)이 끊기지 않게.
-  const isTagChar = (c: string) => /[a-zA-Z0-9_\-\s']/.test(c)
+  // 유니코드 글자/숫자까지 단어로 본다 — #머리색 같은 한글 와일드카드 이름에서 단어 스캔이
+  // 끊기면 '#' 바로 뒤인지 판정할 수 없어 자동완성이 안 떴다. (한글 단어 자체는 태그 사전에
+  // 걸리는 게 없어 목록이 뜨지 않는다 — 와일드카드 이름일 때만 의미가 있다.)
+  const isTagChar = (c: string) => /[\p{L}\p{N}_\-\s']/u.test(c)
   let start = cursorPos
   while (start > 0) {
     const ch = value[start - 1]
