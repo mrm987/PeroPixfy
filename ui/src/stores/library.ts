@@ -133,7 +133,7 @@ export const useLibrary = create<LibraryState>()(persist((set, get) => {
     toggleTriggerDisabled: async (relPath, word, disable) => {
       const lora = get().loras.find((l) => l.rel_path === relPath)
       if (!lora) return
-      const cur = (lora.disabled_triggers || '').split(',').map((s) => s.trim()).filter(Boolean)
+      const cur = splitCsv(lora.disabled_triggers) // 괄호 묶음을 쪼개지 않는 분할 — trigger_words와 같은 규칙
       const lower = word.toLowerCase()
       const has = cur.some((w) => w.toLowerCase() === lower)
       if (disable === has) return // 이미 원하는 상태

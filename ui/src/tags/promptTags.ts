@@ -1,37 +1,24 @@
+import { splitWeightTags } from './tagWeight'
+
 // 콤마 구분 프롬프트. @triggers 토큰은 트리거워드 묶음이 삽입될 '자리'를 나타낸다.
 // 토큰은 params.positive 안에 직접 들어가 있고(단일 진실), PromptEditor가 이를 인라인
 // 칩으로 렌더한다. 텍스트(줄바꿈·공백 등 원본 포맷)는 그대로 보존한다.
-
-export interface PromptTag {
-  text: string // 트림된 태그 텍스트
-  start: number // 원본 문자열에서 트림된 태그가 시작하는 offset
-}
 
 const cleanup = (s: string) =>
   s.replace(/,\s*,/g, ', ').replace(/^[\s,]+|[\s,]+$/g, '')
 
 const TOKEN_RE = /@triggers/i
 
-/** 콤마로 구분된 태그를 원본 offset을 보존하며 추출(빈 태그 제외). */
-export function splitTags(text: string): PromptTag[] {
-  const out: PromptTag[] = []
-  let i = 0
-  for (const raw of text.split(',')) {
-    const lead = raw.length - raw.trimStart().length
-    const t = raw.trim()
-    if (t) out.push({ text: t, start: i + lead })
-    i += raw.length + 1 // +1 = 콤마
-  }
-  return out
-}
-
 /**
  * isMatch를 만족하는 태그만 연속으로 이어진 구간 중 가장 긴 것을 찾는다(없으면 null).
  * 스타일 적용에서 '트리거워드 묶음이 박혀 있던 칩 자리'를 찾는 용도 — 단어 순서·구분자 표기에
  * 의존하지 않으므로, 저장 당시의 트리거 순서를 몰라도 자리를 복원할 수 있다.
+ * ★ 최상위 콤마에서만 자른다(splitWeightTags). 트리거워드가 (a, b:1.2) 묶음이면 콤마 분할로는
+ * 어느 조각도 트리거워드와 일치하지 않아 자리를 놓치고, 프롬프트에 묶음이 남은 채 칩이 끝에
+ * 붙어 트리거워드가 두 번 들어간다.
  */
 export function findTagRun(text: string, isMatch: (tag: string) => boolean) {
-  const tags = splitTags(text)
+  const tags = splitWeightTags(text)
   let best: { i: number; j: number } | null = null
   for (let i = 0; i < tags.length; i++) {
     if (!isMatch(tags[i].text)) continue

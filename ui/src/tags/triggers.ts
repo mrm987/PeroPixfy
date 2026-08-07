@@ -1,11 +1,15 @@
 import type { LoraRecord } from '../api/library'
 import type { LoraEntry } from '../workflow/types'
+import { splitWeightTags } from './tagWeight'
 
 // 활성 로라의 트리거워드 수집 — TriggerBadges(표시·토글)와 스타일 적용(칩 위치 복원)이
 // 동일한 dedup·순서·on/off 규칙을 쓰도록 공유한다.
 
 export const normPath = (s: string) => s.replace(/\\/g, '/').toLowerCase()
-export const splitCsv = (csv: string) => (csv || '').split(',').map((s) => s.trim()).filter(Boolean)
+
+// ★ 최상위 콤마에서만 자른다. 트리거워드 하나가 (a, b:1.2) 처럼 괄호로 묶인 여러 태그일 수
+// 있어서, 콤마로만 자르면 그 묶음이 조각나 뱃지·on/off·프롬프트 삽입이 전부 어긋난다.
+export const splitCsv = (csv: string) => splitWeightTags(csv || '').map((t) => t.text)
 
 export interface CollectedTriggers {
   recByPath: Map<string, LoraRecord>

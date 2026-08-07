@@ -5,6 +5,8 @@
 //   onApplyStyle(style) — apply a style's settings to the Workbench params
 //   onAddLora(relPath)  — add a LoRA to the Workbench stack
 //   onRemoveLora(relPath) — remove a LoRA already in the stack
+import { splitWeightTags } from "../tags/tagWeight";
+
 let lmOpts = { onApplyStyle: () => {}, onAddLora: () => {}, onRemoveLora: () => {} };
 
 // ---------------------------------------------------------------------------
@@ -1829,8 +1831,11 @@ function openStyleEdit(s) {
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 }
+// Split on top-level commas only: one trigger word can be a parenthesised
+// bundle like (a, b:1.2), and a plain comma split would tear it into chips
+// that copy out broken.
 function triggerList(l) {
-  return (l.trigger_words || "").split(",").map(s => s.trim()).filter(Boolean);
+  return splitWeightTags(l.trigger_words || "").map(t => t.text);
 }
 
 // (category, base_model) compound key so the same base_model string under two

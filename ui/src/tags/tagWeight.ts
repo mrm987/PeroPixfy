@@ -3,10 +3,10 @@
 // 텍스트만 다룬다. 앱은 프롬프트를 파싱하지 않고 ComfyUI에 그대로 넘기므로,
 // 가중치는 순수하게 편집 문제다.
 //
-// ★ promptTags.ts의 splitTags와 나누는 기준이 다르다. 저쪽은 콤마만 보지만
-// 여기는 괄호 깊이를 센다 — 여러 태그를 한 괄호로 묶으면 (a, b:1.2) 안에
-// 콤마가 들어가고, 콤마로만 자르면 그 묶음을 다시 읽을 수 없기 때문이다.
-// 트리거워드 자리 찾기 등 기존 용도는 저쪽을 그대로 쓴다.
+// ★ splitWeightTags는 괄호 깊이를 세어 최상위 콤마에서만 자른다 — 여러 태그를 한 괄호로
+// 묶으면 (a, b:1.2) 안에 콤마가 들어가고, 콤마로만 자르면 그 묶음을 다시 읽을 수 없기
+// 때문이다. 트리거워드(뱃지·on/off·칩 자리 찾기)도 같은 문제라 이 분할기를 함께 쓴다
+// (promptTags.findTagRun · triggers.splitCsv · libraryEngine.triggerList).
 
 export interface TagSpan {
   text: string
