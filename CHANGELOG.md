@@ -12,6 +12,10 @@ registry's changelog field, so:
   newlines, so bullets and line breaks end up as one run-on line. Use ` · ` to separate
   points instead.
 
+## 1.6.0
+
+Inpainting rebuilt around the plain approach: the model now sees the whole picture and repaints only what you painted, instead of cropping and enlarging the masked area first — that crop is what made a painted hand come back with a whole character drawn inside it · Removing the extra machinery (crop-and-stitch, differential diffusion, inpaint conditioning) changed nothing else measurable, so inpainting is simply faster to reason about, and your own cfg and steps are used as-is · Default inpaint denoise raised to 0.9 · Trigger words that are a bracketed bundle like (a, b:1.2) are no longer torn apart, so badges, on/off and prompt insertion land in the right place and no longer duplicate the words · The first-run download list now says what each file is for. Full details in the commit history.
+
 ## 1.5.1
 
 Sending a Single result to a Multi character no longer bakes the LoRA trigger words into the prompt as plain text — the @triggers chip keeps its place, order and on/off state, so the words are no longer inserted twice when the character has automatic trigger words on · Wildcard names in Korean and other non-Latin scripts now work: #이름 is recognised as a pool heading, replaced on generation, and offered in autocomplete. Full details in the commit history.
