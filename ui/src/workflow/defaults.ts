@@ -21,7 +21,7 @@ export const ANIMA_DEFAULTS: GenerationParams = {
   batchSize: 1,
   denoise: 0.5,
   i2iDenoise: 0.6,
-  inpaintDenoise: 0.7, // crop-and-stitch(마스크 영역을 ~1MP로 확대 인페인트)에선 해상도가 충분해 0.7이 안전하게 디테일↑
+  inpaintDenoise: 0.9, // 낮출수록 원본 형태가 더 남는다(손처럼 방향·좌우를 지켜야 하면 0.5~0.7).
   inpaintMaskExpand: 12,
   inpaintMaskFeather: 12,
   filenamePrefix: 'PeroPixfy', // 제출 시 defaultFilenamePrefix()로 덮어씀

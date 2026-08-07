@@ -62,22 +62,19 @@ export function buildGraph(p: GenerationParams): ApiGraph {
   g['pos'] = { class_type: 'CLIPTextEncode', inputs: { clip, text: posText } }
   g['neg'] = { class_type: 'CLIPTextEncode', inputs: { clip, text: p.negative } }
 
-  // latent 소스 + (인페인트) 조건화.
+  // latent 소스.
   //  - t2i: 빈 latent
   //  - i2i: 업로드 이미지 인코딩
-  //  - inpaint: '칠한 곳만' 재생성(noise_mask:true) + DifferentialDiffusion으로 톤 유지 + 경계 블렌딩.
-  //    추가로 crop-and-stitch — 마스크 bbox+패딩을 크롭해 ~1MP로 확대한 뒤 그 위에서 인페인트하고
-  //    원래 크기로 줄여 원본에 다시 얹는다. 작은 마스크가 전체 latent에서 차지하는 해상도 지분이 작아
-  //    디테일이 떨어지는 문제(전체 생성 대비)를 해결 — 마스크 영역을 모델이 훈련된 스케일에서 그린다.
-  //    (A1111 'only masked'·ADetailer와 동일 원리.) bbox가 없거나 마스크가 프레임의 큰 부분이면 전체 프레임.
-  // inpaint 마스크는 별도 흑백 이미지(흰색 = 다시 그릴 영역) — 알파 채널은 브라우저 premultiply로 손상됨.
-  let posCond: [string, number] = ['pos', 0]
-  let negCond: [string, number] = ['neg', 0]
+  //  - inpaint: 원본 전체를 인코딩하고 마스크만 noise_mask로 열어 준다(전체 프레임).
+  //
+  // ★한때 여기에 crop-and-stitch(마스크 주변을 잘라 확대) + DifferentialDiffusion +
+  // InpaintModelConditioning이 있었다. 같은 시드로 하나씩 빼고 비교한 결과 **어느 것도 결과를
+  // 개선하지 않았다.** 크롭은 오히려 해로웠다 — 모델에게서 '그림 전체'를 빼앗아, 손처럼 몸에
+  // 붙어 있어야 하는 것이 어긋났다(칠한 손 안에 인물이 통째로 그려지는 사고도 여기서 났다).
+  // 결과를 실제로 가른 것은 cfg와 LoRA 구성이었다 → 아래 터보 분기와 sample()의 cfg 참조.
+  // 마스크는 별도 흑백 이미지(흰색 = 다시 그릴 영역) — 알파 채널은 브라우저 premultiply로 손상됨.
   let latent: [string, number]
-  // 인페인트 crop-and-stitch 상태: crop이면 원본 픽셀 좌표, 아니면 null(전체 프레임 폴백).
-  // inpaintMask = 최종 합성용 마스크 노드(crop이면 크롭된 마스크, 아니면 전체 소프트 마스크).
-  let inpaintCrop: { x0: number; y0: number; cw: number; ch: number } | null = null
-  let inpaintMask: [string, number] | null = null
+  let inpaintMask: [string, number] | null = null // 최종 합성용 소프트 마스크
   if (p.mode === 't2i') {
     g['latent'] = {
       class_type: 'EmptyLatentImage',
@@ -96,7 +93,7 @@ export function buildGraph(p: GenerationParams): ApiGraph {
       g['mask_grow'] = { class_type: 'GrowMask', inputs: { mask: ['mask_raw', 0], expand, tapered_corners: true } }
       // 진짜 blob 페더: 코어 FeatherMask는 '이미지 캔버스 테두리'만 페이드해 중앙 blob엔 무효다. blob
       // 가장자리를 실제로 그라디언트화하려면 마스크를 이미지로 바꿔 ImageBlur한 뒤 다시 마스크로 돌린다.
-      // 이 소프트 마스크가 diff-diff의 픽셀별 denoise 강도이자 최종 합성 마스크가 된다.
+      // 이 소프트 마스크가 latent noise_mask이자 최종 합성의 경계가 된다.
       let maskOut: [string, number] = ['mask_grow', 0]
       if (feather > 0) {
         g['mask_fimg'] = { class_type: 'MaskToImage', inputs: { mask: ['mask_grow', 0] } }
@@ -104,47 +101,12 @@ export function buildGraph(p: GenerationParams): ApiGraph {
         g['mask'] = { class_type: 'ImageToMask', inputs: { image: ['mask_blur', 0], channel: 'red' } }
         maskOut = ['mask', 0]
       }
-      // DifferentialDiffusion: 모델을 패치해 noise_mask(그라디언트)를 픽셀별 denoise 임계값으로 해석 →
-      // 페더 가장자리가 약하게만 denoise돼 경계가 매끄럽게 이어진다.
-      g['model_dd'] = { class_type: 'DifferentialDiffusion', inputs: { model } }
-
-      // crop-and-stitch 결정: 마스크 bbox+패딩을 크롭해 ~1MP로 확대(디테일 예산 확보). 확대 여지가
-      // 적거나(작은 이득) 마스크가 프레임의 큰 부분이면 전체 프레임 인페인트로 폴백.
-      let condPixels: [string, number] = ['src_img', 0]
-      let condMask: [string, number] = maskOut
-      const bb = p.maskBbox
-      if (bb) {
-        const pad = expand + feather + Math.max(32, Math.round(0.25 * Math.max(bb.w, bb.h)))
-        const x0 = Math.max(0, bb.x - pad)
-        const y0 = Math.max(0, bb.y - pad)
-        const cw = Math.min(bb.w + 2 * pad, bb.iw - x0)
-        const ch = Math.min(bb.h + 2 * pad, bb.ih - y0)
-        const scale = Math.min(3.0, Math.sqrt(1048576 / (cw * ch)))
-        if (scale >= 1.15 && cw * ch <= 0.75 * bb.iw * bb.ih) {
-          // 업스케일 목표 치수는 16의 배수로 스냅(VAE 8x × Cosmos DiT patch 2) — InpaintModelConditioning
-          // 내부 center-crop을 피해 스티치 좌표가 어긋나지 않게 한다.
-          const W = Math.max(16, Math.round((cw * scale) / 16) * 16)
-          const H = Math.max(16, Math.round((ch * scale) / 16) * 16)
-          g['crop_img'] = { class_type: 'ImageCrop', inputs: { image: ['src_img', 0], width: cw, height: ch, x: x0, y: y0 } }
-          g['crop_mask'] = { class_type: 'CropMask', inputs: { mask: maskOut, x: x0, y: y0, width: cw, height: ch } }
-          g['crop_up'] = { class_type: 'ImageScale', inputs: { image: ['crop_img', 0], upscale_method: 'lanczos', width: W, height: H, crop: 'disabled' } }
-          condPixels = ['crop_up', 0]
-          condMask = ['crop_mask', 0]
-          inpaintCrop = { x0, y0, cw, ch }
-        }
-      }
-      inpaintMask = condMask
-      // noise_mask:true → (크롭된) 소프트 마스크를 latent noise_mask로 설정(diff-diff가 그라디언트로 사용).
-      g['inpaint_cond'] = {
-        class_type: 'InpaintModelConditioning',
-        inputs: {
-          positive: ['pos', 0], negative: ['neg', 0], vae: ['vae', 0],
-          pixels: condPixels, mask: condMask, noise_mask: true,
-        },
-      }
-      posCond = ['inpaint_cond', 0]
-      negCond = ['inpaint_cond', 1]
-      latent = ['inpaint_cond', 2]
+      inpaintMask = maskOut
+      // 원본 전체를 인코딩하고 마스크만 열어 준다 — 마스크 밖 latent는 매 스텝 원본으로 고정되어
+      // 모델이 그림 전체를 보면서 마스크 안만 다시 그린다.
+      g['src_latent'] = { class_type: 'VAEEncode', inputs: { pixels: ['src_img', 0], vae: ['vae', 0] } }
+      g['masked'] = { class_type: 'SetLatentNoiseMask', inputs: { samples: ['src_latent', 0], mask: maskOut } }
+      latent = ['masked', 0]
     } else {
       g['src_latent'] = { class_type: 'VAEEncode', inputs: { pixels: ['src_img', 0], vae: ['vae', 0] } }
       latent = ['src_latent', 0]
@@ -154,9 +116,9 @@ export function buildGraph(p: GenerationParams): ApiGraph {
   // Spectrum이 켜져 있으면 표준 KSampler 대신 올인원 SpectrumKSamplerModGuidance
   // (가속 + Mod Guidance + adaptive SMC-CFG)를 쓴다 — 가속만 할 때의 퀄리티 저하 보정.
   const spec = p.spectrum?.enabled ? p.spectrum : null
-  // pos/neg는 기본 posCond/negCond(인페인트면 조건화 노드 출력). hires 리샘플은 업스케일된
-  // latent라 인페인트 concat 크기와 안 맞으므로 호출부에서 일반 ['pos'/'neg']를 명시로 넘긴다.
-  const sample = (id: string, latentIn: [string, number], denoise: number, steps = p.steps, pos = posCond, neg = negCond, mdl: [string, number] = model) => {
+  const sample = (id: string, latentIn: [string, number], denoise: number, steps = p.steps,
+                  pos: [string, number] = ['pos', 0], neg: [string, number] = ['neg', 0],
+                  mdl: [string, number] = model) => {
     const base: ApiNode['inputs'] = {
       model: mdl,
       positive: pos,
@@ -183,23 +145,11 @@ export function buildGraph(p: GenerationParams): ApiGraph {
       : { class_type: 'KSampler', inputs: base }
   }
   const baseDenoise = p.mode === 'i2i' ? p.i2iDenoise : p.mode === 'inpaint' ? p.inpaintDenoise : 1
-  // 인페인트 base 샘플은 diff-diff로 패치한 모델을 쓴다(그라디언트 마스크 경계 블렌딩). 그 외/hires는 원본 모델.
-  const baseModel: [string, number] = p.mode === 'inpaint' ? ['model_dd', 0] : model
-  sample('sampler', latent, baseDenoise, p.steps, posCond, negCond, baseModel)
+  sample('sampler', latent, baseDenoise)
 
   let image: [string, number]
   const round8 = (n: number) => Math.round(n / 8) * 8
-  if (p.mode === 'inpaint' && inpaintCrop) {
-    // crop-and-stitch: 확대 크롭에서 인페인트한 결과를 원래 크롭 크기로 되돌린 뒤, 소프트 마스크로
-    // 원본의 해당 영역에만 얹는다(마스크 밖 원본은 픽셀 그대로 보존). 이 경로는 hires를 사용하지 않는다.
-    g['decode'] = { class_type: 'VAEDecode', inputs: { samples: ['sampler', 0], vae: ['vae', 0] } }
-    g['crop_down'] = { class_type: 'ImageScale', inputs: { image: ['decode', 0], upscale_method: 'lanczos', width: inpaintCrop.cw, height: inpaintCrop.ch, crop: 'disabled' } }
-    g['inpaint_composite'] = {
-      class_type: 'ImageCompositeMasked',
-      inputs: { destination: ['src_img', 0], source: ['crop_down', 0], x: inpaintCrop.x0, y: inpaintCrop.y0, resize_source: false, mask: inpaintMask! },
-    }
-    image = ['inpaint_composite', 0]
-  } else if (p.hires?.enabled) {
+  if (p.hires?.enabled) {
     // 업스케일 모델로 키운 뒤(모델 고유 배율) 목표 배율(scale × 원본)로 리사이즈 → 재샘플.
     // 2배 모델로 키우고 1.5배로 줄여 KSampler를 돌리면 GPU 부하를 줄일 수 있다.
     if (!p.hires.upscaleModel) {
@@ -254,10 +204,10 @@ export function buildGraph(p: GenerationParams): ApiGraph {
     image = ['decode', 0]
   }
 
-  // 인페인트 전체 프레임 폴백 합성: crop 경로는 위에서 이미 스티치했으므로 제외. 마스크 밖 원본을
-  // 되살려 선명히 유지하고 소프트 마스크 경계만 부드럽게 잇는다. (업스케일 시엔 결과 크기가 원본과
-  // 달라 합성이 불가하고 전체 재샘플이라 이득도 적어 생략 — 기존 동작 유지.)
-  if (p.mode === 'inpaint' && !inpaintCrop && !p.hires?.enabled) {
+  // 인페인트 합성: 마스크 밖은 원본 픽셀을 그대로 되살린다. 결과가 눈에 띄게 달라지진 않지만
+  // (빼고 비교해도 차이 없음) 반복 인페인트에서 손대지 않은 영역이 VAE 왕복으로 조금씩 뭉개지는
+  // 것을 막아 준다. (업스케일 시엔 결과 크기가 원본과 달라 합성이 불가 — 기존 동작 유지.)
+  if (p.mode === 'inpaint' && !p.hires?.enabled) {
     g['inpaint_composite'] = {
       class_type: 'ImageCompositeMasked',
       inputs: { destination: ['src_img', 0], source: image, x: 0, y: 0, resize_source: false, mask: inpaintMask! },

@@ -886,8 +886,10 @@ button.danger:hover { background: #7f1d1d; color: #fff; border-color: #7f1d1d; }
 .setup-head > span { flex: 1; }
 .setup-busy { color: var(--muted); }
 .setup-list { display: flex; flex-direction: column; gap: 4px; }
-.setup-row { display: flex; align-items: center; gap: 10px; }
-.setup-name { width: 240px; flex-shrink: 0; color: var(--fg); }
+.setup-row { display: flex; align-items: flex-start; gap: 10px; }
+.setup-name { width: 300px; flex-shrink: 0; color: var(--fg); }
+/* 용도 한 줄 — 사용자가 무엇을 왜 받는지 알 수 있게 라벨 아래에 붙인다. */
+.setup-purpose { display: block; font-size: 11px; line-height: 1.4; color: var(--fg-dim, #888); }
 .setup-ok { color: #6fcf7f; }
 .setup-miss { color: var(--muted); }
 .setup-err { color: var(--error); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

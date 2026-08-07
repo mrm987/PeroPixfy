@@ -31,6 +31,12 @@ export const ko: Record<string, string> = {
   'denoise': '디노이즈',
   'mask expand': '마스크 확장',
   'mask feather': '마스크 페더',
+  // 셋업 배너 — 모델 용도(분류 태그 수준)
+  'checkpoint': '체크포인트',
+  'text encoder': '텍스트 인코더',
+  'VAE': 'VAE',
+  'upscaler — Upscale option': '업스케일러 — 업스케일 옵션',
+  ' (model missing)': ' (모델 없음)',
   'mod guidance': 'mod guidance',
   'positive': '포지티브',
   'negative': '네거티브',

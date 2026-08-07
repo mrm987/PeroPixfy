@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 import { openOutputFolder, parseViewUrl, thumbUrl, uploadImage } from '../../api/comfy'
 import { useT } from '../../i18n'
 import { MaskEditor } from '../../components/MaskEditor'
-import type { MaskBbox } from '../../workflow/types'
 import { Resizer } from '../../components/Resizer'
 import { SaveStyleModal } from '../../components/SaveStyleModal'
 import { useBatch } from '../../stores/batch'
@@ -261,14 +260,14 @@ export function WorkbenchTab() {
     set({ mode: 'i2i', sourceImage: name, maskImage: undefined }) // 새 소스 → 이전 마스크 제거
   }
 
-  const applyMask = async (blob: Blob, bbox: MaskBbox | null) => {
+  const applyMask = async (blob: Blob) => {
     if (!maskTarget) return
     const stamp = Date.now()
     const [sourceImage, maskImage] = await Promise.all([
       uploadImage(await fetchAsBlob(maskTarget), `peropix_inpaint_src_${stamp}.png`),
       uploadImage(blob, `peropix_inpaint_mask_${stamp}.png`),
     ])
-    set({ mode: 'inpaint', sourceImage, maskImage, maskBbox: bbox ?? undefined })
+    set({ mode: 'inpaint', sourceImage, maskImage })
     setMaskTarget(null)
   }
 

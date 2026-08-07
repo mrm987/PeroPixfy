@@ -298,7 +298,7 @@ export function ParamsPanel({ width, embedded = false, variant, flat = false }: 
                     }} />
                   )}
                   <button className="source-remove" title={t('Remove source image')}
-                    onClick={() => set({ sourceImage: undefined, maskImage: undefined, maskBbox: undefined })}>✕</button>
+                    onClick={() => set({ sourceImage: undefined, maskImage: undefined })}>✕</button>
                 </div>
               ) : (
                 <div className="placeholder">
@@ -635,9 +635,9 @@ export function ParamsPanel({ width, embedded = false, variant, flat = false }: 
       {editMask && params.sourceImage && (
         <MaskEditor imageUrl={sourcePreviewUrl(params.sourceImage)}
           initialMask={params.maskImage ? sourcePreviewUrl(params.maskImage) : undefined}
-          onApply={async (blob, bbox) => {
+          onApply={async (blob) => {
             const name = await uploadImage(blob, `peropix_mask_${Date.now()}.png`)
-            set({ maskImage: name, maskBbox: bbox ?? undefined })
+            set({ maskImage: name })
             setEditMask(false)
           }}
           onClose={() => setEditMask(false)} />

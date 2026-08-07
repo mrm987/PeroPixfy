@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { useT } from '../i18n'
-import type { MaskBbox } from '../workflow/types'
 
 /**
  * 인페인트 마스크 에디터. 칠한 영역을 흰색, 나머지를 검정으로 한 마스크 PNG를
@@ -12,7 +11,7 @@ export function MaskEditor({
 }: {
   imageUrl: string
   initialMask?: string
-  onApply: (blob: Blob, bbox: MaskBbox | null) => void
+  onApply: (blob: Blob) => void
   onClose: () => void
 }) {
   const t = useT()
@@ -143,25 +142,12 @@ export function MaskEditor({
     ctx.fillRect(0, 0, w, h)
     const strokes = maskRef.current.getContext('2d')!.getImageData(0, 0, w, h)
     const o = ctx.getImageData(0, 0, w, h)
-    // 흰(칠한) 픽셀을 흑백으로 굽는 동시에 bounding box를 계산한다 — crop-and-stitch에서 마스크
-    // 영역만 확대 인페인트하기 위한 크롭 좌표(소스 이미지 픽셀 기준)로 쓴다.
-    let minX = w, minY = h, maxX = -1, maxY = -1
+    // 칠한 픽셀(알파>0)을 순백으로 굽는다 — 반투명 없이 완전한 흰색이어야 마스크가 100% 적용된다.
     for (let i = 3; i < strokes.data.length; i += 4) {
-      if (strokes.data[i] > 0) {
-        o.data[i - 3] = o.data[i - 2] = o.data[i - 1] = 255
-        const p = (i - 3) / 4
-        const x = p % w
-        const y = (p / w) | 0
-        if (x < minX) minX = x
-        if (x > maxX) maxX = x
-        if (y < minY) minY = y
-        if (y > maxY) maxY = y
-      }
+      if (strokes.data[i] > 0) o.data[i - 3] = o.data[i - 2] = o.data[i - 1] = 255
     }
     ctx.putImageData(o, 0, 0)
-    const bbox: MaskBbox | null =
-      maxX >= 0 ? { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1, iw: w, ih: h } : null
-    out.toBlob((blob) => blob && onApply(blob, bbox), 'image/png')
+    out.toBlob((blob) => blob && onApply(blob), 'image/png')
   }
 
   const clear = () => {

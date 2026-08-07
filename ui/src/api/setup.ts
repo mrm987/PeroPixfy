@@ -9,6 +9,7 @@ export interface SetupProgress {
 export interface SetupAsset {
   key: string
   label: string
+  purpose: string // 무엇에 쓰이는지 한 줄 — 배너에 라벨 아래로 표시
   required: boolean
   folder: string
   filename: string

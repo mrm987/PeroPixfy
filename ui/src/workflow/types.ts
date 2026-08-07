@@ -6,16 +6,6 @@ export interface LoraEntry {
 
 export type GenMode = 't2i' | 'i2i' | 'inpaint'
 
-// inpaint 마스크의 흰 영역 bounding box. x,y,w,h는 소스 이미지 픽셀 좌표, iw/ih는 소스 이미지 크기.
-export interface MaskBbox {
-  x: number
-  y: number
-  w: number
-  h: number
-  iw: number
-  ih: number
-}
-
 export interface HiresParams {
   enabled: boolean
   // upscale = 순수 업스케일(무샘플링) / resample = 업스케일 후 전체 재샘플 / usdu = 타일 단위 재확산.
@@ -55,9 +45,6 @@ export interface GenerationParams {
   inpaintMaskFeather: number // inpaint: 마스크 가장자리 페더(px) — 경계 전환 부드럽게
   sourceImage?: string // i2i/inpaint: /upload/image 결과 파일명 (input 폴더)
   maskImage?: string // inpaint: 흑백 마스크 (흰색 = 다시 그릴 영역)
-  // inpaint: 마스크의 흰 영역 bounding box(소스 이미지 픽셀 좌표) + 소스 이미지 크기. 마스크를
-  // 그릴 때 계산해 저장 → crop-and-stitch(마스크 영역만 ~1MP로 확대 인페인트)에 사용. 없으면 전체 프레임.
-  maskBbox?: MaskBbox
   hires?: HiresParams
   spectrum?: SpectrumParams
   lut?: { name: string; strength: number } // models/luts의 .cube 색보정 LUT (name 비면 미적용)

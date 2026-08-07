@@ -17,24 +17,30 @@ import folder_paths
 _ANIMA = "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files"
 _KIM = "https://huggingface.co/Kim2091/2x-AnimeSharpV4/resolve/main"
 
+# purpose: 어느 자리에 들어가는 파일인지 짧게. 배너에 라벨 아래로 노출된다 — 설명문이 아니라
+#   분류 태그 수준으로 (아는 사람은 이걸로 충분하고, 모르는 사람은 길게 써도 모른다).
 MANIFEST = [
     {
         "key": "unet", "label": "Anima base (UNet)", "required": True,
+        "purpose": "checkpoint",
         "folder": "diffusion_models", "filename": "anima-base-v1.0.safetensors",
         "url": f"{_ANIMA}/diffusion_models/anima-base-v1.0.safetensors",
     },
     {
         "key": "clip", "label": "Qwen text encoder (CLIP)", "required": True,
+        "purpose": "text encoder",
         "folder": "text_encoders", "filename": "qwen_3_06b_base.safetensors",
         "url": f"{_ANIMA}/text_encoders/qwen_3_06b_base.safetensors",
     },
     {
         "key": "vae", "label": "Qwen image VAE", "required": True,
+        "purpose": "VAE",
         "folder": "vae", "filename": "qwen_image_vae.safetensors",
         "url": f"{_ANIMA}/vae/qwen_image_vae.safetensors",
     },
     {
         "key": "upscale", "label": "2x-AnimeSharpV4 RCAN (hires)", "required": False,
+        "purpose": "upscaler — Upscale option",
         "folder": "upscale_models", "filename": "2x-AnimeSharpV4_RCAN.safetensors",
         "url": f"{_KIM}/2x-AnimeSharpV4_RCAN.safetensors",
     },
@@ -102,6 +108,7 @@ def status():
             prog = dict(_PROGRESS.get(it["key"], {}))
         out.append({
             "key": it["key"], "label": it["label"], "required": it["required"],
+            "purpose": it.get("purpose", ""),
             "folder": it["folder"], "filename": it["filename"],
             "exact": _exact(it), "present": _satisfied(it), "progress": prog,
         })

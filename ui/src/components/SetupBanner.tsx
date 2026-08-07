@@ -78,7 +78,10 @@ export function SetupBanner() {
           const pct = p.total && p.received != null ? Math.floor((p.received / p.total) * 100) : 0
           return (
             <div key={a.key} className="setup-row">
-              <span className="setup-name">{a.label}{a.required ? '' : t(' (optional)')}</span>
+              <span className="setup-name">
+                {a.label}{a.required ? '' : t(' (optional)')}
+                {a.purpose && <span className="setup-purpose">{t(a.purpose)}</span>}
+              </span>
               {a.present ? (
                 <span className="setup-ok">{a.exact ? t('✓ installed') : t('✓ you already have models here')}</span>
               ) : p.status === 'downloading' ? (

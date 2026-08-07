@@ -593,7 +593,8 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => {
       activeWs = WS_DEFAULT_ID
       wsData = {
         [WS_DEFAULT_ID]: {
-          params: (p.params as GenerationParams) ?? ANIMA_DEFAULTS,
+          // 기본값을 먼저 깔고 덮는다 — 예전에 저장된 params에는 나중에 추가된 필드가 없다.
+          params: { ...ANIMA_DEFAULTS, ...((p.params as Partial<GenerationParams>) ?? {}) },
           singleOutput: (p.singleOutput as string) ?? '',
           format: (p.format as WsData['format']) ?? 'png',
           quality: (p.quality as number) ?? 95,
