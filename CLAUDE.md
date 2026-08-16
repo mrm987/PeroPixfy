@@ -4,7 +4,7 @@ ComfyUI 커스텀 노드. 노드 그래프 없이 Anima 모델로 이미지를 �
 
 ## 개발·테스트 — H 드라이브 설치본에 반영
 
-로컬 테스트는 **H 드라이브의 실제 ComfyUI 설치본**에서 한다. dev 저장소(`D:\ClaudeCode\PeroPixComfy`)만 고치면 반영되지 않으므로, 수정 후 **항상 설치본에도 복사한다**:
+로컬 테스트는 **H 드라이브의 실제 ComfyUI 설치본**에서 한다. dev 저장소(`D:\ClaudeCode\PeroPixfy`)만 고치면 반영되지 않으므로, 수정 후 **항상 설치본에도 복사한다**:
 
 ```
 H:\ComfyUI\ComfyUI_windows_portable\ComfyUI\custom_nodes\PeroPixfy
