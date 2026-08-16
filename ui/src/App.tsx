@@ -65,6 +65,8 @@ export default function App() {
     let ws: WebSocket
     let closed = false
     let retryDelay = 1000
+    // 큐 변화(status 브로드캐스트)마다 외부 제출(MCP 등)을 동기화 — 연발하므로 짧게 디바운스.
+    let statusTimer: ReturnType<typeof setTimeout> | undefined
 
     const connect = () => {
       const wb = useWorkbench.getState()
@@ -73,6 +75,10 @@ export default function App() {
         onProgress: (id, v, m) => { wb.onProgress(id, v, m); batch.onProgress(id, v, m) },
         onDone: (id) => { wb.onDone(id); batch.onDone(id) },
         onError: (id) => { wb.onError(id); batch.onError(id) },
+        onStatus: () => {
+          clearTimeout(statusTimer)
+          statusTimer = setTimeout(() => { void useWorkbench.getState().syncExternal() }, 400)
+        },
       })
       ws.onopen = () => { retryDelay = 1000 }
       ws.onclose = () => {

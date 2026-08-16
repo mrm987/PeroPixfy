@@ -204,6 +204,9 @@ export interface SocketHandlers {
   onProgress?: (promptId: string, value: number, max: number) => void
   onDone?: (promptId: string) => void
   onError?: (promptId: string) => void
+  // 'status'는 ComfyUI가 큐 변화(등록·완료)마다 모든 클라이언트에 브로드캐스트한다 —
+  // 다른 클라이언트(MCP 등)가 넣은 작업을 알아챌 유일한 신호 (실행 이벤트는 제출자에게만 간다).
+  onStatus?: () => void
 }
 
 export function openSocket(handlers: SocketHandlers): WebSocket {
@@ -223,6 +226,8 @@ export function openSocket(handlers: SocketHandlers): WebSocket {
       handlers.onDone?.(msg.data.prompt_id as string)
     } else if (msg.type === 'execution_error') {
       handlers.onError?.(msg.data.prompt_id as string)
+    } else if (msg.type === 'status') {
+      handlers.onStatus?.()
     }
   }
   return ws

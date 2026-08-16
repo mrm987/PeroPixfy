@@ -7,6 +7,7 @@ import {
   starGeneration, type GenerationRecord,
 } from '../api/gallery'
 import { fetchSettings } from '../api/settings'
+import { fetchWorkspaces, saveWorkspaces, type WorkspaceRow } from '../api/workspaces'
 import { buildGraph, resolveUpscaleModel } from '../workflow/builder'
 import { insertTriggers } from '../tags/promptTags'
 import { normPath, splitCsv } from '../tags/triggers'
@@ -113,6 +114,7 @@ interface WorkbenchState {
   star: (promptId: string) => Promise<void>
   remove: (promptId: string) => Promise<void>
   reloadHistory: () => Promise<void>
+  syncExternal: () => Promise<void>
   generate: () => Promise<void>
   stop: () => Promise<void>
   clearQueue: () => Promise<void>
@@ -136,11 +138,68 @@ const recordToHistory = (r: GenerationRecord): HistoryItem => ({
 
 const PERSIST_KEY = 'peropix.workbench'
 
+// 서버 원장을 읽기 전에는 저장하지 않는다 — 목록을 모르는 상태로 PUT하면 원장이 기본 하나로
+// 덮인다. (localStorage에 목록을 두던 시절, 다른 설치본이 같은 origin으로 뜨는 것만으로
+// 목록이 통째로 사라졌던 사고가 이 구조의 이유다.)
+let wsSaveReady = false
+
+// 구버전(목록이 localStorage에 있던 시절)에 저장된 목록. 서버 원장이 비어 있을 때 한 번 승격한다.
+const legacyWorkspaces = (): WorkspaceRow[] => {
+  try {
+    const raw = localStorage.getItem(PERSIST_KEY)
+    if (!raw) return []
+    const st = (JSON.parse(raw)?.state ?? {}) as { workspaces?: Workspace[]; wsData?: Record<string, WsData> }
+    return (st.workspaces ?? []).map((w) => ({ id: w.id, name: w.name, data: st.wsData?.[w.id] ?? {} }))
+  } catch {
+    return []
+  }
+}
+
+// 저장용 행 — 활성 워크스페이스는 라이브 필드가 곧 최신 스냅샷이다.
+const wsRows = (s: WorkbenchState): WorkspaceRow[] =>
+  s.workspaces.map((w) => ({
+    id: w.id, name: w.name,
+    data: w.id === s.activeWs ? pickWs(s) : (s.wsData[w.id] ?? defaultWsData(w.name)),
+  }))
+
 export const useWorkbench = create<WorkbenchState>()(persist((set, get) => {
   // 활성 워크스페이스의 기록만 불러온다.
   const loadHistory = async (ws: string): Promise<HistoryItem[]> => {
     const records = await listGenerations(HISTORY_LIMIT, 'single', ws)
     return records.map(recordToHistory)
+  }
+  // 워크스페이스 원장을 서버에서 읽어 상태에 반영한다. 탭 상태(openIds·activeWs)는 브라우저
+  // 것이므로 서버에 없는 id만 솎아낸다. 서버가 비어 있으면 브라우저에 남은 옛 목록을 한 번
+  // 올려 승격시킨다(구버전에서 올라온 설치).
+  const loadWorkspaces = async () => {
+    let rows = await fetchWorkspaces().catch(() => null)
+    if (rows && rows.length === 0) {
+      const legacy = legacyWorkspaces()
+      if (legacy.length) {
+        await saveWorkspaces(legacy).catch(() => {})
+        rows = legacy
+      }
+    }
+    // 서버를 못 읽었으면(null) 기본값으로 계속 쓰되 저장은 하지 않는다 — 목록을 모르는 채로
+    // 저장하면 원장을 기본 하나로 덮어쓴다. 빈 배열(신규 설치)은 정상이므로 저장을 연다.
+    if (!rows) return
+    wsSaveReady = true
+    if (rows.length === 0) return
+    const workspaces = rows.map((r) => ({ id: r.id, name: r.name }))
+    const wsData: Record<string, WsData> = {}
+    for (const r of rows) wsData[r.id] = { ...defaultWsData(r.name), ...(r.data ?? {}) }
+    const s = get()
+    const known = new Set(workspaces.map((w) => w.id))
+    const openIds = s.openIds.filter((id) => known.has(id))
+    if (openIds.length === 0) openIds.push(workspaces[0].id)
+    const activeWs = openIds.includes(s.activeWs) ? s.activeWs : openIds[0]
+    const active = wsData[activeWs]
+    set({
+      workspaces, wsData, openIds, activeWs,
+      ...active,
+      // 재실행 시 i2i/인페인트 소스는 업로드 temp가 사라져 깨지므로 t2i로 초기화(merge와 동일).
+      params: { ...ANIMA_DEFAULTS, ...active.params, mode: 't2i', sourceImage: undefined, maskImage: undefined },
+    })
   }
   // 워크스페이스 활성화 — 현재 것을 스냅샷 저장하고 대상 세팅/히스토리로 전환한다.
   const activate = async (id: string) => {
@@ -202,13 +261,15 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => {
   activeWs: WS_DEFAULT_ID,
   wsData: {},
 
-  // 앱 시작 시: 활성 워크스페이스 기록 복원 + pending 상태 복구 (/history → /queue 순서로 확인).
-  // 서버 저장 기본값은 마지막 작업 상태(localStorage)가 없을 때만 적용.
+  // 앱 시작 시: 워크스페이스 원장을 서버에서 읽고 → 활성 워크스페이스 기록 복원 + pending 상태
+  // 복구 (/history → /queue 순서로 확인). 서버 저장 기본값은 마지막 작업 상태(localStorage)가
+  // 없을 때만 적용.
   init: async () => {
     if (localStorage.getItem(PERSIST_KEY) == null) {
       const saved = await fetchSettings().catch(() => ({}))
       set((s) => ({ params: { ...s.params, ...saved } }))
     }
+    await loadWorkspaces()
     set({ history: await loadHistory(get().activeWs) })
     await recoverPending()
   },
@@ -450,6 +511,21 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => {
     }))
   },
 
+  // 다른 클라이언트(MCP 등)가 이 워크스페이스에 넣은 생성을 라이브 반영한다 — ComfyUI의
+  // 'status' 브로드캐스트(큐 변화)를 계기로 호출. 서버 기록을 다시 읽어 합치되, 이 브라우저가
+  // 방금 제출해 record가 아직 서버에 안 닿은 항목이 있을 수 있으므로 통째로 교체하지 않고
+  // 서버에 없는 로컬 항목은 앞에 남긴다. 외부 작업의 완료 판정은 recoverPending과 동일
+  // (실행 이벤트는 제출한 클라이언트에게만 가므로 WS onDone으로는 못 받는다).
+  syncExternal: async () => {
+    const ws = get().activeWs
+    const records = await listGenerations(HISTORY_LIMIT, 'single', ws).catch(() => null)
+    if (!records || get().activeWs !== ws) return // 읽기 실패·도중 워크스페이스 전환이면 버린다
+    const fetched = records.map(recordToHistory)
+    const have = new Set(fetched.map((h) => h.promptId))
+    set((s) => ({ history: [...s.history.filter((h) => !have.has(h.promptId)), ...fetched] }))
+    await recoverPending()
+  },
+
   generate: async () => {
     const { params, randomizeSeed, availableLoras, availableUpscalers, singleOutput, format, quality } = get()
     // 현재 표시된 시드로 생성한다 (WYSIWYG). randomize 모드면 생성을 제출한 '뒤'에
@@ -572,56 +648,28 @@ export const useWorkbench = create<WorkbenchState>()(persist((set, get) => {
   }
 }, {
   name: PERSIST_KEY,
-  // 워크스페이스 목록/활성 id/스냅샷만 영속. 활성 워크스페이스의 라이브 필드는 wsData[activeWs]로
-  // 항상 반영해 저장한다(별도 최상위 필드로 중복 저장하지 않음).
-  partialize: (s) => ({
-    workspaces: s.workspaces,
-    openIds: s.openIds,
-    activeWs: s.activeWs,
-    wsData: { ...s.wsData, [s.activeWs]: pickWs(s) },
-  }),
+  // localStorage에는 '이 브라우저에서 어떤 탭을 열어 뒀나'만 남긴다. 목록·이름·워크스페이스별
+  // 세팅은 서버 원장(loadWorkspaces/saveWorkspaces)이 가진다 — 날아가도 탭 구성만 초기화된다.
+  partialize: (s) => ({ openIds: s.openIds, activeWs: s.activeWs }),
   merge: (persisted, current) => {
     const p = (persisted ?? {}) as Record<string, unknown>
-    let workspaces = Array.isArray(p.workspaces) && p.workspaces.length ? (p.workspaces as Workspace[]) : null
-    let wsData = (p.wsData && typeof p.wsData === 'object' ? p.wsData : {}) as Record<string, WsData>
-    let activeWs = typeof p.activeWs === 'string' ? p.activeWs : ''
-    let openIds = Array.isArray(p.openIds) ? (p.openIds as string[]) : null
-    if (!workspaces) {
-      // 구버전(워크스페이스 이전): params/singleOutput 등이 최상위에 저장돼 있었다 → 기본
-      // 워크스페이스로 승계한다. (또는 완전 신규 설치 — 기본값으로 채워짐.)
-      workspaces = [{ id: WS_DEFAULT_ID, name: 'Workspace 1' }]
-      activeWs = WS_DEFAULT_ID
-      wsData = {
-        [WS_DEFAULT_ID]: {
-          // 기본값을 먼저 깔고 덮는다 — 예전에 저장된 params에는 나중에 추가된 필드가 없다.
-          params: { ...ANIMA_DEFAULTS, ...((p.params as Partial<GenerationParams>) ?? {}) },
-          singleOutput: (p.singleOutput as string) ?? '',
-          format: (p.format as WsData['format']) ?? 'png',
-          quality: (p.quality as number) ?? 95,
-          randomizeSeed: (p.randomizeSeed as boolean) ?? true,
-          triggerBadges: (p.triggerBadges as boolean) ?? true,
-          triggerOrder: (p.triggerOrder as string[]) ?? [],
-        },
-      }
-    }
-    // openIds가 없거나(구버전) 유효 id가 하나도 없으면 전체를 열린 것으로 본다(기존 동작 보존).
-    // 알려진 워크스페이스만 남기고, 활성 id는 반드시 열려있게 보장한다.
-    const known = new Set(workspaces.map((w) => w.id))
-    openIds = (openIds ?? workspaces.map((w) => w.id)).filter((id) => known.has(id))
-    if (openIds.length === 0) openIds = [workspaces[0].id]
-    if (!openIds.includes(activeWs)) activeWs = openIds[0]
-    const active = wsData[activeWs] ?? defaultWsData()
-    // 재실행(앱/ComfyUI 재시작) 시 i2i/인페인트 소스는 업로드 temp가 사라져 깨지므로 t2i로 초기화.
-    return {
-      ...current,
-      workspaces, openIds, activeWs, wsData,
-      params: { ...ANIMA_DEFAULTS, ...(active.params ?? {}), mode: 't2i', sourceImage: undefined, maskImage: undefined },
-      singleOutput: active.singleOutput ?? '',
-      format: active.format ?? 'png',
-      quality: active.quality ?? 95,
-      randomizeSeed: active.randomizeSeed ?? true,
-      triggerBadges: active.triggerBadges ?? true,
-      triggerOrder: active.triggerOrder ?? [],
-    }
+    const openIds = Array.isArray(p.openIds) && p.openIds.length ? (p.openIds as string[]) : current.openIds
+    const activeWs = typeof p.activeWs === 'string' && openIds.includes(p.activeWs) ? p.activeWs : openIds[0]
+    // 목록·세팅은 init()의 loadWorkspaces()가 서버에서 채운다(여기서는 탭 상태만).
+    return { ...current, openIds, activeWs }
   },
 }))
+
+// 목록·이름·워크스페이스별 세팅이 바뀌면 서버 원장에 반영한다. persist가 localStorage에 하던
+// 일을 그대로 서버로 옮긴 것이라, 호출부를 여기저기 심지 않고 한 곳에서 관찰한다.
+let wsSaveTimer: ReturnType<typeof setTimeout> | undefined
+let wsSaveLast = ''
+useWorkbench.subscribe((s) => {
+  if (!wsSaveReady) return
+  const rows = wsRows(s)
+  const json = JSON.stringify(rows)
+  if (json === wsSaveLast) return
+  wsSaveLast = json
+  clearTimeout(wsSaveTimer)
+  wsSaveTimer = setTimeout(() => { void saveWorkspaces(rows) }, 1000)
+})

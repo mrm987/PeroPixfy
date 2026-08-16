@@ -2,6 +2,7 @@ __pycache__/
 node_modules/
 data/
 node.zip
+_tmp/
 
 .screenshots/
 
