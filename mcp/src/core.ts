@@ -51,9 +51,11 @@ const safeFolder = (name: string) =>
 
 // id 정확 일치 → 이름 정확 일치 → 공백·밑줄·대소문자 무시 일치 순으로 찾는다
 // ("워크스페이스10" ↔ "워크스페이스 10", "workspace 10" ↔ "Workspace_10" 표기 차이 흡수).
+// '워크스페이스'는 workspace의 음역이라 기계적 별칭으로 치환한다 — 사용자가 한국어로 부르고
+// 앱 기본 이름은 영문(Workspace_N)이라, 이 한 쌍만은 코드가 흡수해야 매칭이 된다 (실측 사례).
 export async function resolveWorkspace(nameOrId: string): Promise<WsRow> {
   const rows = await listWorkspaces()
-  const norm = (s: string) => s.replace(/[\s_]+/g, '').toLowerCase()
+  const norm = (s: string) => s.replace(/워크스페이스/g, 'workspace').replace(/[\s_]+/g, '').toLowerCase()
   const found =
     rows.find((r) => r.id === nameOrId) ??
     rows.find((r) => r.name === nameOrId) ??

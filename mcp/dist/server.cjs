@@ -21398,7 +21398,7 @@ async function listWorkspaces() {
 var safeFolder = (name) => name.trim().replace(/[^\w\-가-힣 ]+/g, "").replace(/\s+/g, "_").slice(0, 40) || "ws";
 async function resolveWorkspace(nameOrId) {
   const rows = await listWorkspaces();
-  const norm = (s) => s.replace(/[\s_]+/g, "").toLowerCase();
+  const norm = (s) => s.replace(/워크스페이스/g, "workspace").replace(/[\s_]+/g, "").toLowerCase();
   const found = rows.find((r) => r.id === nameOrId) ?? rows.find((r) => r.name === nameOrId) ?? rows.find((r) => norm(r.name) === norm(nameOrId));
   if (!found) {
     const names = rows.map((r) => `${r.name} (id: ${r.id})`).join(", ");
