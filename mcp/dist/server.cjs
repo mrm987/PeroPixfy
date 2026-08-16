@@ -21431,6 +21431,76 @@ function workspaceState(row) {
     }
   };
 }
+async function fetchStyles() {
+  const res = await api("/peropixfy/api/library/styles/list");
+  return res.styles ?? [];
+}
+async function resolveStyle(nameOrId) {
+  const rows = await fetchStyles();
+  const norm = (s) => s.replace(/[\s_]+/g, "").toLowerCase();
+  const found = rows.find((r) => String(r.id) === nameOrId) ?? rows.find((r) => r.name === nameOrId) ?? rows.find((r) => norm(r.name) === norm(nameOrId));
+  if (!found) {
+    const names = rows.map((r) => `${r.name} (id: ${r.id})`).join(", ");
+    throw new Error(`Style "${nameOrId}" not found. Available: ${names || "(none)"}`);
+  }
+  return found;
+}
+async function listStyles() {
+  const rows = await fetchStyles();
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    ...r.tags ? { tags: r.tags } : {},
+    checkpoint: r.checkpoint,
+    size: `${r.width}x${r.height}`,
+    loras: (r.loras ?? []).filter((l) => l.enabled).map((l) => l.lora_rel_path || l.display_name),
+    nsfw: !!r.nsfw
+  }));
+}
+var baseOf = (s) => s.replace(/\\/g, "/").split("/").pop().replace(/\.(safetensors|ckpt|pt)$/i, "").toLowerCase();
+var stripKey = (s) => s.replace(/\\/g, "/").split("/").pop().replace(/\.(safetensors|ckpt|gguf|sft|pt)$/i, "").replace(/[-_.\s]/g, "").toLowerCase();
+function resolveStyleLoras(st, installed) {
+  const byBase = /* @__PURE__ */ new Map();
+  if (installed) {
+    for (const a of installed) if (!byBase.has(baseOf(a))) byBase.set(baseOf(a), a);
+  }
+  return (st.loras ?? []).map((l) => {
+    const raw = (l.lora_rel_path || l.display_name || "").replace(/\\/g, "/");
+    const relPath = !raw || !installed ? raw : installed.has(raw) ? raw : byBase.get(baseOf(raw)) ?? raw;
+    return { relPath, strength: l.strength, enabled: !!l.enabled };
+  }).filter((l) => l.relPath);
+}
+function styleTriggers(st, positive) {
+  let meta = null;
+  try {
+    meta = st.trigger_meta ? JSON.parse(st.trigger_meta) : null;
+  } catch {
+    meta = null;
+  }
+  const lower = positive.toLowerCase();
+  return (meta?.triggers ?? []).filter((w) => w && !lower.includes(w.toLowerCase()));
+}
+async function styleDetail(nameOrId) {
+  const st = await resolveStyle(nameOrId);
+  const info = await objectInfo("LoraLoaderModelOnly").catch(() => null);
+  const installed = info ? new Set(enumValues(info, "lora_name")) : null;
+  return {
+    id: st.id,
+    name: st.name,
+    ...st.tags ? { tags: st.tags } : {},
+    checkpoint: st.checkpoint,
+    positive_prompt: st.positive_prompt,
+    negative_prompt: st.negative_prompt,
+    trigger_words: styleTriggers(st, ""),
+    loras: resolveStyleLoras(st, installed).map((l) => ({
+      ...l,
+      ...installed ? { installed: installed.has(l.relPath) } : {}
+    })),
+    size: { width: st.width, height: st.height },
+    sampling: { steps: st.steps, cfg: st.cfg, sampler: st.sampler, scheduler: st.scheduler },
+    nsfw: !!st.nsfw
+  };
+}
 var randomSeed = () => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
 var objectInfo = async (cls) => {
   const data = await api(`/object_info/${encodeURIComponent(cls)}`);
@@ -21440,24 +21510,42 @@ async function generate(opts) {
   const row = await resolveWorkspace(opts.workspace);
   const base = wsBaseParams(row);
   const count = Math.max(1, Math.min(20, Math.round(opts.count ?? 1)));
+  const st = opts.style != null ? await resolveStyle(opts.style) : null;
   const loraInfo = await objectInfo("LoraLoaderModelOnly").catch(() => null);
   const installed = loraInfo ? new Set(enumValues(loraInfo, "lora_name")) : null;
-  const skipped = installed ? base.loras.filter((l) => l.enabled && !installed.has(l.relPath)) : [];
-  const upscalers = base.hires?.enabled ? enumValues(await objectInfo("UpscaleModelLoader").catch(() => null), "model_name") : [];
-  const trig = (base.triggers ?? []).filter(Boolean).join(", ");
+  let stylePatch = {};
+  if (st) {
+    const unets = st.checkpoint ? enumValues(await objectInfo("UNETLoader").catch(() => null), "unet_name") : [];
+    const wantUnet = st.checkpoint ? unets.includes(st.checkpoint) ? st.checkpoint : unets.find((u) => stripKey(u) === stripKey(st.checkpoint)) ?? "" : "";
+    stylePatch = {
+      loras: resolveStyleLoras(st, installed),
+      ...wantUnet ? { unet: wantUnet } : {},
+      ...st.width > 0 && st.height > 0 ? { width: st.width, height: st.height } : {},
+      ...st.sampler ? { sampler: st.sampler } : {},
+      ...st.scheduler ? { scheduler: st.scheduler } : {},
+      ...st.steps > 0 ? { steps: st.steps } : {},
+      ...st.cfg > 0 ? { cfg: st.cfg } : {}
+    };
+  }
+  const merged = { ...base, ...stylePatch };
+  const skipped = installed ? merged.loras.filter((l) => l.enabled && !installed.has(l.relPath)) : [];
+  const upscalers = merged.hires?.enabled ? enumValues(await objectInfo("UpscaleModelLoader").catch(() => null), "model_name") : [];
+  const trigWords = st ? styleTriggers(st, opts.positive) : base.triggers ?? [];
+  const trig = trigWords.filter(Boolean).join(", ");
   const common = resolveUpscaleModel({
-    ...base,
+    ...merged,
     positive: opts.positive,
-    negative: opts.negative ?? base.negative,
-    width: opts.width ?? base.width,
-    height: opts.height ?? base.height,
-    steps: opts.steps ?? base.steps,
-    cfg: opts.cfg ?? base.cfg,
+    negative: opts.negative ?? (st?.negative_prompt || merged.negative),
+    triggers: trigWords,
+    width: opts.width ?? merged.width,
+    height: opts.height ?? merged.height,
+    steps: opts.steps ?? merged.steps,
+    cfg: opts.cfg ?? merged.cfg,
     batchSize: 1,
     // 1 job = 1 image — count는 시드만 다른 별도 job으로 나눠 각각 기록을 갖는다
     filenamePrefix: defaultFilenamePrefix("t2i", row.data.singleOutput || `PeroPixfy/Single/${safeFolder(row.name)}`),
     save: { format: row.data.format ?? "png", quality: row.data.quality ?? 95 },
-    ...installed ? { loras: base.loras.filter((l) => !l.enabled || installed.has(l.relPath)) } : {}
+    ...installed ? { loras: merged.loras.filter((l) => !l.enabled || installed.has(l.relPath)) } : {}
   }, upscalers);
   const jobs = [];
   for (let i = 0; i < count; i++) {
@@ -21475,6 +21563,7 @@ async function generate(opts) {
   }
   return {
     workspace: { id: row.id, name: row.name },
+    ...st ? { style: { id: st.id, name: st.name } } : {},
     jobs,
     ...skipped.length ? { skipped_loras_not_installed: skipped.map((l) => l.relPath) } : {}
   };
@@ -21568,11 +21657,37 @@ server.registerTool(
   }
 );
 server.registerTool(
+  "list_styles",
+  { description: "List saved styles from the PeroPixfy library (id, name, tags, checkpoint, size, LoRAs). A style is a reusable look: prompt + LoRA stack + model + sampling settings." },
+  async () => {
+    try {
+      return jsonResult(await listStyles());
+    } catch (e) {
+      return errorResult(e);
+    }
+  }
+);
+server.registerTool(
+  "get_style",
+  {
+    description: "Get a style's full definition: positive/negative prompt, LoRA stack (with installed flags), checkpoint, size, sampling. Read this before generating with the style \u2014 reuse its quality/artist/style blocks in your positive prompt and replace only the character/scene part.",
+    inputSchema: { style: external_exports.string().describe("Style name or id (spacing/case-insensitive match)") }
+  },
+  async ({ style }) => {
+    try {
+      return jsonResult(await styleDetail(style));
+    } catch (e) {
+      return errorResult(e);
+    }
+  }
+);
+server.registerTool(
   "generate",
   {
-    description: "Queue image generation in a PeroPixfy workspace. Uses the workspace's saved setup (model, LoRAs + trigger words, size, steps, cfg, output folder) as the base \u2014 you supply the positive prompt (Danbooru-style tags; the workspace's active LoRA trigger words are appended automatically). Each job renders 1 image with its own seed and appears live in that workspace's queue/history in the app. Returns prompt_ids; poll with get_generation_status.",
+    description: "Queue image generation in a PeroPixfy workspace. Uses the workspace's saved setup (model, LoRAs + trigger words, size, steps, cfg, output folder) as the base \u2014 you supply the positive prompt (Danbooru-style tags; the workspace's active LoRA trigger words are appended automatically). With `style`, that style's LoRAs, checkpoint, size and sampling replace the workspace base (output folder stays the workspace's) \u2014 call get_style first and compose your positive from its prompt. Each job renders 1 image with its own seed and appears live in that workspace's queue/history in the app. Returns prompt_ids; poll with get_generation_status.",
     inputSchema: {
       workspace: external_exports.string().describe("Workspace name or id"),
+      style: external_exports.string().optional().describe("Style name or id from list_styles \u2014 use its LoRAs/model/size/sampling as the base"),
       positive: external_exports.string().describe('Positive prompt (Danbooru-style tags, e.g. "1girl, silver hair, knight armor, ...")'),
       negative: external_exports.string().optional().describe("Negative prompt override (default: workspace's saved negative)"),
       count: external_exports.number().int().min(1).max(20).optional().describe("Number of images to queue (default 1, each with a different seed)"),
