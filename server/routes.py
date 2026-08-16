@@ -657,6 +657,21 @@ async def gallery_rename_folder(request):
     return web.json_response({"ok": True, "moved": moved})
 
 
+@routes.get("/peropixfy/api/workspaces")
+async def workspaces_get(request):
+    """워크스페이스 목록(원장). 비어 있으면 클라이언트가 기본 하나로 시작하거나,
+    옛 localStorage 목록을 올려 보낸다."""
+    return web.json_response({"workspaces": gallery.list_workspaces()})
+
+
+@routes.put("/peropixfy/api/workspaces")
+async def workspaces_put(request):
+    """목록 전체를 클라이언트 상태로 교체. 빈 목록은 gallery 쪽에서 거부한다."""
+    data = await request.json()
+    saved = gallery.replace_workspaces(data.get("workspaces") or [])
+    return web.json_response({"ok": bool(saved), "saved": saved})
+
+
 @routes.post("/peropixfy/api/exists")
 async def files_exist(request):
     """주어진 파일 참조들이 실제로 존재하는지 일괄 확인. 캔버스 진입 시 원본이 외부에서

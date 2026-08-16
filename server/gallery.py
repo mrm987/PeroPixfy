@@ -59,6 +59,82 @@ def init(db_path):
             c.execute(
                 "UPDATE generations SET workspace='default' WHERE source='single' AND (workspace='' OR workspace IS NULL)"
             )
+        # 워크스페이스 원장. 예전엔 목록이 브라우저 localStorage에만 있어서, 브라우저·프로필·
+        # 포트가 바뀌거나 다른 설치본이 같은 origin을 쓰면 목록만 사라지고 기록은 참조할 id를
+        # 잃은 채 남았다. 목록을 기록과 같은 곳에 둔다.
+        fresh = not c.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='workspaces'").fetchone()
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS workspaces (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                data_json TEXT DEFAULT '{}',
+                sort INTEGER DEFAULT 0,
+                created_at REAL
+            )
+        """)
+        if fresh:
+            _seed_workspaces(c)
+
+
+def _seed_workspaces(c):
+    """테이블을 처음 만들 때 기존 single 기록에서 목록을 복원한다 — 기록은 workspace id를
+    들고 있으므로 목록이 없어도 되살릴 수 있다. 이름·저장 폴더는 그 워크스페이스가 마지막으로
+    쓴 filenamePrefix('<폴더>/<mode>')에서 역산한다. 생성 세팅은 복원하지 않는다(기록을
+    불러오면 그대로 재현된다)."""
+    rows = c.execute(
+        "SELECT workspace, params_json, created_at FROM generations "
+        "WHERE source='single' AND COALESCE(workspace,'') != '' ORDER BY created_at"
+    ).fetchall()
+    found = {}
+    for r in rows:
+        try:
+            prefix = json.loads(r["params_json"]).get("filenamePrefix") or ""
+        except Exception:
+            prefix = ""
+        folder = prefix.replace("\\", "/").rsplit("/", 1)[0] if "/" in prefix else ""
+        cur = found.get(r["workspace"])
+        # 폴더는 마지막 기록 기준(이름을 바꿨으면 최신이 맞다), 정렬은 첫 기록 기준.
+        found[r["workspace"]] = (cur[0] if cur else r["created_at"], folder or (cur[1] if cur else ""))
+    for i, (ws_id, (created, folder)) in enumerate(sorted(found.items(), key=lambda kv: kv[1][0])):
+        name = folder.rsplit("/", 1)[-1] if folder else ws_id
+        c.execute(
+            "INSERT INTO workspaces (id, name, data_json, sort, created_at) VALUES (?, ?, ?, ?, ?)",
+            (ws_id, name, json.dumps({"singleOutput": folder}), i, created),
+        )
+
+
+def list_workspaces():
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM workspaces ORDER BY sort, created_at").fetchall()
+    out = []
+    for r in rows:
+        try:
+            data = json.loads(r["data_json"] or "{}")
+        except Exception:
+            data = {}
+        out.append({"id": r["id"], "name": r["name"] or r["id"], "data": data})
+    return out
+
+
+def replace_workspaces(items):
+    """목록 전체를 클라이언트 상태로 맞춘다(추가·이름변경·삭제·순서 반영).
+    ★빈 목록은 거부한다 — 목록을 못 읽은 클라이언트가 빈 상태로 저장해 원장을 날리는 사고를
+    막는 마지막 방어선이다(이 기능이 생긴 이유 자체가 그 사고다)."""
+    if not items:
+        return 0
+    now = time.time()
+    with _conn() as c:
+        keep = [it["id"] for it in items]
+        c.execute(
+            "DELETE FROM workspaces WHERE id NOT IN (%s)" % ",".join("?" * len(keep)), keep)
+        for i, it in enumerate(items):
+            c.execute(
+                "INSERT INTO workspaces (id, name, data_json, sort, created_at) VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET name=excluded.name, data_json=excluded.data_json, sort=excluded.sort",
+                (it["id"], it.get("name") or it["id"], json.dumps(it.get("data") or {}, ensure_ascii=False), i, now),
+            )
+    return len(items)
 
 
 def record(prompt_id, params_json, source="single", workspace=""):
