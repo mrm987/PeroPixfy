@@ -46,7 +46,7 @@ server.registerTool(
 server.registerTool(
   'get_style',
   {
-    description: 'Get a style\'s full definition: positive/negative prompt, LoRA stack (with installed flags), checkpoint, size, sampling. Read this before generating with the style — reuse its quality/artist/style blocks in your positive prompt and replace only the character/scene part.',
+    description: 'Get a style\'s full definition: positive/negative prompt, LoRA stack (with installed flags), checkpoint, size, sampling. Read this before generating with the style — reuse its quality/artist/style blocks in your positive prompt and replace only the character/scene part. A non-empty `trigger_words` means this style was saved with auto trigger words ON: those words already sit in `positive_prompt` but generate inserts them itself, so drop them when you copy the block.',
     inputSchema: { style: z.string().describe('Style name or id (spacing/case-insensitive match)') },
   },
   async ({ style }) => {
@@ -59,7 +59,7 @@ server.registerTool(
 server.registerTool(
   'generate',
   {
-    description: 'Queue image generation in a PeroPixfy workspace. Uses the workspace\'s saved setup (model, LoRAs + trigger words, size, steps, cfg, output folder) as the base — you supply the positive prompt (Danbooru-style tags; the workspace\'s active LoRA trigger words are appended automatically). With `style`, that style\'s LoRAs, checkpoint, size and sampling replace the workspace base (output folder stays the workspace\'s) — call get_style first and compose your positive from its prompt. Each job renders 1 image with its own seed and appears live in that workspace\'s queue/history in the app. Returns prompt_ids; poll with get_generation_status.',
+    description: 'Queue image generation in a PeroPixfy workspace. Uses the workspace\'s saved setup (model, LoRAs + trigger words, size, steps, cfg, output folder) as the base — you supply the positive prompt (Danbooru-style tags; the workspace\'s active LoRA trigger words are inserted for you, at the spot the saved prompt keeps them). With `style`, that style\'s LoRAs, checkpoint, size and sampling replace the workspace base (output folder stays the workspace\'s) — call get_style first and compose your positive from its prompt, but leave out every word listed in its `trigger_words` — those are inserted for you at the same spot the style keeps them (right after its quality/artist block when you reuse it), so you never write `@triggers` yourself — an explicit `@triggers` token is still honoured if you want a different spot. Each job renders 1 image with its own seed and appears live in that workspace\'s queue/history in the app. Returns prompt_ids; poll with get_generation_status.',
     inputSchema: {
       workspace: z.string().describe('Workspace name or id'),
       style: z.string().optional().describe('Style name or id from list_styles — use its LoRAs/model/size/sampling as the base'),
@@ -71,6 +71,12 @@ server.registerTool(
       steps: z.number().int().optional().describe('Steps override'),
       cfg: z.number().optional().describe('CFG override'),
       seed: z.number().int().optional().describe('Fixed seed (job i uses seed+i). Omit for random seeds.'),
+      lora_strengths: z.record(z.number()).optional().describe('Per-job LoRA strength overrides for THIS generation only — the workspace/style setup is not changed. Keys match a LoRA already in the workspace (or in `style` when given) by filename substring, ignoring case, spaces and -_. (e.g. {"body_slider": -0.5}); a key that matches nothing or more than one LoRA is an error listing the candidates. A named LoRA is enabled even if it was off. Cannot add a LoRA that is not in the setup. Applied overrides come back as `lora_overrides`.'),
+      lut: z.object({
+        name: z.string().describe("LUT file name as listed by /peropixfy/api/luts (e.g. 'HasuLUT.cube'). An unknown name is an error listing the available ones."),
+        strength: z.number().min(0).max(1).optional().describe('0 to 1, default 0.8'),
+      }).nullable().optional()
+        .describe("Colour LUT for THIS generation only — the workspace setting is not changed. Omit to keep whatever LUT the workspace has saved (none if it was never turned on in the app), pass null to render without one. Set it explicitly when the look must match earlier images: a workspace with the LUT switched off produces uncorrected colour with no warning."),
     },
   },
   async (args) => {

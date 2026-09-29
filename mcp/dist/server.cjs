@@ -21155,13 +21155,95 @@ function enumValues(info, field) {
   return Array.isArray(cfg?.options) ? cfg.options : [];
 }
 
+// ../ui/src/tags/tagWeight.ts
+function splitWeightTags(text) {
+  const out = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i <= text.length; i++) {
+    const c = text[i];
+    if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") depth = Math.max(0, depth - 1);
+    if (i === text.length || c === "," && depth === 0) {
+      const raw = text.slice(start, i);
+      const lead = raw.length - raw.trimStart().length;
+      const t = raw.trim();
+      if (t) out.push({ text: t, start: start + lead, end: start + lead + t.length });
+      start = i + 1;
+    }
+  }
+  return out;
+}
+
 // ../ui/src/tags/promptTags.ts
 var cleanup = (s) => s.replace(/,\s*,/g, ", ").replace(/^[\s,]+|[\s,]+$/g, "");
 var TOKEN_RE = /@triggers/i;
+function splitLines(tags) {
+  const out = [];
+  for (const t of tags) {
+    if (!t.text.includes("\n") || /[([{]/.test(t.text)) {
+      out.push(t);
+      continue;
+    }
+    let off = 0;
+    for (const piece of t.text.split("\n")) {
+      const lead = piece.length - piece.trimStart().length;
+      const s = piece.trim();
+      if (s) out.push({ text: s, start: t.start + off + lead, end: t.start + off + lead + s.length });
+      off += piece.length + 1;
+    }
+  }
+  return out;
+}
+function tagSpans(text) {
+  return splitLines(splitWeightTags(text));
+}
+function findTagRun(text, isMatch) {
+  const tags = splitLines(splitWeightTags(text));
+  let best = null;
+  for (let i = 0; i < tags.length; i++) {
+    if (!isMatch(tags[i].text)) continue;
+    let j = i;
+    while (j + 1 < tags.length && isMatch(tags[j + 1].text)) j++;
+    if (!best || j - i > best.j - best.i) best = { i, j };
+    i = j;
+  }
+  if (!best) return null;
+  const last = tags[best.j];
+  return {
+    words: tags.slice(best.i, best.j + 1).map((t) => t.text),
+    start: tags[best.i].start,
+    end: last.start + last.text.length
+  };
+}
 function insertTriggers(text, triggers) {
   if (TOKEN_RE.test(text)) return cleanup(text.replace(TOKEN_RE, triggers || ""));
   if (!triggers) return cleanup(text);
   return cleanup(text ? text + ", " + triggers : triggers);
+}
+var NONWS = /[^\s,]/;
+function snapTokenOffset(plain, k) {
+  k = Math.max(0, Math.min(k, plain.length));
+  if (k > 0 && k < plain.length && NONWS.test(plain[k - 1]) && NONWS.test(plain[k])) {
+    let f = k;
+    while (f < plain.length && NONWS.test(plain[f])) f++;
+    let b = k;
+    while (b > 0 && NONWS.test(plain[b - 1])) b--;
+    k = f - k <= k - b ? f : b;
+  }
+  return k;
+}
+function placeTokenAt(plain, k, token = "@triggers") {
+  if (!plain.trim()) return token;
+  k = snapTokenOffset(plain, k);
+  const before = plain.slice(0, k);
+  const after = plain.slice(k);
+  const lineBefore = before.slice(before.lastIndexOf("\n") + 1);
+  const nl = after.indexOf("\n");
+  const lineAfter = nl < 0 ? after : after.slice(0, nl);
+  const left = NONWS.test(lineBefore) && !before.replace(/\s+$/, "").endsWith(",") ? ", " : "";
+  const right = NONWS.test(lineAfter) && !after.replace(/^\s+/, "").startsWith(",") ? ", " : "";
+  return cleanup(before + left + token + right + after);
 }
 
 // ../ui/src/workflow/defaults.ts
@@ -21470,15 +21552,38 @@ function resolveStyleLoras(st, installed) {
     return { relPath, strength: l.strength, enabled: !!l.enabled };
   }).filter((l) => l.relPath);
 }
-function styleTriggers(st, positive) {
-  let meta = null;
+function styleMeta(st) {
   try {
-    meta = st.trigger_meta ? JSON.parse(st.trigger_meta) : null;
+    return st.trigger_meta ? JSON.parse(st.trigger_meta) : null;
   } catch {
-    meta = null;
+    return null;
   }
-  const lower = positive.toLowerCase();
-  return (meta?.triggers ?? []).filter((w) => w && !lower.includes(w.toLowerCase()));
+}
+function styleTriggers(st) {
+  return (styleMeta(st)?.triggers ?? []).filter(Boolean);
+}
+function anchorOffset(positive, anchor, trigWords) {
+  if (!anchor) return 0;
+  let at = anchor.search(/@triggers/i);
+  if (at < 0) {
+    const words = new Set(trigWords.map((w) => w.toLowerCase()));
+    const run = words.size ? findTagRun(anchor, (tag) => words.has(tag.toLowerCase())) : null;
+    if (!run) return 0;
+    at = run.start;
+  }
+  const head = tagSpans(anchor.slice(0, at)).map((t) => t.text.trim().toLowerCase());
+  if (!head.length) return 0;
+  const mine = tagSpans(positive);
+  let k = 0;
+  while (k < head.length && k < mine.length && mine[k].text.trim().toLowerCase() === head[k]) k++;
+  return k ? mine[k - 1].end : 0;
+}
+function buildTemplate(positive, trigWords, anchor) {
+  if (/@triggers/i.test(positive)) return positive;
+  const set = new Set(trigWords.map((w) => w.toLowerCase()));
+  const run = set.size ? findTagRun(positive, (tag) => set.has(tag.toLowerCase())) : null;
+  if (run) return positive.slice(0, run.start) + "@triggers" + positive.slice(run.end);
+  return placeTokenAt(positive, anchorOffset(positive, anchor, trigWords));
 }
 async function styleDetail(nameOrId) {
   const st = await resolveStyle(nameOrId);
@@ -21491,7 +21596,7 @@ async function styleDetail(nameOrId) {
     checkpoint: st.checkpoint,
     positive_prompt: st.positive_prompt,
     negative_prompt: st.negative_prompt,
-    trigger_words: styleTriggers(st, ""),
+    trigger_words: styleTriggers(st),
     loras: resolveStyleLoras(st, installed).map((l) => ({
       ...l,
       ...installed ? { installed: installed.has(l.relPath) } : {}
@@ -21528,19 +21633,53 @@ async function generate(opts) {
     };
   }
   const merged = { ...base, ...stylePatch };
+  const loraOverrides = [];
+  for (const [key, strength] of Object.entries(opts.lora_strengths ?? {})) {
+    if (typeof strength !== "number" || !Number.isFinite(strength)) {
+      throw new Error(`lora_strengths["${key}"] must be a finite number`);
+    }
+    const want = stripKey(key);
+    const hits = merged.loras.filter((l) => stripKey(l.relPath).includes(want));
+    if (hits.length === 0) {
+      const names = merged.loras.map((l) => l.relPath).join(", ");
+      throw new Error(`LoRA "${key}" is not in this ${st ? "style" : "workspace"}. Available: ${names || "(none)"}`);
+    }
+    if (hits.length > 1) {
+      throw new Error(`LoRA "${key}" is ambiguous \u2014 matches: ${hits.map((l) => l.relPath).join(", ")}`);
+    }
+    merged.loras = merged.loras.map(
+      (l) => l === hits[0] ? { ...l, strength, enabled: true } : l
+    );
+    loraOverrides.push({ lora: hits[0].relPath, strength });
+  }
+  if (opts.lut) {
+    const luts = (await api("/peropixfy/api/luts")).luts ?? [];
+    if (luts.length && !luts.includes(opts.lut.name)) {
+      throw new Error(`LUT "${opts.lut.name}" not found. Available: ${luts.join(", ")}`);
+    }
+  }
   const skipped = installed ? merged.loras.filter((l) => l.enabled && !installed.has(l.relPath)) : [];
   const upscalers = merged.hires?.enabled ? enumValues(await objectInfo("UpscaleModelLoader").catch(() => null), "model_name") : [];
-  const trigWords = st ? styleTriggers(st, opts.positive) : base.triggers ?? [];
+  const trigWords = st ? styleTriggers(st) : base.triggers ?? [];
   const trig = trigWords.filter(Boolean).join(", ");
+  const anchorPrompt = st ? styleMeta(st)?.template || st.positive_prompt : base.positive;
+  const positiveTemplate = buildTemplate(opts.positive, trigWords, anchorPrompt);
+  const styleOrder = st ? styleMeta(st)?.order : void 0;
+  const trigOrder = styleOrder?.length ? styleOrder : trigWords.filter(Boolean).map((w) => w.toLowerCase());
   const common = resolveUpscaleModel({
     ...merged,
-    positive: opts.positive,
+    // 삽입할 단어가 있으면 원형(토큰)으로 제출한다 — 빌더가 토큰 자리에 치환하므로 단어가 원래
+    // 있던 자리에 그대로 들어가고, 평문으로 적혀 있던 것과 겹치지 않는다.
+    positive: trig ? positiveTemplate : opts.positive,
     negative: opts.negative ?? (st?.negative_prompt || merged.negative),
     triggers: trigWords,
     width: opts.width ?? merged.width,
     height: opts.height ?? merged.height,
     steps: opts.steps ?? merged.steps,
     cfg: opts.cfg ?? merged.cfg,
+    // 생략하면 워크스페이스에 저장된 LUT 그대로, null 이면 끈다, 객체면 이 작업에만 적용.
+    // 빌더는 name 이 비면 LUT 노드를 넣지 않는다(ui/src/workflow/builder.ts).
+    ...opts.lut !== void 0 ? { lut: opts.lut ? { name: opts.lut.name, strength: opts.lut.strength ?? 0.8 } : void 0 } : {},
     batchSize: 1,
     // 1 job = 1 image — count는 시드만 다른 별도 job으로 나눠 각각 기록을 갖는다
     filenamePrefix: defaultFilenamePrefix("t2i", row.data.singleOutput || `PeroPixfy/Single/${safeFolder(row.name)}`),
@@ -21552,7 +21691,11 @@ async function generate(opts) {
     const seed = opts.seed != null ? opts.seed + i : randomSeed();
     const params = { ...common, seed };
     const res = await post("/prompt", { prompt: buildGraph(params), client_id: "peropixfy-mcp" });
-    const storeParams = { ...params, positive: insertTriggers(params.positive, trig) };
+    const storeParams = {
+      ...params,
+      positive: insertTriggers(params.positive, trig),
+      ...trig ? { positiveTemplate, triggerOrder: trigOrder } : {}
+    };
     await post("/peropixfy/api/gallery/record", {
       prompt_id: res.prompt_id,
       params: storeParams,
@@ -21564,6 +21707,7 @@ async function generate(opts) {
   return {
     workspace: { id: row.id, name: row.name },
     ...st ? { style: { id: st.id, name: st.name } } : {},
+    ...loraOverrides.length ? { lora_overrides: loraOverrides } : {},
     jobs,
     ...skipped.length ? { skipped_loras_not_installed: skipped.map((l) => l.relPath) } : {}
   };
@@ -21670,7 +21814,7 @@ server.registerTool(
 server.registerTool(
   "get_style",
   {
-    description: "Get a style's full definition: positive/negative prompt, LoRA stack (with installed flags), checkpoint, size, sampling. Read this before generating with the style \u2014 reuse its quality/artist/style blocks in your positive prompt and replace only the character/scene part.",
+    description: "Get a style's full definition: positive/negative prompt, LoRA stack (with installed flags), checkpoint, size, sampling. Read this before generating with the style \u2014 reuse its quality/artist/style blocks in your positive prompt and replace only the character/scene part. A non-empty `trigger_words` means this style was saved with auto trigger words ON: those words already sit in `positive_prompt` but generate inserts them itself, so drop them when you copy the block.",
     inputSchema: { style: external_exports.string().describe("Style name or id (spacing/case-insensitive match)") }
   },
   async ({ style }) => {
@@ -21684,7 +21828,7 @@ server.registerTool(
 server.registerTool(
   "generate",
   {
-    description: "Queue image generation in a PeroPixfy workspace. Uses the workspace's saved setup (model, LoRAs + trigger words, size, steps, cfg, output folder) as the base \u2014 you supply the positive prompt (Danbooru-style tags; the workspace's active LoRA trigger words are appended automatically). With `style`, that style's LoRAs, checkpoint, size and sampling replace the workspace base (output folder stays the workspace's) \u2014 call get_style first and compose your positive from its prompt. Each job renders 1 image with its own seed and appears live in that workspace's queue/history in the app. Returns prompt_ids; poll with get_generation_status.",
+    description: "Queue image generation in a PeroPixfy workspace. Uses the workspace's saved setup (model, LoRAs + trigger words, size, steps, cfg, output folder) as the base \u2014 you supply the positive prompt (Danbooru-style tags; the workspace's active LoRA trigger words are inserted for you, at the spot the saved prompt keeps them). With `style`, that style's LoRAs, checkpoint, size and sampling replace the workspace base (output folder stays the workspace's) \u2014 call get_style first and compose your positive from its prompt, but leave out every word listed in its `trigger_words` \u2014 those are inserted for you at the same spot the style keeps them (right after its quality/artist block when you reuse it), so you never write `@triggers` yourself \u2014 an explicit `@triggers` token is still honoured if you want a different spot. Each job renders 1 image with its own seed and appears live in that workspace's queue/history in the app. Returns prompt_ids; poll with get_generation_status.",
     inputSchema: {
       workspace: external_exports.string().describe("Workspace name or id"),
       style: external_exports.string().optional().describe("Style name or id from list_styles \u2014 use its LoRAs/model/size/sampling as the base"),
@@ -21695,7 +21839,12 @@ server.registerTool(
       height: external_exports.number().int().optional().describe("Height override (default: workspace setting)"),
       steps: external_exports.number().int().optional().describe("Steps override"),
       cfg: external_exports.number().optional().describe("CFG override"),
-      seed: external_exports.number().int().optional().describe("Fixed seed (job i uses seed+i). Omit for random seeds.")
+      seed: external_exports.number().int().optional().describe("Fixed seed (job i uses seed+i). Omit for random seeds."),
+      lora_strengths: external_exports.record(external_exports.number()).optional().describe('Per-job LoRA strength overrides for THIS generation only \u2014 the workspace/style setup is not changed. Keys match a LoRA already in the workspace (or in `style` when given) by filename substring, ignoring case, spaces and -_. (e.g. {"body_slider": -0.5}); a key that matches nothing or more than one LoRA is an error listing the candidates. A named LoRA is enabled even if it was off. Cannot add a LoRA that is not in the setup. Applied overrides come back as `lora_overrides`.'),
+      lut: external_exports.object({
+        name: external_exports.string().describe("LUT file name as listed by /peropixfy/api/luts (e.g. 'HasuLUT.cube'). An unknown name is an error listing the available ones."),
+        strength: external_exports.number().min(0).max(1).optional().describe("0 to 1, default 0.8")
+      }).nullable().optional().describe("Colour LUT for THIS generation only \u2014 the workspace setting is not changed. Omit to keep whatever LUT the workspace has saved (none if it was never turned on in the app), pass null to render without one. Set it explicitly when the look must match earlier images: a workspace with the LUT switched off produces uncorrected colour with no warning.")
     }
   },
   async (args) => {

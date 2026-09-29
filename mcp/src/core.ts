@@ -3,7 +3,7 @@
 // 한다 — 그래프 로직의 정본은 하나다. 제출·기록 순서도 앱의 generate()(stores/workbench.ts)와
 // 동일: /prompt 제출 → gallery/record(workspace 귀속) → 완료 시 gallery/complete.
 import { enumValues, type NodeObjectInfo, type OutputImage } from '../../ui/src/api/comfy'
-import { insertTriggers } from '../../ui/src/tags/promptTags'
+import { findTagRun, insertTriggers, placeTokenAt, tagSpans } from '../../ui/src/tags/promptTags'
 import { buildGraph, resolveUpscaleModel } from '../../ui/src/workflow/builder'
 import { ANIMA_DEFAULTS, defaultFilenamePrefix } from '../../ui/src/workflow/defaults'
 import type { GenerationParams } from '../../ui/src/workflow/types'
@@ -179,13 +179,53 @@ function resolveStyleLoras(st: StyleRecord, installed: Set<string> | null) {
     .filter((l) => l.relPath)
 }
 
-// 스타일 스냅샷(trigger_meta)의 트리거워드 중, 제출 프롬프트에 이미 들어 있지 않은 것만.
-// (에이전트가 스타일 프롬프트를 그대로 참고해 트리거워드까지 옮겨 적었으면 중복을 피한다.)
-function styleTriggers(st: StyleRecord, positive: string): string[] {
-  let meta: { triggers?: string[] } | null = null
-  try { meta = st.trigger_meta ? JSON.parse(st.trigger_meta) : null } catch { meta = null }
-  const lower = positive.toLowerCase()
-  return (meta?.triggers ?? []).filter((w) => w && !lower.includes(w.toLowerCase()))
+// 스타일 스냅샷(trigger_meta) 파싱 — 자동 트리거워드로 생성한 스타일만 이 필드를 갖는다.
+function styleMeta(st: StyleRecord): { template?: string; triggers?: string[]; order?: string[] } | null {
+  try { return st.trigger_meta ? JSON.parse(st.trigger_meta) : null } catch { return null }
+}
+
+// 스타일 스냅샷의 트리거워드 — 스냅샷이 있으면 그대로가 정본이다.
+// ★"제출 프롬프트에 이미 있으면 뺀다"는 문자열 대조를 하지 않는다. 에이전트가 스타일 프롬프트를
+// 참고하며 트리거워드까지 옮겨 적으면 전부 '중복'으로 걸러져 기능이 통째로 꺼졌고(실측), 기록도
+// 칩 없이 남았다. 중복은 아래 buildTemplate이 '그 자리를 @triggers 토큰으로 바꿔' 없앤다.
+function styleTriggers(st: StyleRecord): string[] {
+  return (styleMeta(st)?.triggers ?? []).filter(Boolean)
+}
+
+// 기준 프롬프트(스타일의 저장 template · 워크스페이스의 positive)가 @triggers 를 둔 자리를 제출
+// 프롬프트에서 찾는다. 기준의 '토큰 앞 구간'과 제출 프롬프트를 앞에서부터 태그 단위로 맞춰 보고,
+// 일치가 끊기는 지점을 돌려준다 — 도구 설명대로 스타일의 퀄리티·화가 블록을 재사용했다면 정확히
+// 그 자리다. 겹치는 선두가 없으면 맨 앞(0)에 둔다.
+// ★끝에 붙이지 않는다 (2026-08-28 사용자 지적·같은 시드 대조): 트리거를 맨 뒤로 보내면 화가·스타일
+//   단어가 뒤로 밀려 같은 시드에서도 그림이 달라졌다.
+function anchorOffset(positive: string, anchor: string | undefined, trigWords: string[]): number {
+  if (!anchor) return 0
+  // 기준이 토큰형이 아니라 트리거워드를 평문으로 갖고 있으면(워크스페이스 프롬프트가 그럴 수 있다)
+  // 그 구간의 시작을 토큰 자리로 본다.
+  let at = anchor.search(/@triggers/i)
+  if (at < 0) {
+    const words = new Set(trigWords.map((w) => w.toLowerCase()))
+    const run = words.size ? findTagRun(anchor, (tag) => words.has(tag.toLowerCase())) : null
+    if (!run) return 0
+    at = run.start
+  }
+  const head = tagSpans(anchor.slice(0, at)).map((t) => t.text.trim().toLowerCase())
+  if (!head.length) return 0
+  const mine = tagSpans(positive)
+  let k = 0
+  while (k < head.length && k < mine.length && mine[k].text.trim().toLowerCase() === head[k]) k++
+  return k ? mine[k - 1].end : 0
+}
+
+// 제출 프롬프트를 원형(@triggers 토큰이 든 template)으로 만든다. 이미 토큰이 있으면 그대로,
+// 트리거워드가 평문으로 박혀 있으면 그 구간을 토큰으로 치환(자리 보존), 둘 다 없으면 기준
+// 프롬프트가 토큰을 두었던 자리에 끼운다(anchorOffset).
+export function buildTemplate(positive: string, trigWords: string[], anchor?: string): string {
+  if (/@triggers/i.test(positive)) return positive
+  const set = new Set(trigWords.map((w) => w.toLowerCase()))
+  const run = set.size ? findTagRun(positive, (tag) => set.has(tag.toLowerCase())) : null
+  if (run) return positive.slice(0, run.start) + '@triggers' + positive.slice(run.end)
+  return placeTokenAt(positive, anchorOffset(positive, anchor, trigWords))
 }
 
 // get_style용 상세 — 프롬프트 전문 + 각 로라의 설치 여부까지.
@@ -200,7 +240,7 @@ export async function styleDetail(nameOrId: string) {
     checkpoint: st.checkpoint,
     positive_prompt: st.positive_prompt,
     negative_prompt: st.negative_prompt,
-    trigger_words: styleTriggers(st, ''),
+    trigger_words: styleTriggers(st),
     loras: resolveStyleLoras(st, installed).map((l) => ({
       ...l, ...(installed ? { installed: installed.has(l.relPath) } : {}),
     })),
@@ -223,6 +263,8 @@ export interface GenerateOptions {
   steps?: number
   cfg?: number
   seed?: number
+  lora_strengths?: Record<string, number>
+  lut?: { name: string; strength?: number } | null
 }
 
 const randomSeed = () => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
@@ -265,6 +307,38 @@ export async function generate(opts: GenerateOptions) {
   }
   const merged: GenerationParams = { ...base, ...stylePatch }
 
+  // 이 작업에만 적용할 LoRA 강도 덮어쓰기. 키는 파일명 일부(공백·기호·대소문자 무시)로
+  // 워크스페이스(스타일 지정 시 스타일)의 로라 목록에서 찾는다 — 목록에 없는 로라를 새로
+  // 끼우지는 않는다(설치 확인·트리거 처리가 딸려온다). 명시한 로라는 꺼져 있어도 켠다.
+  const loraOverrides: { lora: string; strength: number }[] = []
+  for (const [key, strength] of Object.entries(opts.lora_strengths ?? {})) {
+    if (typeof strength !== 'number' || !Number.isFinite(strength)) {
+      throw new Error(`lora_strengths["${key}"] must be a finite number`)
+    }
+    const want = stripKey(key)
+    const hits = merged.loras.filter((l) => stripKey(l.relPath).includes(want))
+    if (hits.length === 0) {
+      const names = merged.loras.map((l) => l.relPath).join(', ')
+      throw new Error(`LoRA "${key}" is not in this ${st ? 'style' : 'workspace'}. Available: ${names || '(none)'}`)
+    }
+    if (hits.length > 1) {
+      throw new Error(`LoRA "${key}" is ambiguous — matches: ${hits.map((l) => l.relPath).join(', ')}`)
+    }
+    merged.loras = merged.loras.map((l) =>
+      l === hits[0] ? { ...l, strength, enabled: true } : l,
+    )
+    loraOverrides.push({ lora: hits[0].relPath, strength })
+  }
+
+  // LUT 이름은 노드가 자유 문자열로 받아(enum이 아니다) 오타를 걸러 주는 곳이 없다 —
+  // 틀리면 색보정 없이 조용히 생성되므로 목록과 대조한다 (LoRA 처리와 같은 결).
+  if (opts.lut) {
+    const luts = (await api<{ luts?: string[] }>('/peropixfy/api/luts')).luts ?? []
+    if (luts.length && !luts.includes(opts.lut.name)) {
+      throw new Error(`LUT "${opts.lut.name}" not found. Available: ${luts.join(', ')}`)
+    }
+  }
+
   // 설치되지 않은 LoRA는 그래프에서 제외 — 앱의 generate()와 같은 보정(400 방지). 업스케일
   // 모델도 hires가 켜져 있으면 설치 목록에 맞춰 준다.
   const skipped = installed ? merged.loras.filter((l) => l.enabled && !installed.has(l.relPath)) : []
@@ -273,19 +347,33 @@ export async function generate(opts: GenerateOptions) {
     : []
 
   // 트리거워드: 워크스페이스 기반이면 워크스페이스의 활성 트리거, 스타일 기반이면 스타일
-  // 스냅샷(trigger_meta)에서 프롬프트에 아직 없는 것만 (로라가 스타일 것으로 바뀌므로
-  // 워크스페이스 트리거를 붙이면 엉뚱한 로라의 단어가 들어간다).
-  const trigWords = st ? styleTriggers(st, opts.positive) : (base.triggers ?? [])
+  // 스냅샷(trigger_meta) 그대로 (로라가 스타일 것으로 바뀌므로 워크스페이스 트리거를 붙이면
+  // 엉뚱한 로라의 단어가 들어간다).
+  const trigWords = st ? styleTriggers(st) : (base.triggers ?? [])
   const trig = trigWords.filter(Boolean).join(', ')
+  // 앱이 자동 트리거워드 ON으로 생성했을 때와 같은 기록을 남기기 위한 원형. 에이전트가 단어를
+  // 평문으로 적어 보냈으면 그 구간이 토큰으로 바뀌므로 자리도 그대로고 중복도 생기지 않는다.
+  // 토큰도 단어도 없으면 기준 프롬프트(스타일 template · 워크스페이스 positive)의 자리를 따른다.
+  const anchorPrompt = st ? (styleMeta(st)?.template || st.positive_prompt) : base.positive
+  const positiveTemplate = buildTemplate(opts.positive, trigWords, anchorPrompt)
+  const styleOrder = st ? styleMeta(st)?.order : undefined
+  const trigOrder = styleOrder?.length ? styleOrder : trigWords.filter(Boolean).map((w) => w.toLowerCase())
   const common: GenerationParams = resolveUpscaleModel({
     ...merged,
-    positive: opts.positive,
+    // 삽입할 단어가 있으면 원형(토큰)으로 제출한다 — 빌더가 토큰 자리에 치환하므로 단어가 원래
+    // 있던 자리에 그대로 들어가고, 평문으로 적혀 있던 것과 겹치지 않는다.
+    positive: trig ? positiveTemplate : opts.positive,
     negative: opts.negative ?? (st?.negative_prompt || merged.negative),
     triggers: trigWords,
     width: opts.width ?? merged.width,
     height: opts.height ?? merged.height,
     steps: opts.steps ?? merged.steps,
     cfg: opts.cfg ?? merged.cfg,
+    // 생략하면 워크스페이스에 저장된 LUT 그대로, null 이면 끈다, 객체면 이 작업에만 적용.
+    // 빌더는 name 이 비면 LUT 노드를 넣지 않는다(ui/src/workflow/builder.ts).
+    ...(opts.lut !== undefined
+      ? { lut: opts.lut ? { name: opts.lut.name, strength: opts.lut.strength ?? 0.8 } : undefined }
+      : {}),
     batchSize: 1, // 1 job = 1 image — count는 시드만 다른 별도 job으로 나눠 각각 기록을 갖는다
     filenamePrefix: defaultFilenamePrefix('t2i', row.data.singleOutput || `PeroPixfy/Single/${safeFolder(row.name)}`),
     save: { format: row.data.format ?? 'png', quality: row.data.quality ?? 95 },
@@ -297,8 +385,15 @@ export async function generate(opts: GenerateOptions) {
     const seed = opts.seed != null ? opts.seed + i : randomSeed()
     const params: GenerationParams = { ...common, seed }
     const res = await post<{ prompt_id: string }>('/prompt', { prompt: buildGraph(params), client_id: 'peropixfy-mcp' })
-    // 기록에는 앱과 동일하게 트리거워드를 치환해 넣는다(불러오기·참고용 평문).
-    const storeParams = { ...params, positive: insertTriggers(params.positive, trig) }
+    // 기록에는 앱과 동일하게 트리거워드를 치환해 넣는다(불러오기·참고용 평문). 트리거워드가
+    // 삽입된 생성이면 positiveTemplate·triggerOrder도 함께 — 앱의 restore()가 이 기록을
+    // 자동 트리거워드 ON 상태(칩)로 복원한다. 삽입할 단어가 없으면 넣지 않는다(복원할 것이
+    // 없는데 토큰형으로 남기면, 불러올 때 로라 트리거 전역 on/off까지 빈 집합으로 덮는다).
+    const storeParams = {
+      ...params,
+      positive: insertTriggers(params.positive, trig),
+      ...(trig ? { positiveTemplate, triggerOrder: trigOrder } : {}),
+    }
     await post('/peropixfy/api/gallery/record', {
       prompt_id: res.prompt_id, params: storeParams, source: 'single', workspace: row.id,
     })
@@ -308,6 +403,7 @@ export async function generate(opts: GenerateOptions) {
   return {
     workspace: { id: row.id, name: row.name },
     ...(st ? { style: { id: st.id, name: st.name } } : {}),
+    ...(loraOverrides.length ? { lora_overrides: loraOverrides } : {}),
     jobs,
     ...(skipped.length ? { skipped_loras_not_installed: skipped.map((l) => l.relPath) } : {}),
   }
