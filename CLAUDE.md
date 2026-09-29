@@ -44,7 +44,7 @@ GET /object_info/<NodeName>
 
 https://registry.comfy.org/publishers/mrm987/nodes/peropixfy
 
-현재 버전은 `pyproject.toml`의 `version`이 정본이다 — 이 문서에 숫자를 적어 두지 말 것(릴리스마다 어긋난다).
+현재 버전은 `pyproject.toml`의 `version`이 기준값이다 — 이 문서에 숫자를 적어 두지 말 것(릴리스마다 어긋난다).
 게시 이력은 위 레지스트리 페이지와 Actions 탭에서 본다.
 
 ### 릴리스 절차
