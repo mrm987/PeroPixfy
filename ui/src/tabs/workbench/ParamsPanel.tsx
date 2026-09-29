@@ -5,7 +5,7 @@ import { MaskEditor } from '../../components/MaskEditor'
 import { Field, NumberField, SelectField } from '../../components/controls'
 import { Section } from '../../components/Section'
 import { WildcardModal } from '../../components/WildcardModal'
-import { activeCharOf, activeTabOf, SLOT_RE, useBatch, withSlotToken, type ImageFormat } from '../../stores/batch'
+import { activeCharOf, activeTabOf, insertSlotPrompt, SLOT_RE, useBatch, withSlotToken, type ImageFormat } from '../../stores/batch'
 import { useUi } from '../../stores/ui'
 import { useWorkbench } from '../../stores/workbench'
 import { TagAutocompleteTextarea } from '../../tags/TagAutocompleteTextarea'
@@ -153,13 +153,19 @@ export function ParamsPanel({ width, embedded = false, variant, flat = false }: 
   const negativeValue = nvActive === 'all' ? params.negative : negOverrides[nvActive]
   const setNegative = (v: string) => { if (nvActive === 'all') set({ negative: v }); else setNegOverride(nvActive, v) }
 
-  // Multi Base: 편집 대상 변형에 @slot 토큰(슬롯 프롬프트 삽입 자리 칩)을 보장한다.
-  // 마운트/변형·캐릭터 전환 시에만 — 타이핑 중 되살리진 않는다(토큰 없으면 생성 시 끝에 삽입).
+  // Multi Base: 이 캐릭터의 열린 탭에 내용이 있는 슬롯 프롬프트가 하나라도 있을 때만 @slot 칩을 쓴다.
+  // 없으면 칩이 가리킬 것이 없으므로 숨긴다(트리거도 off면 일반 textarea).
+  const slotChip = useBatch((s) => embedded && s.tabs.some((tb) =>
+    tb.charId === s.activeCharId && !tb.closed && tb.slots.some((sl) => (sl.prompt ?? '').trim())))
+  // 편집 대상 변형의 @slot 토큰을 칩 표시 여부에 맞춘다 — 쓰면 보장, 안 쓰면 제거(생성 시 빈 슬롯과
+  // 같은 정리). 마운트/변형·캐릭터 전환·표시 여부 변경 시에만 — 타이핑 중 되살리진 않는다(토큰 없으면 생성 시 끝에 삽입).
   useEffect(() => {
     if (!embedded || variant === 'params') return
-    if (!SLOT_RE.test(positiveValue)) setPositive(withSlotToken(positiveValue))
+    const has = SLOT_RE.test(positiveValue)
+    if (slotChip && !has) setPositive(withSlotToken(positiveValue))
+    else if (!slotChip && has) setPositive(insertSlotPrompt(positiveValue, ''))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [embedded, pvActive, activeCharId])
+  }, [embedded, pvActive, activeCharId, slotChip])
   // USDU 노드 원클릭 설치 상태
   const [usduInstall, setUsduInstall] = useState<'idle' | 'installing' | 'done' | 'error'>('idle')
   const [usduInstallErr, setUsduInstallErr] = useState('')
@@ -388,11 +394,11 @@ export function ParamsPanel({ width, embedded = false, variant, flat = false }: 
               onRemove={(f) => { removePosOverride(f); if (posVariant === f) setPosVariant('all') }}
               onAdd={(f) => { setPosOverride(f, positiveValue); setPosVariant(f) }} />
           )}
-          {/* 칩 에디터: 트리거 관리 on이면 @triggers 칩, Multi Base면 @slot 칩(트리거 off여도 유지).
-              둘 다 아니면(Single + 트리거 off) 일반 자동완성 textarea. */}
-          {triggerBadges || embedded ? (
+          {/* 칩 에디터: 트리거 관리 on이면 @triggers 칩, Multi Base에 슬롯 프롬프트가 있으면 @slot 칩
+              (트리거 off여도). 둘 다 아니면 일반 자동완성 textarea. */}
+          {triggerBadges || slotChip ? (
             <PromptEditor value={positiveValue} placeholder={t('positive')} triggers={params.triggers ?? []}
-              trigChip={triggerBadges} slotChip={embedded}
+              trigChip={triggerBadges} slotChip={slotChip}
               style={{ height: promptH ?? undefined }}
               onMouseUp={(e) => { const h = e.currentTarget.offsetHeight; if (h && h !== promptH) setPref({ promptH: h }) }}
               onChange={setPositive} />

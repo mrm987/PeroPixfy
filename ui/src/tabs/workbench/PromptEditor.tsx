@@ -787,6 +787,10 @@ export function PromptEditor({ value, onChange, placeholder, style, onMouseUp, t
           setTimeout(() => setOpen(false), 150)
           // 포커스가 떠나면 프롬프트란의 텍스트 선택 하이라이트를 해제 — 다른 곳(생성 버튼·이미지 등)
           // 으로 포커스가 넘어간 뒤 Delete가 선택 이미지에 적용될 때 헷갈리지 않도록.
+          // ★창·탭 전환(다른 앱에서 복사해 오기 등)은 제외 — 이때는 문서만 포커스를 잃고 포커스 요소는
+          // 이 에디터 그대로다. 여기서 선택을 지우면 캐럿이 사라져, 돌아와 붙여넣기·타이핑하면 맨 앞에
+          // 들어가고(보이지 않는 곳) Ctrl+Z도 그걸 되돌려 둘 다 안 먹는 것처럼 보였다.
+          if (document.activeElement === ref.current) return
           const s = window.getSelection()
           if (s && ref.current && s.anchorNode && ref.current.contains(s.anchorNode)) s.removeAllRanges()
         }}
