@@ -35,9 +35,12 @@ export function SaveStyleModal({ item, onClose }: { item: HistoryItem; onClose: 
         height: p.height,
         loras: p.loras.map((l) => ({ lora_rel_path: l.relPath, strength: l.strength, enabled: l.enabled })),
         image: item.imageUrls[0] ? parseViewUrl(item.imageUrls[0]) : undefined,
-        // 트리거 관리로 생성된 기록이면 뱃지 상태(on 단어 + 전체 순서)도 저장 — 적용 시 복원.
+        // 트리거 관리로 생성된 기록이면 원형(@triggers 토큰이 든 template)과 뱃지 상태(on 단어 +
+        // 전체 순서)를 저장 — 적용 시 그대로 복원한다. ★template이 칩 자리의 정본이다. 이게 없던
+        // 시절엔 적용할 때 평문에서 트리거워드 구간을 되찾아야 했고(findTagRun), 그 추측이 어긋나면
+        // 칩이 엉뚱한 자리에 붙었다.
         ...(/@triggers/i.test(p.positiveTemplate ?? '')
-          ? { trigger_meta: JSON.stringify({ triggers: p.triggers ?? [], order: p.triggerOrder ?? [] }) }
+          ? { trigger_meta: JSON.stringify({ template: p.positiveTemplate, triggers: p.triggers ?? [], order: p.triggerOrder ?? [] }) }
           : {}),
       })
       if (!res.ok) throw new Error(String(res.error ?? 'Save failed'))

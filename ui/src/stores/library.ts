@@ -203,6 +203,7 @@ export const useLibrary = create<LibraryState>()(persist((set, get) => {
       const patch = {
         positive: style.positive_prompt,
         negative: style.negative_prompt,
+        triggers: [] as string[], // 자동 트리거워드 복원 시 아래에서 채움 — 아니면 평문이므로 비움
         loras,
         ...(wantUnet ? { unet: wantUnet } : {}),
         ...(style.width > 0 && style.height > 0 ? { width: style.width, height: style.height } : {}),
@@ -212,42 +213,56 @@ export const useLibrary = create<LibraryState>()(persist((set, get) => {
         ...(style.cfg > 0 ? { cfg: style.cfg } : {}),
         ...(style.seed > 0 ? { seed: style.seed } : {}),
       }
-      // Multi 탭에 있으면 현재 캐릭터 base에, 아니면 작업대(workbench)에 적용한다.
-      if (useUi.getState().tab === 'batch') {
-        useBatch.getState().setCharBase(patch) // Multi base는 평문(칩 미사용)
-      } else {
-        // Single에서 자동 트리거워드가 켜져 있으면, 스타일에 박힌 실제 트리거워드 자리를
-        // @triggers 칩으로 되돌린다(빌더가 그 자리에 다시 넣으므로 중복되지 않는다).
-        if (wb.triggerBadges) {
-          // 칩 자리는 저장된 프롬프트에서 직접 찾는다 — 이 스타일 로라들이 제공하는 트리거워드만
-          // 연속으로 이어진 최장 구간이 곧 @triggers가 있던 자리다. (전역 triggerOrder는 활성
-          // 로라 기준으로 계속 정리되므로, 순서를 이어붙여 찾는 방식은 신뢰할 수 없다.)
+      // 자동 트리거워드로 생성한 스타일인가는 trigger_meta 유무가 정한다 — SaveStyleModal이
+      // @triggers 토큰형 기록에만 저장하므로, 이 필드가 곧 "생성 시점에 기능이 켜져 있었다"다.
+      // 적용은 현재 토글 상태가 아니라 이 기록을 따라 생성 시점 그대로 복원한다(Single·Multi 공통).
+      // 없으면(off로 생성했거나 기능 도입 전 구 스타일) 평문 그대로 + 토글 off — restore()와 같은 규칙.
+      let meta: { template?: string; triggers?: string[]; order?: string[] } | null = null
+      try { meta = style.trigger_meta ? JSON.parse(style.trigger_meta) : null } catch { meta = null }
+      let restoredOrder: string[] = []
+      if (meta) {
+        const trigWords = (meta.triggers ?? []).filter(Boolean)
+        restoredOrder = meta.order?.length ? meta.order : trigWords.map((w) => w.toLowerCase())
+        // 저장 시점의 트리거 on/off를 로라 라이브러리(disabled_triggers)에 복원한다 — 안 그러면
+        // TriggerBadges가 '현재' 전역 상태로 triggers를 다시 계산해 덮어써 결과가 달라진다.
+        // trigWords가 비어 있어도 돈다 — 전부 꺼서 생성한 기록은 전부 꺼진 상태로 복원.
+        const want = new Set(trigWords.map((w) => w.toLowerCase()))
+        for (const le of loras) {
+          if (!le.enabled) continue
+          const rec = get().loras.find((l) => normPath(l.rel_path) === normPath(le.relPath))
+          if (!rec) continue
+          const off = new Set(splitCsv(rec.disabled_triggers).map((w) => w.toLowerCase()))
+          for (const w of splitCsv(rec.trigger_words)) {
+            const k = w.toLowerCase()
+            const shouldOn = want.has(k)
+            if (shouldOn !== !off.has(k)) void get().toggleTriggerDisabled(rec.rel_path, k, !shouldOn)
+          }
+        }
+        // 칩 자리는 저장된 원형(template)이 정본이다 — 검색이 필요 없다.
+        if (meta.template && /@triggers/i.test(meta.template)) {
+          patch.positive = meta.template
+        } else {
+          // template을 갖지 않는 구 스타일만: 저장된 평문에서 자리를 되찾는다. 이 스타일 로라들이
+          // 제공하는 트리거워드만 연속으로 이어진 최장 구간이 곧 @triggers가 있던 자리다.
+          // (전역 triggerOrder는 활성 로라 기준으로 계속 정리되므로 순서로 찾는 방식은 못 쓴다.)
           const known = collectTriggers(loras, get().loras, []).info
           const run = findTagRun(style.positive_prompt, (tag) => known.has(tag.toLowerCase()))
-          // on/off·순서는 스타일의 스냅샷(trigger_meta)이 있으면 그것으로, 없으면(구 스타일)
-          // 찾은 구간 그대로 복원한다.
-          let meta: { triggers?: string[]; order?: string[] } | null = null
-          try { meta = style.trigger_meta ? JSON.parse(style.trigger_meta) : null } catch { meta = null }
-          const trigWords = (meta?.triggers ?? run?.words ?? []).filter(Boolean)
-          if (trigWords.length) {
-            wb.setTriggerOrder(meta?.order?.length ? meta.order : trigWords.map((w) => w.toLowerCase()))
-            const want = new Set(trigWords.map((w) => w.toLowerCase()))
-            for (const le of loras) {
-              if (!le.enabled) continue
-              const rec = get().loras.find((l) => normPath(l.rel_path) === normPath(le.relPath))
-              if (!rec) continue
-              const off = new Set(splitCsv(rec.disabled_triggers).map((w) => w.toLowerCase()))
-              for (const w of splitCsv(rec.trigger_words)) {
-                const k = w.toLowerCase()
-                const shouldOn = want.has(k)
-                if (shouldOn !== !off.has(k)) void get().toggleTriggerDisabled(rec.rel_path, k, !shouldOn)
-              }
-            }
-          }
           patch.positive = run
             ? style.positive_prompt.slice(0, run.start) + '@triggers' + style.positive_prompt.slice(run.end)
             : reTokenize(style.positive_prompt, '') // 트리거워드가 없는 프롬프트 → 끝에 칩만
         }
+        patch.triggers = trigWords
+      }
+      // Multi 탭에 있으면 현재 캐릭터 base에, 아니면 작업대(workbench)에 적용한다.
+      // 토글을 먼저 맞춘다 — 양쪽 setter가 '기존' positive에 토큰을 넣고 빼므로, patch가 마지막에 덮는다.
+      if (useUi.getState().tab === 'batch') {
+        const b = useBatch.getState()
+        b.setCharTriggerBadges(!!meta)
+        b.setCharTriggerOrder(restoredOrder)
+        b.setCharBase(patch)
+      } else {
+        wb.setTriggerBadges(!!meta)
+        wb.setTriggerOrder(restoredOrder)
         wb.set(patch)
       }
       wb.setNotice(
