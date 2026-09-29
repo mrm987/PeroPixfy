@@ -1,4 +1,4 @@
-import { splitWeightTags } from './tagWeight'
+import { splitWeightTags, type TagSpan } from './tagWeight'
 
 // 콤마 구분 프롬프트. @triggers 토큰은 트리거워드 묶음이 삽입될 '자리'를 나타낸다.
 // 토큰은 params.positive 안에 직접 들어가 있고(단일 진실), PromptEditor가 이를 인라인
@@ -17,8 +17,37 @@ const TOKEN_RE = /@triggers/i
  * 어느 조각도 트리거워드와 일치하지 않아 자리를 놓치고, 프롬프트에 묶음이 남은 채 칩이 끝에
  * 붙어 트리거워드가 두 번 들어간다.
  */
+/**
+ * 콤마 태그를 줄 단위로 한 번 더 쪼갠다. splitWeightTags는 최상위 콤마에서만 자르므로,
+ * 트리거워드 묶음이 콤마 없이 줄바꿈으로 끝나면 — 앱이 저장하는 `..., @saiougaushi\n\n1girl, ...`
+ * 형태가 바로 그렇다 — 마지막 트리거가 다음 블록과 한 덩어리(`@saiougaushi\n\n1girl`)로 잡혀
+ * 매칭에 실패한다.
+ * ★실측(2026-08-20): 그 탓에 연속 구간이 하나 짧게 끊겼고, 짧아진 자리에 트리거워드 전체가
+ * 삽입되면서 본문에 남은 마지막 트리거가 두 번 들어갔다.
+ * 괄호 묶음((a,\nb:1.2))은 쪼개지 않는다 — 콤마 분할이 통째로 지키는 단위다.
+ */
+function splitLines(tags: TagSpan[]): TagSpan[] {
+  const out: TagSpan[] = []
+  for (const t of tags) {
+    if (!t.text.includes('\n') || /[([{]/.test(t.text)) { out.push(t); continue }
+    let off = 0
+    for (const piece of t.text.split('\n')) {
+      const lead = piece.length - piece.trimStart().length
+      const s = piece.trim()
+      if (s) out.push({ text: s, start: t.start + off + lead, end: t.start + off + lead + s.length })
+      off += piece.length + 1
+    }
+  }
+  return out
+}
+
+/** 콤마·줄바꿈 기준 태그 조각 — findTagRun 과 같은 규칙으로 자른다. */
+export function tagSpans(text: string): TagSpan[] {
+  return splitLines(splitWeightTags(text))
+}
+
 export function findTagRun(text: string, isMatch: (tag: string) => boolean) {
-  const tags = splitWeightTags(text)
+  const tags = splitLines(splitWeightTags(text))
   let best: { i: number; j: number } | null = null
   for (let i = 0; i < tags.length; i++) {
     if (!isMatch(tags[i].text)) continue
