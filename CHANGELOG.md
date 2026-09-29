@@ -12,6 +12,10 @@ registry's changelog field, so:
   newlines, so bullets and line breaks end up as one run-on line. Use ` · ` to separate
   points instead.
 
+## 1.7.0
+
+Fixed typing and pasting in the prompt editor after switching to another window: the cursor was lost, so pasted text landed at the very start of the prompt (out of sight) and Ctrl+Z seemed to do nothing — this hit Multi Base and Single with auto trigger words · The @slot chip in Multi Base now appears only when a slot actually has a prompt · Applying a saved style restores auto trigger words exactly as they were saved: the chip goes back to its spot and no word is inserted twice, in Single and Multi alike · The workspace list and settings are now stored with ComfyUI instead of the browser, so another browser or profile sees the same workspaces. Full details in the commit history.
+
 ## 1.6.0
 
 Inpainting rebuilt around the plain approach: the model now sees the whole picture and repaints only what you painted, instead of cropping and enlarging the masked area first — that crop is what made a painted hand come back with a whole character drawn inside it · Removing the extra machinery (crop-and-stitch, differential diffusion, inpaint conditioning) changed nothing else measurable, so inpainting is simply faster to reason about, and your own cfg and steps are used as-is · Default inpaint denoise raised to 0.9 · Trigger words that are a bracketed bundle like (a, b:1.2) are no longer torn apart, so badges, on/off and prompt insertion land in the right place and no longer duplicate the words · The first-run download list now says what each file is for. Full details in the commit history.
